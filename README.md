@@ -36,14 +36,14 @@ Requirements: [Node.js](https://nodejs.org) 22 or newer.
 ```bash
 git clone <this repository>
 cd openstudio
-npm install
-npm run assets   # downloads the ~31 MB instrument bank (checksum-verified)
 npm start
 ```
 
+That's it. `npm start` automatically installs anything missing before launching (via the `prestart` hook in `scripts/ensure.mjs`), including dependency repair and the ~31 MB checksum-verified GeneralUser GS instrument bank, so you never need to run `npm run assets` by hand. On a machine with no Node.js/npm at all, run `./start.sh` instead — it installs Node.js/npm first (apt, dnf, pacman, zypper, or Homebrew) and then starts the app.
+
 Then choose **File → Open demo project**, press <kbd>Space</kbd> to play, and <kbd>F1</kbd> for shortcuts.
 
-If Electron's binary is missing after `npm install`, run `node node_modules/electron/install.js`.
+If Electron's binary is broken by a skipped postinstall step or a corrupted download cache, delete the stale copy with `rm -rf node_modules/electron && npm install` — or just rely on `npm start`, which repairs it for you.
 
 ### Handy keys
 
