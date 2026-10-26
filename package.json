@@ -1,7 +1,7 @@
 {
   "name": "openstudio",
   "version": "0.2.0",
-  "description": "OpenStudio \u2014 an open-source, pattern-based digital audio workstation (Electron + Web Audio)",
+  "description": "OpenStudio — an open-source, pattern-based digital audio workstation (Electron + Web Audio)",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -13,6 +13,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "electron": "^35.0.0",
+    "electron-packager": "^17.1.2",
     "eslint": "^10.13.0",
     "globals": "^17.13.0"
   },
