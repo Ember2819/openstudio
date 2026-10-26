@@ -35,7 +35,7 @@
     "node": ">=22"
   },
   "allowScripts": {
-    "electron@35.7.5": true
+    "electron@45.0.0": true
   },
   "repository": {
     "type": "git",
