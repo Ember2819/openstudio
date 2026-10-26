@@ -57,6 +57,16 @@ export function createChannelRack(app) {
       { label: 'Rename…', shortcut: 'F2', action: () => actions.renameChannel(ch.id) },
       { label: 'Color', submenu: COLORS.map((c) => ({ label: ' ', swatch: c, checked: ch.color === c, action: () => { store.checkpoint(); ch.color = c; store.emit('channels'); store.emit('notes'); } })) },
       { label: 'Route to mixer', submenu: () => mixerRouteItems(ch) },
+      { label: 'Route to free mixer track', shortcut: 'Ctrl+L', action: () => routeToFree(ch) },
+      { separator: true },
+      { label: 'Fill each 2 steps', action: () => fill(ch, 2) },
+      { label: 'Fill each 4 steps', action: () => fill(ch, 4) },
+      { label: 'Fill each 8 steps', action: () => fill(ch, 8) },
+      { label: 'Shift steps left', action: () => shiftSteps(ch, -1) },
+      { label: 'Shift steps right', action: () => shiftSteps(ch, 1) },
+      { separator: true },
+      { label: 'Move up', shortcut: 'Alt+↑', disabled: store.project.channels[0] === ch, action: () => store.moveChannel(ch.id, -1) },
+      { label: 'Move down', shortcut: 'Alt+↓', disabled: store.project.channels.at(-1) === ch, action: () => store.moveChannel(ch.id, 1) },
       { separator: true },
       { label: 'Mute', checked: ch.mute, action: () => { store.checkpoint(); ch.mute = !ch.mute; store.emit('channels'); } },
       { label: 'Solo', checked: ch.solo, action: () => { store.checkpoint(); ch.solo = !ch.solo; store.emit('channels'); } },
@@ -73,6 +83,63 @@ export function createChannelRack(app) {
     return items;
   }
   function route(ch, i) { store.checkpoint(); ch.mixer = i; store.emit('channels'); store.emit('mixer'); }
+
+  function routeToFree(ch) {
+    const i = store.freeMixerTrack();
+    if (i == null) return;
+    store.checkpoint();
+    ch.mixer = i;
+    const m = store.project.mixer[i];
+    if (/^Insert \d+$/.test(m.name)) m.name = ch.name;
+    store.project.selected.mixer = i;
+    store.emit('channels'); store.emit('mixer'); store.emit('mixerSelection');
+  }
+
+  /** FL's "Fill each N steps": replace the channel's steps in this pattern with one hit every N steps. */
+  function fill(ch, every) {
+    const pat = store.currentPattern;
+    store.checkpoint();
+    const n = store.patternSteps(pat);
+    const pitch = ch.rootPitch ?? 60;
+    pat.notes[ch.id] = [];
+    for (let s0 = 0; s0 < n; s0 += every) pat.notes[ch.id].push({ p: pitch, s: s0, l: 1, v: 0.78 });
+    store.emit('notes');
+  }
+
+  /** Rotate the channel's notes by one step, wrapping around the pattern. */
+  function shiftSteps(ch, dir) {
+    const pat = store.currentPattern;
+    const list = pat.notes[ch.id];
+    if (!list?.length) return;
+    store.checkpoint();
+    const n = store.patternSteps(pat);
+    for (const note of list) note.s = (((note.s + dir) % n) + n) % n;
+    store.emit('notes');
+  }
+
+  // FL-style rack shortcuts while the rack has focus
+  scroll.tabIndex = 0;
+  scroll.addEventListener('keydown', (e) => {
+    const ch = store.selectedChannel;
+    if (!ch) return;
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault(); e.stopPropagation();
+      store.moveChannel(ch.id, e.key === 'ArrowUp' ? -1 : 1);
+    } else if (!e.altKey && !ctrl && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault(); e.stopPropagation();
+      const list = store.project.channels;
+      const i = list.indexOf(ch) + (e.key === 'ArrowUp' ? -1 : 1);
+      if (list[i]) store.selectChannel(list[i].id);
+    } else if (ctrl && e.key.toLowerCase() === 'l') {
+      e.preventDefault(); e.stopPropagation();
+      routeToFree(ch);
+    } else if (e.key === 'Delete' && e.shiftKey) {
+      e.preventDefault(); e.stopPropagation();
+      store.removeChannel(ch.id);
+    }
+  });
+  rowsEl.addEventListener('pointerdown', () => scroll.focus({ preventScroll: true }), true);
 
   function buildRow(ch) {
     const led = h('button', { class: `led cr-led${ch.mute ? '' : ' on'}`, 'data-hint': 'Channel enabled — click to mute, right-click to solo' });

@@ -81,7 +81,9 @@ export class Store extends Emitter {
   snapshot() { return JSON.stringify(this.project); }
 
   checkpoint() {
-    this.undoStack.push(this.snapshot());
+    const snap = this.snapshot();
+    // clicks that end up changing nothing (or double-clicks) would otherwise leave no-op undo steps
+    if (this.undoStack[this.undoStack.length - 1] !== snap) this.undoStack.push(snap);
     if (this.undoStack.length > 200) this.undoStack.shift();
     this.redoStack = [];
     this.dirty = true;
@@ -115,17 +117,67 @@ export class Store extends Emitter {
     const { samples = {}, ...project } = raw;
     const base = blankProject();
     this.project = { ...base, ...project, mixer: this._mergeMixer(base.mixer, project.mixer) };
-    for (const c of this.project.playlist.clips) c.type ||= 'pattern';
-    for (const t of this.project.playlist.tracks) t.mixer ??= 0;
+    this._normalizeLoaded(base, Object.keys(samples).map(Number));
     this.samples.clear();
     for (const [id, s] of Object.entries(samples)) this.samples.set(Number(id), { name: s.name, data: base64ToArrayBuffer(s.data), buffer: null });
     this.filePath = filePath;
     this.finishLoad();
   }
 
+  /** Fill in anything an older or hand-edited file is missing so the rest of the app can rely on it. */
+  _normalizeLoaded(base, sampleIds = []) {
+    const p = this.project;
+    p.selected = { ...base.selected, ...(p.selected || {}) };
+    p.automations = Array.isArray(p.automations) ? p.automations : [];
+    const pl = p.playlist && typeof p.playlist === 'object' ? p.playlist : {};
+    const tracks = Array.isArray(pl.tracks) ? pl.tracks : [];
+    p.playlist = {
+      tracks: base.playlist.tracks.map((t, i) => ({ ...t, ...(tracks[i] || {}), mixer: tracks[i]?.mixer ?? 0 })),
+      clips: (Array.isArray(pl.clips) ? pl.clips : []).filter((c) => c && Number.isFinite(c.start) && Number.isFinite(c.len) && c.len > 0),
+    };
+    for (const c of p.playlist.clips) {
+      c.type ||= 'pattern';
+      c.offset ??= 0;
+      c.track = Math.min(Math.max(0, c.track | 0), PLAYLIST_TRACKS - 1);
+    }
+    for (const pat of p.patterns) {
+      pat.notes ||= {};
+      pat.bars = Math.max(1, pat.bars | 0);
+    }
+    for (const ch of p.channels) {
+      ch.params = { ...defaultParams(ch.type, ch.voice), ...(ch.params || {}) };
+      if (!Number.isFinite(ch.vol)) ch.vol = 0.78;
+      if (!Number.isFinite(ch.pan)) ch.pan = 0;
+      ch.color ||= COLORS[(ch.id * 5) % COLORS.length];
+      ch.rootPitch ??= ROOT_NOTE;
+      if (!(ch.mixer >= 0 && ch.mixer < MIXER_TRACKS)) ch.mixer = 0;
+    }
+    if (!p.patterns.length) this._addPattern();
+    if (!this.pattern(p.selected.pattern)) p.selected.pattern = p.patterns[0].id;
+    if (!this.channel(p.selected.channel)) p.selected.channel = p.channels[0]?.id ?? null;
+    if (!(p.selected.mixer >= 0 && p.selected.mixer < MIXER_TRACKS)) p.selected.mixer = 0;
+    // ids must stay unique even if nextId was lost
+    let maxId = 0;
+    const seen = (id) => { if (Number.isFinite(id)) maxId = Math.max(maxId, id); };
+    p.channels.forEach((c) => seen(c.id));
+    p.patterns.forEach((x) => seen(x.id));
+    p.playlist.clips.forEach((c) => seen(c.id));
+    p.automations.forEach((a) => seen(a.id));
+    sampleIds.forEach(seen);
+    p.nextId = Math.max(p.nextId || 1, maxId + 1);
+    if (!Number.isFinite(p.bpm) || p.bpm <= 0) p.bpm = base.bpm;
+  }
+
   _mergeMixer(base, saved) {
     if (!Array.isArray(saved)) return base;
-    return base.map((b, i) => (saved[i] ? { ...b, ...saved[i], fx: b.fx.map((_, k) => saved[i].fx?.[k] ?? null), sends: saved[i].sends ?? {} } : b));
+    return base.map((b, i) => {
+      const m = saved[i];
+      if (!m) return b;
+      const out = { ...b, ...m, fx: b.fx.map((_, k) => m.fx?.[k] ?? null), sends: m.sends ?? {} };
+      if (!Number.isFinite(out.vol)) out.vol = b.vol;
+      if (!Number.isFinite(out.pan)) out.pan = b.pan;
+      return out;
+    });
   }
 
   // ---------- accessors ----------
@@ -211,6 +263,29 @@ export class Store extends Emitter {
     this.emit('selection');
     this.emit('notes');
     return copy;
+  }
+
+  /** Move a channel up (-1) or down (+1) in the rack. */
+  moveChannel(id, dir) {
+    const list = this.project.channels;
+    const i = list.findIndex((c) => c.id === id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= list.length) return false;
+    this.checkpoint();
+    [list[i], list[j]] = [list[j], list[i]];
+    this.emit('channels');
+    return true;
+  }
+
+  /** Lowest-numbered insert track that no channel or playlist track is routed to (null when all are used). */
+  freeMixerTrack() {
+    const used = new Set(this.project.channels.map((c) => c.mixer));
+    for (const t of this.project.playlist.tracks) used.add(t.mixer);
+    for (let i = 1; i < MIXER_TRACKS; i++) {
+      const m = this.project.mixer[i];
+      if (!used.has(i) && !m.fx.some(Boolean) && !Object.keys(m.sends).length) return i;
+    }
+    return null;
   }
 
   selectChannel(id) {

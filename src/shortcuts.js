@@ -32,6 +32,7 @@ export function installShortcuts(app) {
         r: actions.exportWav,
         m: () => transport.setMetronome(!transport.metronome),
         l: () => transport.toggleMode(),
+        p: () => { if (e.shiftKey) store.addPattern(); },
       };
       if (map[k]) { e.preventDefault(); map[k](); }
       return;
@@ -39,6 +40,7 @@ export function installShortcuts(app) {
 
     const fkeys = {
       F1: actions.showShortcuts,
+      F4: () => store.addPattern(),
       F5: () => wm.get('playlist').toggle(),
       F6: () => wm.get('rack').toggle(),
       F7: () => wm.get('piano').toggle(),

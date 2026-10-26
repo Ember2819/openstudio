@@ -56,7 +56,7 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
       if (!auto || !targetValid(store, auto.target)) continue;
-      const local = step - clip.start;
+      const local = step - clip.start + (clip.offset || 0);
       const v0 = normToValue(store, auto.target, curveAt(auto.points, local));
       const v1 = normToValue(store, auto.target, curveAt(auto.points, local + 1));
       applyTarget(store, engine, auto.target, v0, time, v1, time + sd);
@@ -188,10 +188,15 @@ export class Transport extends Emitter {
   _tick() {
     const horizon = this.ctx.currentTime + LOOKAHEAD;
     while (this.nextTime < horizon) {
-      const loop = this.store.project.loop;
-      if (this.loopEnabled && this.mode === 'song' && loop && this.nextStep >= loop.end) {
-        this.nextStep = loop.start;
-        this.jumped = true;
+      if (this.mode === 'song') {
+        const loop = this.store.project.loop;
+        if (this.loopEnabled && loop) {
+          if (this.nextStep >= loop.end) { this.nextStep = loop.start; this.jumped = true; }
+        } else {
+          // like FL Studio, the song wraps to the start once it runs past the last bar that has clips
+          const end = Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+          if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
+        }
       }
       this._scheduleStep(this.nextStep, this.nextTime);
       this.jumped = false;
@@ -208,14 +213,29 @@ export class Transport extends Emitter {
   }
 
   // -------------------------------------------------------------- recording
-  recordNoteOn(ch, pitch, vel) {
-    if (!this.recording || !this.playing || this.mode !== 'pattern') return;
+  /**
+   * Where a live note lands in the selected pattern, in pattern-local steps. Pattern mode records at the
+   * pattern position; song mode records into the selected pattern where one of its clips is playing.
+   */
+  _recordPos() {
     const pat = this.store.currentPattern;
-    const pos = this.patternPosition();
-    const snapped = Math.round(pos * 4) / 4;
+    if (!pat) return null;
+    const len = this.store.patternSteps(pat);
+    if (this.mode === 'pattern') return { pat, pos: this.patternPosition(), len };
+    const pos = this.position();
+    const clip = this.store.project.playlist.clips.find((c) => (c.type || 'pattern') === 'pattern' && c.pat === pat.id && !c.mute && pos >= c.start && pos < c.start + c.len);
+    if (!clip) return null;
+    return { pat, pos: (((pos - clip.start + clip.offset) % len) + len) % len, len };
+  }
+
+  recordNoteOn(ch, pitch, vel) {
+    if (!this.recording || !this.playing) return;
+    const at = this._recordPos();
+    if (!at) return;
+    const snapped = Math.round(at.pos * 4) / 4;
     this.store.checkpoint();
-    const note = this.store.addNote(pat, ch.id, { p: pitch, s: snapped % this.store.patternSteps(pat), l: 0.25, v: vel });
-    this.openRecordNotes.set(`${ch.id}:${pitch}`, { note, startPos: pos, pat });
+    const note = this.store.addNote(at.pat, ch.id, { p: pitch, s: snapped % at.len, l: 0.25, v: vel });
+    this.openRecordNotes.set(`${ch.id}:${pitch}`, { note, startPos: at.pos, pat: at.pat });
     this.store.emit('notes');
   }
 
@@ -223,7 +243,8 @@ export class Transport extends Emitter {
     const open = this.openRecordNotes.get(`${ch.id}:${pitch}`);
     if (!open) return;
     this.openRecordNotes.delete(`${ch.id}:${pitch}`);
-    const len = this.patternPosition() - open.startPos;
+    const at = this._recordPos();
+    const len = at && at.pat === open.pat ? at.pos - open.startPos : 0.25;
     open.note.l = Math.max(0.25, Math.round((len < 0 ? len + this.store.patternSteps(open.pat) : len) * 4) / 4);
     this.store.normalizePattern(open.pat);
     this.store.emit('notes');

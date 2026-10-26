@@ -357,7 +357,7 @@ export function createPlaylist(app) {
     ctx.beginPath();
     let started = false;
     for (let dx = x0; dx <= x1; dx += 2) {
-      const v = curveAt(auto.points, dx / px);
+      const v = curveAt(auto.points, dx / px + (c.offset || 0));
       const yy = bodyY + 3 + (bodyH - 6) * (1 - v);
       if (!started) { ctx.moveTo(x + dx, yy); started = true; } else ctx.lineTo(x + dx, yy);
     }
@@ -470,6 +470,11 @@ export function createPlaylist(app) {
     const hit = clipAt(step, track);
     const sz = e.altKey ? 0 : snap();
     let tool = S.tool;
+    if (e.button === 2 && hit && w.y - hit.track * TRACK_H <= CLIP_HEAD + 1) {
+      // right-click on a clip's title bar: clip menu (right-click on the body deletes, as in FL Studio)
+      showClipMenu(hit, e.clientX, e.clientY);
+      return;
+    }
     if (e.button === 2) tool = 'delete';
     else if (e.ctrlKey || e.metaKey) tool = 'select';
     scroller.setPointerCapture(e.pointerId);
@@ -493,7 +498,7 @@ export function createPlaylist(app) {
       store.checkpoint();
       const type = typeOf(hit);
       const into = at - hit.start;
-      const offset = type === 'pattern' ? mod(hit.offset + into, patLen(hit.pat)) : type === 'audio' ? hit.offset + into : 0;
+      const offset = type === 'pattern' ? mod(hit.offset + into, patLen(hit.pat)) : (hit.offset || 0) + into;
       const second = { ...hit, id: store.uid(), start: at, len: hit.start + hit.len - at, offset };
       hit.len = into;
       clips().push(second);
@@ -562,13 +567,13 @@ export function createPlaylist(app) {
       const ds = step - drag.anchor;
       for (const o of drag.orig) {
         const type = typeOf(o.c);
-        const lowest = type === 'audio' ? o.start - o.offset : 0;
+        const lowest = type === 'pattern' ? 0 : o.start - (o.offset || 0);
         const newStart = clamp(snapRound(o.start + ds, sz || 0.25), lowest, o.start + o.len - (sz || 0.25));
         const d = newStart - o.start;
         o.c.start = newStart;
         o.c.len = o.len - d;
         if (type === 'pattern') o.c.offset = mod(o.offset + d, patLen(o.c.pat));
-        else if (type === 'audio') o.c.offset = Math.max(0, o.offset + d);
+        else o.c.offset = Math.max(0, (o.offset || 0) + d);
       }
     } else if (drag.type === 'paint') {
       while (step >= drag.next && drag.next < totalSteps()) {
@@ -613,6 +618,60 @@ export function createPlaylist(app) {
     else if (type === 'auto') app.actions.openAutomation(hit.autoId);
   });
 
+  function showClipMenu(c, x, y) {
+    const type = typeOf(c);
+    const pat = type === 'pattern' ? store.pattern(c.pat) : null;
+    if (!S.selection.has(c.id)) { S.selection.clear(); S.selection.add(c.id); invalidate(); }
+    const items = [];
+    if (pat) {
+      items.push(
+        { label: 'Open in channel rack', action: () => { store.selectPattern(pat.id); wm.get('rack').show(); } },
+        { label: 'Open in piano roll', action: () => { store.selectPattern(pat.id); wm.get('piano').show(); } },
+        { label: 'Rename pattern…', action: () => app.actions.renamePattern(pat.id) },
+        { label: 'Make unique', action: () => makeUnique(c) },
+        { label: 'Fit clip to pattern length', action: () => { store.checkpoint(); c.len = patLen(c.pat); c.offset = 0; store.emit('playlist'); } },
+        { label: 'Color', submenu: COLORS.map((col) => ({ label: ' ', swatch: col, action: () => { store.checkpoint(); pat.color = col; store.emit('patterns'); } })) },
+        { separator: true },
+      );
+    } else if (type === 'auto') {
+      items.push({ label: 'Edit automation…', action: () => app.actions.openAutomation(c.autoId) }, { separator: true });
+    }
+    items.push(
+      { label: 'Duplicate', shortcut: 'Ctrl+B', action: () => duplicateSelection() },
+      { label: c.mute ? 'Unmute' : 'Mute', action: () => { store.checkpoint(); c.mute = !c.mute; store.emit('playlist'); } },
+      { label: 'Delete', shortcut: 'Del', action: () => { store.checkpoint(); store.project.playlist.clips = clips().filter((x) => x !== c); S.selection.delete(c.id); store.emit('playlist'); } },
+    );
+    showMenu(items, x, y);
+  }
+
+  /** Clone the clip's pattern and point the clip at the clone so it can be edited independently. */
+  function makeUnique(c) {
+    const src = store.pattern(c.pat);
+    if (!src) return;
+    const copy = store.clonePattern(src.id); // checkpoints and selects the clone
+    const base = src.name.replace(/ #\d+$/, '');
+    let k = 2;
+    while (store.project.patterns.some((p) => p.name === `${base} #${k}`)) k++;
+    copy.name = `${base} #${k}`;
+    c.pat = copy.id;
+    store.emit('patterns');
+    store.emit('playlist');
+  }
+
+  /** Copy the selected clips right after the selection (Ctrl+B). */
+  function duplicateSelection() {
+    const sel = clips().filter((c) => S.selection.has(c.id));
+    if (!sel.length) return;
+    store.checkpoint();
+    const start = Math.min(...sel.map((c) => c.start));
+    const end = Math.max(...sel.map((c) => c.start + c.len));
+    const q = snap() || 1;
+    const span = Math.max(q, Math.ceil((end - start) / q - 1e-6) * q);
+    S.selection.clear();
+    for (const c of sel) S.selection.add(store.addClip({ ...c, id: undefined, start: c.start + span }).id);
+    store.emit('playlist');
+  }
+
   function eraseAt(step, track) {
     const hit = clipAt(step, track);
     if (!hit) return;
@@ -652,6 +711,7 @@ export function createPlaylist(app) {
       await placeAudio(sampleId, track, start);
     } else {
       for (const file of e.dataTransfer.files) {
+        if (/\.(mid|midi|rmi)$/i.test(file.name)) { await app.actions.importMidiFile(file, { track: track++, start }); continue; }
         if (!/^audio\//.test(file.type) && !/\.(wav|mp3|ogg|flac|aac|m4a)$/i.test(file.name)) continue;
         const id = store.addSample(file.name, await file.arrayBuffer());
         await placeAudio(id, track++, start);
@@ -728,6 +788,12 @@ export function createPlaylist(app) {
         S.selection.add(n.id);
       }
       store.emit('playlist');
+    } else if (ctrl && e.key.toLowerCase() === 'b') {
+      handled();
+      duplicateSelection();
+    } else if (ctrl && e.key.toLowerCase() === 'd') {
+      handled();
+      S.selection.clear(); invalidate();
     } else if (e.key === 'Escape') { S.selection.clear(); invalidate(); }
   });
 

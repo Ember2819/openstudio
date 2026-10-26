@@ -18,6 +18,7 @@ import { installShortcuts } from './shortcuts.js';
 import { createInput } from './input.js';
 import { messageDialog } from './ui/dialog.js';
 import { initMidi } from './midi.js';
+import { installAutosave } from './autosave.js';
 
 installKnobDefs();
 
@@ -46,6 +47,8 @@ const mixer = createMixer(app);
 installShortcuts(app);
 initMidi(app);
 app.toolbar.refreshProject();
+app.autosave = installAutosave(app);
+app.autosave.offerRecovery();
 
 loadSoundfont().then(() => {
   app.store.emit('soundfontReady');
@@ -57,7 +60,10 @@ loadSoundfont().then(() => {
 
 const panels = [rack, playlist, piano, mixer, settings];
 
+let lastDirty = app.store.dirty;
 function frame() {
+  // edits only set store.dirty, so keep the "unsaved" markers in step here
+  if (app.store.dirty !== lastDirty) { lastDirty = app.store.dirty; syncTitle(); app.toolbar.refreshProject(); }
   app.toolbar.update();
   for (const p of panels) p.update?.();
   requestAnimationFrame(frame);

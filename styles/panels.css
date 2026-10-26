@@ -1,6 +1,6 @@
 /* =========================================================== Channel rack */
 .cr-body { background: var(--surface); }
-.cr-scroll { flex: 1; overflow: auto; padding-bottom: 8px; background: var(--surface); }
+.cr-scroll { flex: 1; overflow: auto; padding-bottom: 8px; background: var(--surface); outline: none; }
 .cr-header { display: flex; align-items: center; height: 18px; position: sticky; top: 0; z-index: 3; background: var(--surface); border-bottom: 1px solid var(--line); min-width: max-content; }
 .cr-left { display: flex; align-items: center; gap: 6px; padding: 0 8px; position: sticky; left: 0; z-index: 2; background: inherit; flex: none; }
 .cr-left-head { width: 236px; height: 100%; background: var(--surface); }
