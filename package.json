@@ -7,7 +7,7 @@
     "start": "electron .",
     "assets": "node scripts/fetch-assets.mjs",
     "lint": "eslint .",
-    "test": "node --test test/",
+    "test": "node --test \"test/**/*.test.mjs\"",
     "test:e2e": "node scripts/e2e.mjs"
   },
   "devDependencies": {
