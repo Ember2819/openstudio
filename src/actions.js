@@ -1,12 +1,12 @@
 import { promptDialog, confirmDialog, messageDialog } from './ui/dialog.js';
-import { Engine } from './audio/engine.js';
-import { scheduleStep } from './audio/transport.js';
+import { renderSteps } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { STEPS_PER_BAR } from './state.js';
 import { SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
 import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
+import { parseMidi, importMidi } from './midiimport.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 
 const SHORTCUTS = [
@@ -14,6 +14,7 @@ const SHORTCUTS = [
   ['Ctrl+L', 'Toggle pattern / song mode'],
   ['F5 · F6 · F7 · F9', 'Playlist · Channel rack · Piano roll · Mixer'],
   ['Alt+F8', 'Browser'],
+  ['F4 / Ctrl+Shift+P', 'New pattern'],
   ['F10', 'Channel settings'],
   ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
   ['Ctrl+N / O / S', 'New / open / save project'],
@@ -22,9 +23,17 @@ const SHORTCUTS = [
   ['+ / −', 'Next / previous pattern'],
   ['Z S X D C V G B H N J M', 'Play the selected channel from the keyboard (lower octave)'],
   ['Q 2 W 3 E R 5 T 6 Y 7 U', 'Play the selected channel (upper octave)'],
-  ['Piano roll: Del / Ctrl+A / Ctrl+C / Ctrl+V', 'Delete / select all / copy / paste notes'],
-  ['Piano roll: Ctrl+Q / Ctrl+D', 'Quantize / duplicate selected notes'],
+  ['Piano roll: Del / Ctrl+A / Ctrl+D', 'Delete / select all / deselect'],
+  ['Piano roll: Ctrl+C / X / V', 'Copy / cut / paste notes'],
+  ['Piano roll: Ctrl+B', 'Duplicate selected notes'],
+  ['Piano roll: Ctrl+Q / Ctrl+L', 'Quick quantize / quick legato'],
+  ['Piano roll: ↑ ↓ / Ctrl+↑ ↓', 'Transpose a semitone / an octave'],
+  ['Piano roll: Alt+R', 'Randomize velocity'],
+  ['Playlist: Ctrl+B / Ctrl+D', 'Duplicate / deselect clips'],
+  ['Playlist: right-click clip title', 'Clip menu (make unique, rename, mute…)'],
   ['Playlist ruler: Shift+drag', 'Set the loop region (double-click to clear)'],
+  ['Channel rack: Alt+↑ / Alt+↓', 'Move the selected channel'],
+  ['Channel rack: Ctrl+L', 'Route the channel to a free mixer track'],
   ['Knob or fader: right-click', 'Create an automation clip'],
   ['Piano roll: Ctrl+drag', 'Temporary select tool'],
   ['Piano roll / playlist: Ctrl+wheel', 'Zoom horizontally'],
@@ -36,6 +45,14 @@ export function createActions(app) {
 
   const confirmDiscard = async () => !store.dirty || confirmDialog('Unsaved changes', 'Discard the current project?', 'Discard');
 
+  /** First playlist track with nothing in [start, start + len). */
+  const firstFreeTrack = (start, len) => {
+    const clips = store.project.playlist.clips;
+    let track = 0;
+    while (clips.some((c) => c.track === track && c.start < start + len && c.start + c.len > start)) track++;
+    return track;
+  };
+
   const a = {
     undo() { store.undo(); },
     redo() { store.redo(); },
@@ -45,6 +62,7 @@ export function createActions(app) {
       transport.stop();
       store.resetToDefault();
       store.filePath = null;
+      app.autosave?.discard();
     },
 
     async openProject() {
@@ -54,6 +72,7 @@ export function createActions(app) {
       try {
         transport.stop();
         store.load(res.text, res.path);
+        app.autosave?.discard();
       } catch (err) {
         messageDialog('Could not open project', err.message);
       }
@@ -163,8 +182,10 @@ export function createActions(app) {
 
     resetMixer() {
       store.checkpoint();
-      for (const m of store.project.mixer) { m.vol = 0.8; m.pan = 0; m.mute = false; m.solo = false; m.fx = m.fx.map(() => null); }
-      store.emit('project');
+      for (const m of store.project.mixer) { m.vol = 0.8; m.pan = 0; m.mute = false; m.solo = false; m.fx = m.fx.map(() => null); m.sends = {}; }
+      app.engine.syncAll();
+      store.emit('mixer');
+      store.emit('mixerSelection');
     },
 
     toggleBrowser() {
@@ -178,7 +199,7 @@ export function createActions(app) {
     },
 
     showAbout() {
-      messageDialog('About OpenStudio', 'OpenStudio 0.1\nAn open-source digital audio workstation inspired by the classic pattern-based workflow.\n\nBuilt with Electron and the Web Audio API.');
+      messageDialog('About OpenStudio', 'OpenStudio 0.2\nAn open-source digital audio workstation inspired by the classic pattern-based workflow.\n\nBuilt with Electron and the Web Audio API.');
     },
 
     /** Create an automation clip for a knob/fader and open its editor. */
@@ -187,13 +208,44 @@ export function createActions(app) {
       store.checkpoint();
       const auto = store.addAutomation({ name: describeTarget(store, target), target, value: norm, len: STEPS_PER_BAR });
       const start = Math.floor(transport.startStep / STEPS_PER_BAR) * STEPS_PER_BAR;
-      const clips = store.project.playlist.clips;
-      let track = 0;
-      while (clips.some((c) => c.track === track && c.start < start + auto.len && c.start + c.len > start)) track++;
-      store.addClip({ type: 'auto', autoId: auto.id, track, start, len: auto.len });
+      store.addClip({ type: 'auto', autoId: auto.id, track: firstFreeTrack(start, auto.len), start, len: auto.len });
       store.emit('playlist');
       app.wm.get('playlist').show();
       a.openAutomation(auto.id);
+    },
+
+    /** Import a .mid file as a new pattern (with its own channels); optionally place it in the playlist. */
+    async importMidiFile(file = null, place = null) {
+      file ??= await pickFile('.mid,.midi,.rmi,audio/midi');
+      if (!file) return null;
+      let midi;
+      try {
+        midi = parseMidi(await file.arrayBuffer());
+      } catch (err) {
+        messageDialog('Could not import MIDI file', err.message);
+        return null;
+      }
+      const wasEmpty = store.project.channels.every((c) => !store.project.patterns.some((p) => p.notes[c.id]?.length))
+        && !store.project.playlist.clips.length;
+      store.checkpoint();
+      let pat;
+      try {
+        pat = importMidi(store, midi, { name: file.name.replace(/\.(mid|midi|rmi)$/i, ''), setTempo: wasEmpty });
+      } catch (err) {
+        store.undo();
+        messageDialog('Could not import MIDI file', err.message);
+        return null;
+      }
+      const at = place ?? { track: firstFreeTrack(0, store.patternSteps(pat)), start: 0 };
+      store.addClip({ type: 'pattern', pat: pat.id, track: at.track, start: at.start, len: store.patternSteps(pat) });
+      store.emit('channels');
+      store.emit('patterns');
+      store.emit('selection');
+      store.emit('notes');
+      store.emit('playlist');
+      store.emit('mixer');
+      transport.emit('bpm');
+      return pat;
     },
 
     async exportMidi() {
@@ -206,27 +258,34 @@ export function createActions(app) {
 
     async exportWav() {
       const proj = store.project;
-      const stepDur = 60 / proj.bpm / 4;
       const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
       if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return; }
       transport.stop();
-      const tail = 3;
-      const seconds = steps * stepDur + tail;
-      const sr = 44100;
-      const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sr), sr);
-      const engine = new Engine(store, ctx);
+      app.toolbar?.setBusy?.('Rendering…');
+      let rendered;
       try {
-        for (let s = 0; s < steps; s++) scheduleStep(store, engine, s, s * stepDur, stepDur, { first: s === 0 });
-        const rendered = await ctx.startRendering();
-        const data = encodeWav(rendered);
-        await window.studioAPI.writeFile({ suggestedName: `${proj.name}.wav`, data, filters: [{ name: 'WAV audio', extensions: ['wav'] }] });
+        rendered = await renderSteps(store, steps);
+      } catch (err) {
+        messageDialog('Export failed', err.message);
+        return;
       } finally {
-        engine.dispose();
+        app.toolbar?.setBusy?.(null);
       }
+      await window.studioAPI.writeFile({ suggestedName: `${proj.name}.wav`, data: encodeWav(rendered), filters: [{ name: 'WAV audio', extensions: ['wav'] }] });
     },
 
   };
   return a;
+}
+
+/** Open the native file picker from the renderer (no main-process round trip needed). */
+function pickFile(accept) {
+  return new Promise((resolve) => {
+    const input = Object.assign(document.createElement('input'), { type: 'file', accept });
+    input.addEventListener('change', () => resolve(input.files[0] || null), { once: true });
+    input.addEventListener('cancel', () => resolve(null), { once: true });
+    input.click();
+  });
 }
 
 function loadDemo(store, transport) {

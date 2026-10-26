@@ -26,6 +26,7 @@ export class Engine {
   constructor(store, ctx = new AudioContext({ latencyHint: 'interactive' })) {
     this.store = store;
     this.ctx = ctx;
+    this.offline = typeof OfflineAudioContext !== 'undefined' && ctx instanceof OfflineAudioContext;
     this.tracks = [];
     this.channelNodes = new Map();
     this.voices = new Set();
@@ -185,6 +186,16 @@ export class Engine {
       entry.node.disconnect();
       this.sendNodes.delete(key);
     }
+  }
+
+  /** Recreate every effect on a track from scratch (after slots were reordered). */
+  resetFx(track) {
+    for (let k = 0; k < this.store.project.mixer[track].fx.length; k++) {
+      const key = `${track}:${k}`;
+      this.fxInstances.get(key)?.fx.dispose();
+      this.fxInstances.delete(key);
+    }
+    this._rebuildFxChain(track);
   }
 
   /** Rebuild effect chain for one track (after slot add/remove/bypass). */

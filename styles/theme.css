@@ -150,3 +150,4 @@ input, select { font: inherit; color: inherit; user-select: text; -webkit-user-s
 }
 .dd:hover { border-color: #5d6b76; }
 .dd .caret { font-size: 8px; color: var(--text-dim); }
+body.busy, body.busy * { cursor: progress !important; }

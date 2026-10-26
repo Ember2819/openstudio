@@ -67,3 +67,29 @@ test('projects survive a serialize/load round trip', () => {
 test('loading rejects files that are not projects', () => {
   assert.throws(() => new Store().load('{"hello":1}'), /Not an OpenStudio project/);
 });
+
+test('loading a damaged or old project fills in defaults and keeps ids unique', () => {
+  const s = new Store();
+  s.load(JSON.stringify({
+    channels: [{ id: 7, type: 'synth', name: 'Lead' }],
+    patterns: [{ id: 2, name: 'P' }],
+    playlist: { clips: [{ id: 9, pat: 2, track: 400, start: 0, len: 16 }, { id: 10, start: 0, len: 0 }] },
+  }));
+  const p = s.project;
+  assert.equal(p.playlist.tracks.length, 125);
+  assert.equal(p.playlist.clips.length, 1, 'zero-length clips are dropped');
+  assert.equal(p.playlist.clips[0].track, 124);
+  assert.equal(p.playlist.clips[0].type, 'pattern');
+  assert.equal(p.channels[0].vol, 0.78);
+  assert.ok(p.channels[0].params.cutoff > 0);
+  assert.deepEqual(p.patterns[0].notes, {});
+  assert.equal(p.selected.pattern, 2);
+  assert.ok(s.uid() > 9, 'new ids never collide with loaded ones');
+});
+
+test('no-op checkpoints do not add undo steps', () => {
+  const s = new Store();
+  s.checkpoint();
+  s.checkpoint();
+  assert.equal(s.undoStack.length, 1);
+});

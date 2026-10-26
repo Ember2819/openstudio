@@ -50,6 +50,35 @@ export const EFFECT_DEFS = {
     ],
     create: (ctx, p) => createPhaser(ctx, p),
   },
+  flanger: {
+    name: 'Flanger',
+    params: [
+      { key: 'rate', label: 'Rate', min: 0.05, max: 5, def: 0.25, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+      { key: 'depth', label: 'Depth', min: 0, max: 1, def: 0.6, fmt: pct },
+      { key: 'feedback', label: 'Feedback', min: -0.9, max: 0.9, def: 0.5, fmt: pct },
+      { key: 'mix', label: 'Mix', min: 0, max: 1, def: 0.5, fmt: pct },
+    ],
+    create: (ctx, p) => createFlanger(ctx, p),
+  },
+  tremolo: {
+    name: 'Tremolo',
+    params: [
+      { key: 'rate', label: 'Rate', min: 0.1, max: 20, def: 4, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+      { key: 'depth', label: 'Depth', min: 0, max: 1, def: 0.5, fmt: pct },
+      { key: 'stereo', label: 'Auto-pan', min: 0, max: 1, def: 0, fmt: pct },
+    ],
+    create: (ctx, p) => createTremolo(ctx, p),
+  },
+  bitcrusher: {
+    name: 'Bitcrusher',
+    params: [
+      { key: 'bits', label: 'Bits', min: 1, max: 16, def: 6, step: 1, fmt: (v) => `${Math.round(v)} bit` },
+      { key: 'drive', label: 'Drive', min: 0, max: 24, def: 0, fmt: (v) => `+${v.toFixed(1)} dB` },
+      { key: 'tone', label: 'Tone', min: 500, max: 20000, def: 20000, log: true, fmt: (v) => (v >= 19999 ? 'Open' : `${Math.round(v)} Hz`) },
+      { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+    ],
+    create: (ctx, p) => createBitcrusher(ctx, p),
+  },
   stereo: {
     name: 'Stereo width',
     params: [{ key: 'width', label: 'Width', min: 0, max: 2, def: 1, fmt: (v) => (v === 0 ? 'Mono' : `${Math.round(v * 100)}%`) }],
@@ -289,6 +318,84 @@ function createPhaser(ctx, p) {
   };
   apply();
   return { input: m.input, output: m.output, set(k, v) { p[k] = v; apply(); }, dispose() { lfo.stop(); } };
+}
+
+function createFlanger(ctx, p) {
+  const m = mixer(ctx);
+  const delay = ctx.createDelay(0.05);
+  delay.delayTime.value = 0.004;
+  const lfo = ctx.createOscillator();
+  const depth = ctx.createGain();
+  const fb = ctx.createGain();
+  lfo.connect(depth).connect(delay.delayTime);
+  m.input.connect(delay);
+  delay.connect(fb).connect(delay);
+  delay.connect(m.wet).connect(m.output);
+  lfo.start();
+  const apply = () => {
+    lfo.frequency.value = p.rate;
+    depth.gain.value = p.depth * 0.0035; // sweep 0.5..7.5 ms around the 4 ms centre
+    fb.gain.value = p.feedback;
+    m.setMix(p.mix);
+  };
+  apply();
+  return { input: m.input, output: m.output, set(k, v) { p[k] = v; apply(); }, dispose() { lfo.stop(); } };
+}
+
+function createTremolo(ctx, p) {
+  const input = ctx.createGain();
+  const output = ctx.createGain();
+  const split = ctx.createChannelSplitter(2);
+  const merge = ctx.createChannelMerger(2);
+  const lfo = ctx.createOscillator();
+  const inv = ctx.createGain(); // LFO for the right side; phase-flipped as auto-pan increases
+  inv.gain.value = 1;
+  const amps = [ctx.createGain(), ctx.createGain()];
+  const depths = [ctx.createGain(), ctx.createGain()];
+  input.connect(split);
+  amps.forEach((g, c) => { split.connect(g, c); g.connect(merge, 0, c); });
+  lfo.connect(depths[0]).connect(amps[0].gain);
+  lfo.connect(inv).connect(depths[1]).connect(amps[1].gain);
+  merge.connect(output);
+  lfo.start();
+  const apply = () => {
+    lfo.frequency.value = p.rate;
+    // gain swings between 1 - depth and 1
+    for (const g of amps) g.gain.value = 1 - p.depth / 2;
+    for (const d of depths) d.gain.value = p.depth / 2;
+    inv.gain.value = 1 - 2 * p.stereo;
+  };
+  apply();
+  return { input, output, set(k, v) { p[k] = v; apply(); }, dispose() { lfo.stop(); } };
+}
+
+function createBitcrusher(ctx, p) {
+  const m = mixer(ctx);
+  const pre = ctx.createGain();
+  const shaper = ctx.createWaveShaper();
+  const tone = ctx.createBiquadFilter();
+  tone.type = 'lowpass';
+  m.input.connect(pre).connect(shaper).connect(tone).connect(m.wet).connect(m.output);
+  let bits = -1;
+  const apply = () => {
+    const b = Math.round(p.bits);
+    if (b !== bits) {
+      bits = b;
+      // quantise -1..1 to 2^bits levels (the curve is sampled finely enough to keep the steps sharp)
+      const n = 8192;
+      const levels = 2 ** (b - 1);
+      const curve = new Float32Array(n);
+      for (let i = 0; i < n; i++) curve[i] = Math.round(((i / (n - 1)) * 2 - 1) * levels) / levels;
+      shaper.curve = curve;
+    }
+    pre.gain.value = Math.pow(10, p.drive / 20);
+    tone.frequency.value = Math.min(p.tone, ctx.sampleRate / 2);
+    // a fully wet crusher shouldn't keep the dry signal underneath
+    m.setMix(p.mix);
+    if (p.mix >= 0.999) m.dry.gain.value = 0;
+  };
+  apply();
+  return { input: m.input, output: m.output, set(k, v) { p[k] = v; apply(); }, dispose() {} };
 }
 
 function createStereo(ctx, p) {
