@@ -144,9 +144,14 @@ export function applyTarget(store, engine, t, value, time, value1 = null, time1 
       else ramp(node.gain.gain, channelGain(value), value1 == null ? null : channelGain(value1));
       break;
     }
-    case 'fx':
-      engine.setEffectParam(t.track, t.slot, t.key, value);
+    case 'fx': {
+      // effect parameters are plain properties, not AudioParams: apply them when the step actually sounds
+      // (the scheduler runs ahead of the audio clock; offline renders apply them step by step instead)
+      const apply = () => engine.setEffectParam(t.track, t.slot, t.key, value);
+      const delay = engine.offline ? 0 : time - ctx.currentTime;
+      if (delay > 0.005) setTimeout(apply, delay * 1000); else apply();
       break;
+    }
     case 'chparam': {
       const ch = store.channel(t.id);
       if (ch) ch.params[t.key] = value;
@@ -155,5 +160,4 @@ export function applyTarget(store, engine, t, value, time, value1 = null, time1 
     default:
       break;
   }
-  void ctx;
 }

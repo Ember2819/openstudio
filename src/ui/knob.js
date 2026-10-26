@@ -97,6 +97,14 @@ export function createKnob(opts) {
     if (emit) opts.onChange?.(value);
   };
 
+  // one undo step per gesture: scrolling or double-clicking right after a drag doesn't add more
+  let lastStart = -Infinity;
+  const start = (coalesce) => {
+    const now = performance.now();
+    if (!coalesce || now - lastStart > 600) opts.onStart?.();
+    lastStart = now;
+  };
+
   let drag = null;
   el.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -104,7 +112,7 @@ export function createKnob(opts) {
     e.stopPropagation();
     el.setPointerCapture(e.pointerId);
     drag = { y: e.clientY, t: toNorm(value) };
-    opts.onStart?.();
+    start(false);
     showBubble(e.clientX, e.clientY, text());
   });
   el.addEventListener('pointermove', (e) => {
@@ -117,14 +125,14 @@ export function createKnob(opts) {
   const end = () => { drag = null; hideBubble(); };
   el.addEventListener('pointerup', end);
   el.addEventListener('pointercancel', end);
-  el.addEventListener('dblclick', () => { opts.onStart?.(); set(def, true); });
+  el.addEventListener('dblclick', () => { start(true); set(def, true); });
   el.addEventListener('wheel', (e) => {
     e.preventDefault();
-    opts.onStart?.();
+    start(true);
     const t = clamp(toNorm(value) - Math.sign(e.deltaY) * (e.shiftKey ? 0.005 : 0.03), 0, 1);
     set(fromNorm(t), true);
   }, { passive: false });
-  if (opts.target) el.addEventListener('contextmenu', (e) => showAutomationMenu(e, opts.target, [{ label: 'Reset to default', action: () => { opts.onStart?.(); set(def, true); } }]));
+  if (opts.target) el.addEventListener('contextmenu', (e) => showAutomationMenu(e, opts.target, [{ label: 'Reset to default', action: () => { start(false); set(def, true); } }]));
   el.addEventListener('pointerenter', () => hint.set(text()));
   el.addEventListener('pointerleave', () => { if (!drag) hint.clear(); });
 

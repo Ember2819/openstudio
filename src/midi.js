@@ -20,6 +20,8 @@ export async function initMidi(app) {
         const key = `midi:${input.id}:${a}`;
         if (cmd === 0x90 && b > 0) app.input.noteOn(key, a, b / 127);
         else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) app.input.noteOff(key);
+        else if (cmd === 0xb0 && a === 64) app.input.setSustain(b >= 64);
+        else if (cmd === 0xb0 && (a === 120 || a === 123)) app.input.allOff();
       };
     }
     app.emit('midi');

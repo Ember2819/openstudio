@@ -27,6 +27,12 @@ const SCALES = {
   'Major pentatonic': [0, 2, 4, 7, 9], 'Minor pentatonic': [0, 3, 5, 7, 10], 'Blues': [0, 3, 5, 6, 7, 10],
 };
 const ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+// chord stamps (intervals above the clicked key), like FL Studio's stamp tool
+const CHORDS = {
+  'Major': [0, 4, 7], 'Minor': [0, 3, 7], 'Power': [0, 7, 12], 'Sus2': [0, 2, 7], 'Sus4': [0, 5, 7],
+  'Diminished': [0, 3, 6], 'Augmented': [0, 4, 8], 'Major 7': [0, 4, 7, 11], 'Minor 7': [0, 3, 7, 10],
+  'Dominant 7': [0, 4, 7, 10], 'Minor 9': [0, 3, 7, 10, 14], 'Major 9': [0, 4, 7, 11, 14], 'Add 9': [0, 4, 7, 14],
+};
 
 export function createPianoRoll(app) {
   const { store, wm, transport, engine } = app;
@@ -37,7 +43,7 @@ export function createPianoRoll(app) {
     visible: false,
   });
 
-  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */ };
+  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */, chord: null };
 
   // ---------------------------------------------------------------- layout
   const toolBtns = TOOLS.map(([id, ico, tip]) => {
@@ -67,6 +73,36 @@ export function createPianoRoll(app) {
       ...Object.keys(SCALES).map((name) => ({ label: name, checked: S.scale?.name === name, action: () => setScale({ root, name }) })),
     ]);
   });
+  const chordLabel = h('span', {}, 'Stamp: off');
+  const chordBtn = h('button', { class: 'dd', 'data-hint': 'Stamp — draw whole chords with one click' }, chordLabel, h('span', { class: 'caret' }, '▼'));
+  chordBtn.addEventListener('click', () => {
+    const setChord = (c) => { S.chord = c; chordLabel.textContent = c ? `Stamp: ${c}` : 'Stamp: off'; };
+    showMenuBelow(chordBtn, [
+      { label: 'Off (single notes)', checked: !S.chord, action: () => setChord(null) },
+      { separator: true },
+      ...Object.keys(CHORDS).map((name) => ({ label: name, checked: S.chord === name, action: () => setChord(name) })),
+    ]);
+  });
+  const toolsBtn = h('button', { class: 'dd', 'data-hint': 'Piano roll tools — act on the selection, or on every note when nothing is selected' }, h('span', {}, 'Tools'), h('span', { class: 'caret' }, '▼'));
+  toolsBtn.addEventListener('click', () => {
+    showMenuBelow(toolsBtn, [
+      { label: 'Quick quantize', shortcut: 'Ctrl+Q', action: () => quantize() },
+      { label: 'Quantize start times only', action: () => quantize(true) },
+      { label: 'Quick legato', shortcut: 'Ctrl+L', action: () => legato() },
+      { separator: true },
+      { label: 'Duplicate', shortcut: 'Ctrl+B', action: () => duplicate() },
+      { label: 'Transpose octave up', shortcut: 'Ctrl+↑', action: () => transpose(12) },
+      { label: 'Transpose octave down', shortcut: 'Ctrl+↓', action: () => transpose(-12) },
+      { label: 'Flip horizontally', action: () => flip() },
+      { separator: true },
+      { label: 'Randomize velocity', shortcut: 'Alt+R', action: () => randomize() },
+      { label: 'Humanize timing', action: () => humanize() },
+      { label: 'Scale velocity to 100%', action: () => edit((list) => { const max = Math.max(...list.map((n) => n.v)); for (const n of list) n.v = clamp(n.v / max, 0.02, 1); }) },
+      { separator: true },
+      { label: 'Select all', shortcut: 'Ctrl+A', action: () => { S.selection = new Set(notes()); invalidate(); } },
+      { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { S.selection.clear(); invalidate(); } },
+    ]);
+  });
   const ghostBtn = h('button', { class: 'tbtn on', 'data-hint': 'Show notes of other channels as ghosts', onClick: () => { S.ghosts = !S.ghosts; ghostBtn.classList.toggle('on', S.ghosts); invalidate(); } }, icon('note'));
   const zoomOut = h('button', { class: 'tbtn', 'data-hint': 'Zoom out (Ctrl+wheel)', onClick: () => zoom(1 / 1.25) }, '−');
   const zoomIn = h('button', { class: 'tbtn', 'data-hint': 'Zoom in (Ctrl+wheel)', onClick: () => zoom(1.25) }, '+');
@@ -78,6 +114,8 @@ export function createPianoRoll(app) {
     h('div', { class: 'pr-sep' }),
     chanBtn,
     scaleBtn,
+    chordBtn,
+    toolsBtn,
     ghostBtn,
     h('div', { class: 'tb-flex' }),
     h('div', { class: 'tb-group' }, zoomOut, zoomIn));
@@ -525,10 +563,11 @@ export function createPianoRoll(app) {
     store.checkpoint();
     const len = S.lastLen ?? (snap() || 1);
     const start = Math.max(0, snapFloor(step, sz));
-    const note = store.addNote(pat(), ch.id, { p: pitch, s: start, l: len, v: 0.78 });
-    S.selection.add(note);
-    drag = { type: 'resize', anchor: step, orig: [{ n: note, l: note.l }], primary: note, created: true };
-    playPreview(ch, pitch, 0.78);
+    const pitches = (S.chord ? CHORDS[S.chord] : [0]).map((i) => pitch + i).filter((p) => p < PITCHES);
+    const made = pitches.map((p) => store.addNote(pat(), ch.id, { p, s: start, l: len, v: 0.78 }));
+    made.forEach((n) => S.selection.add(n));
+    drag = { type: 'resize', anchor: step, orig: made.map((n) => ({ n, l: n.l })), primary: made[0], created: true };
+    for (const p of pitches) playPreview(ch, p, 0.78, true);
     updateSpacer();
     emitNotes();
     invalidate();
@@ -599,11 +638,11 @@ export function createPianoRoll(app) {
     invalidate();
   }
 
-  let previewVoice = null;
-  function playPreview(ch, pitch, vel) {
-    previewVoice?.release(engine.ctx.currentTime);
+  let previewVoices = [];
+  function playPreview(ch, pitch, vel, keepOthers = false) {
+    if (!keepOthers) { for (const v of previewVoices) v?.release(engine.ctx.currentTime); previewVoices = []; }
     S.pressed.add(pitch);
-    previewVoice = engine.preview(ch, pitch, vel, 0.35);
+    previewVoices.push(engine.preview(ch, pitch, vel, 0.35));
     setTimeout(() => { S.pressed.delete(pitch); invalidate(); }, 220);
   }
 
@@ -697,37 +736,92 @@ export function createPianoRoll(app) {
   });
   cVel.addEventListener('pointermove', (e) => { if (velDrag) setVelFromPointer(e); });
   cVel.addEventListener('pointerup', () => { velDrag = null; });
+  cVel.addEventListener('pointercancel', () => { velDrag = null; });
+
+  // ------------------------------------------------------------ note tools
+  /** Run `fn(list)` on the selected notes (or all notes) as one undo step. */
+  function edit(fn) {
+    const target = S.selection.size ? [...S.selection] : notes();
+    if (!target.length || !chan()) return;
+    store.checkpoint();
+    fn(target);
+    store.normalizePattern(pat());
+    updateSpacer(); emitNotes(); invalidate();
+  }
+  function removeNotes(list) {
+    const kill = new Set(list);
+    const ch = chan();
+    if (!ch) return;
+    pat().notes[ch.id] = notes().filter((n) => !kill.has(n));
+    for (const n of kill) S.selection.delete(n);
+  }
+  const quantize = (startsOnly = false) => edit((list) => {
+    const q = snap() || 1;
+    for (const n of list) { n.s = Math.max(0, snapRound(n.s, q)); if (!startsOnly) n.l = Math.max(q, snapRound(n.l, q)); }
+  });
+  // each note lasts until the next note start (chords share the same next start)
+  const legato = () => edit((list) => {
+    const starts = [...new Set(list.map((n) => n.s))].sort((a, b) => a - b);
+    for (const n of list) {
+      const next = starts.find((s0) => s0 > n.s + 1e-6);
+      if (next != null) n.l = next - n.s;
+    }
+  });
+  const transpose = (semis) => edit((list) => {
+    const lo = Math.min(...list.map((n) => n.p)), hi = Math.max(...list.map((n) => n.p));
+    const d = clamp(semis, -lo, PITCHES - 1 - hi);
+    for (const n of list) n.p += d;
+  });
+  const flip = () => edit((list) => {
+    const lo = Math.min(...list.map((n) => n.s)), hi = Math.max(...list.map((n) => n.s + n.l));
+    for (const n of list) n.s = lo + hi - (n.s + n.l);
+  });
+  const randomize = () => edit((list) => { for (const n of list) n.v = clamp(n.v + (Math.random() * 2 - 1) * 0.15, 0.05, 1); });
+  const humanize = () => edit((list) => { for (const n of list) n.s = Math.max(0, n.s + (Math.random() * 2 - 1) * 0.06); });
+  function duplicate() {
+    const sel = [...S.selection];
+    if (!sel.length || !chan()) return;
+    store.checkpoint();
+    const min = Math.min(...sel.map((n) => n.s));
+    const max = Math.max(...sel.map((n) => n.s + n.l));
+    const q = snap() || 1;
+    const span = Math.max(q, Math.ceil((max - min) / q - 1e-6) * q);
+    S.selection.clear();
+    for (const n of sel) S.selection.add(store.addNote(pat(), chan().id, { p: n.p, s: n.s + span, l: n.l, v: n.v }));
+    updateSpacer(); emitNotes(); invalidate();
+  }
 
   // ---------------------------------------------------------------- keyboard
   root.addEventListener('keydown', (e) => {
     const ctrl = e.ctrlKey || e.metaKey;
     const sel = [...S.selection];
+    const key = e.key.toLowerCase();
     const handled = () => { e.preventDefault(); e.stopPropagation(); };
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (!sel.length) return;
       handled();
       store.checkpoint();
-      const list = notes();
-      for (const n of sel) list.splice(list.indexOf(n), 1);
-      S.selection.clear();
+      removeNotes(sel);
       emitNotes(); invalidate();
-    } else if (ctrl && e.key.toLowerCase() === 'a') {
+    } else if (ctrl && key === 'a') {
       handled();
       S.selection = new Set(notes());
       invalidate();
-    } else if (ctrl && (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'x')) {
+    } else if (ctrl && key === 'd') {
+      handled();
+      S.selection.clear();
+      invalidate();
+    } else if (ctrl && (key === 'c' || key === 'x')) {
       if (!sel.length) return;
       handled();
       const min = Math.min(...sel.map((n) => n.s));
       S.clipboard = sel.map((n) => ({ ...n, s: n.s - min }));
-      if (e.key.toLowerCase() === 'x') {
+      if (key === 'x') {
         store.checkpoint();
-        const list = notes();
-        for (const n of sel) list.splice(list.indexOf(n), 1);
-        S.selection.clear();
+        removeNotes(sel);
         emitNotes(); invalidate();
       }
-    } else if (ctrl && e.key.toLowerCase() === 'v') {
+    } else if (ctrl && key === 'v') {
       if (!S.clipboard.length || !chan()) return;
       handled();
       store.checkpoint();
@@ -736,37 +830,29 @@ export function createPianoRoll(app) {
       S.selection.clear();
       for (const c of S.clipboard) S.selection.add(store.addNote(pat(), chan().id, { p: c.p, s: c.s + start, l: c.l, v: c.v }));
       updateSpacer(); emitNotes(); invalidate();
-    } else if (ctrl && e.key.toLowerCase() === 'd') {
-      if (!sel.length) return;
+    } else if (ctrl && key === 'b') {
       handled();
-      store.checkpoint();
-      const min = Math.min(...sel.map((n) => n.s));
-      const max = Math.max(...sel.map((n) => n.s + n.l));
-      const span = Math.ceil((max - min) / (snap() || 1)) * (snap() || 1);
-      S.selection.clear();
-      for (const n of sel) S.selection.add(store.addNote(pat(), chan().id, { p: n.p, s: n.s + span, l: n.l, v: n.v }));
-      updateSpacer(); emitNotes(); invalidate();
-    } else if (ctrl && e.key.toLowerCase() === 'q') {
+      duplicate();
+    } else if (ctrl && key === 'q') {
       handled();
-      const target = sel.length ? sel : notes();
-      if (!target.length) return;
-      store.checkpoint();
-      const q = snap() || 1;
-      for (const n of target) { n.s = Math.max(0, snapRound(n.s, q)); n.l = Math.max(q, snapRound(n.l, q)); }
-      store.normalizePattern(pat());
-      updateSpacer(); emitNotes(); invalidate();
+      quantize();
+    } else if (ctrl && key === 'l') {
+      handled();
+      legato();
+    } else if (e.altKey && key === 'r') {
+      handled();
+      randomize();
     } else if (e.key === 'Escape') {
       S.selection.clear(); invalidate();
     } else if (e.key.startsWith('Arrow') && sel.length) {
       handled();
+      const vertical = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+      if (vertical) { transpose((e.key === 'ArrowUp' ? 1 : -1) * (ctrl || e.shiftKey ? 12 : 1)); return; }
       store.checkpoint();
       const sz = snap() || 0.25;
-      for (const n of sel) {
-        if (e.key === 'ArrowLeft') n.s = Math.max(0, n.s - sz);
-        if (e.key === 'ArrowRight') n.s += sz;
-        if (e.key === 'ArrowUp') n.p = Math.min(PITCHES - 1, n.p + (e.shiftKey ? 12 : 1));
-        if (e.key === 'ArrowDown') n.p = Math.max(0, n.p - (e.shiftKey ? 12 : 1));
-      }
+      const minS = Math.min(...sel.map((n) => n.s));
+      const d = e.key === 'ArrowLeft' ? -Math.min(sz, minS) : sz;
+      for (const n of sel) n.s += d;
       store.normalizePattern(pat());
       updateSpacer(); emitNotes(); invalidate();
     }

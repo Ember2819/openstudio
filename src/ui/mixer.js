@@ -43,7 +43,7 @@ export function createMixer(app) {
       showMenu([
         { label: 'Rename…', action: () => name.dispatchEvent(new MouseEvent('dblclick')) },
         { label: 'Color', submenu: COLORS.map((c) => ({ label: ' ', swatch: c, action: () => { store.checkpoint(); m().color = c; refreshLabels(); } })) },
-        { label: 'Reset', action: () => { store.checkpoint(); Object.assign(m(), { vol: 0.8, pan: 0, mute: false, solo: false, fx: m().fx.map(() => null) }); store.emit('project'); } },
+        { label: 'Reset', action: () => { store.checkpoint(); Object.assign(m(), { vol: 0.8, pan: 0, mute: false, solo: false, fx: m().fx.map(() => null), sends: {} }); engine.syncFx(i); store.emit('mixer'); renderFx(); } },
       ], e.clientX, e.clientY);
     });
 
@@ -73,12 +73,17 @@ export function createMixer(app) {
       select(i);
       fader.setPointerCapture(e.pointerId);
       store.checkpoint();
-      const r = fader.getBoundingClientRect();
-      dragStart = { r };
-      setVol(1 - (e.clientY - r.top) / r.height);
+      // relative drag (clicking never makes the level jump); Shift for fine control
+      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height };
     });
-    fader.addEventListener('pointermove', (e) => { if (dragStart) setVol(1 - (e.clientY - dragStart.r.top) / dragStart.r.height); });
+    fader.addEventListener('pointermove', (e) => {
+      if (!dragStart) return;
+      const d = (dragStart.y - e.clientY) / dragStart.h;
+      setVol(dragStart.vol + d * (e.shiftKey ? 0.2 : 1));
+      if (e.shiftKey) { dragStart = { y: e.clientY, vol: m().vol, h: dragStart.h }; }
+    });
     fader.addEventListener('pointerup', () => { dragStart = null; });
+    fader.addEventListener('pointercancel', () => { dragStart = null; });
     fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8); });
     fader.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'mixer', track: i, param: 'vol' }));
     fader.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02); }, { passive: false });
@@ -176,7 +181,12 @@ export function createMixer(app) {
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showMenu([
-          ...(slot ? [{ label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; engine.syncFx(i); renderFx(); } }] : []),
+          ...(slot ? [
+            { label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; if (openSlot === k) openSlot = -1; engine.syncFx(i); renderFx(); } },
+            { label: 'Move up', disabled: k === 0, action: () => moveSlot(k, -1) },
+            { label: 'Move down', disabled: k === track.fx.length - 1, action: () => moveSlot(k, 1) },
+            { separator: true },
+          ] : []),
           ...Object.entries(EFFECT_DEFS).map(([type, def]) => ({
             label: `${slot ? 'Replace with' : 'Add'} ${def.name}`,
             action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); renderFx(); },
@@ -201,7 +211,7 @@ export function createMixer(app) {
           continue;
         }
         const k = createKnob({
-          value: slot.params[meta.key], min: meta.min, max: meta.max, def: meta.def, size: 34, log: meta.log, label: meta.label, fmt: meta.fmt,
+          value: slot.params[meta.key], min: meta.min, max: meta.max, def: meta.def, size: 34, log: meta.log, step: meta.step || 0, label: meta.label, fmt: meta.fmt,
           onStart: () => store.checkpoint(),
           target: { kind: 'fx', track: i, slot: openSlot, key: meta.key },
           onChange: (v) => { slot.params[meta.key] = v; engine.setEffectParam(i, openSlot, meta.key, v); store.dirty = true; },
@@ -210,6 +220,25 @@ export function createMixer(app) {
       }
       fxPanel.append(h('div', { class: 'mx-fx-edit' }, h('div', { class: 'mx-fx-edit-title' }, def.name), knobs));
     }
+  }
+
+  /** Swap an effect slot with its neighbour (automation targets follow the effect). */
+  function moveSlot(k, dir) {
+    const i = store.project.selected.mixer;
+    const fx = mixer()[i].fx;
+    const j = k + dir;
+    if (j < 0 || j >= fx.length) return;
+    store.checkpoint();
+    [fx[k], fx[j]] = [fx[j], fx[k]];
+    for (const a of store.project.automations) {
+      const t = a.target;
+      if (t.kind !== 'fx' || t.track !== i) continue;
+      if (t.slot === k) t.slot = j; else if (t.slot === j) t.slot = k;
+    }
+    // the engine keys live effects by slot, so rebuild them in their new positions
+    engine.resetFx(i);
+    if (openSlot === k) openSlot = j; else if (openSlot === j) openSlot = k;
+    renderFx();
   }
 
   function sendsBlock(i, track) {

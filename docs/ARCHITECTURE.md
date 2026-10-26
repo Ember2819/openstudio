@@ -60,6 +60,8 @@ handles by rebuilding.
 - `instruments.js` — built-in synth, sampler and synthesized drums plus the parameter metadata that drives the
   settings window. `effects.js` — effect factories and their parameter metadata.
 - `catalog.js` — instrument/drum-kit catalogue built from the loaded SoundFont. `wav.js` — WAV encoder.
+- `render.js` — offline rendering for export. It schedules steps just ahead of the render position with
+  `OfflineAudioContext.suspend()`, so parameter automation lands on the right step exactly as in live playback.
 
 The bundled SoundFont is loaded through the main process (`asset:read`) and shared between the live engine and
 the offline engine used for export.
@@ -68,6 +70,12 @@ the offline engine used for export.
 Targets are JSON descriptors (`{ kind: 'mixer', track, param }`, `fx`, `channel`, `chparam`). Knobs opt in with a
 `target` option; right-click → *Create automation clip*. During song playback `scheduleStep` evaluates each
 automation clip and ramps the matching `AudioParam` (or sets the effect parameter).
+
+## Files and safety nets
+- `midifile.js` writes Standard MIDI Files; `midiimport.js` reads them (type 0/1, running status, RMID) and
+  imports one channel per track/MIDI channel into a new pattern (channel 10 becomes a drum kit).
+- `autosave.js` writes unsaved work to IndexedDB every 30 s and offers to recover it on the next start.
+- `Store.load()` repairs missing or invalid fields so old and hand-edited projects open safely.
 
 ## UI (`src/ui/`)
 - `windows.js` — floating window manager (drag, resize, maximize, persisted layout).

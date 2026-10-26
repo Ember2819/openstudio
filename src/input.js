@@ -2,6 +2,8 @@
 export function createInput(app) {
   const { store, engine, transport } = app;
   const held = new Map(); // source key -> { ch, pitch, voice }
+  let sustain = false;
+  const sustained = []; // voices whose key was released while the pedal was down
 
   function noteOn(key, pitch, vel = 0.8) {
     const ch = store.selectedChannel;
@@ -17,7 +19,8 @@ export function createInput(app) {
     const h = held.get(key);
     if (!h) return;
     held.delete(key);
-    h.voice?.release(engine.ctx.currentTime);
+    if (sustain) sustained.push(h.voice);
+    else h.voice?.release(engine.ctx.currentTime);
     transport.recordNoteOff(h.ch, h.pitch);
     app.emit('keyboardNote', { pitch: h.pitch, on: false });
   }
@@ -26,5 +29,13 @@ export function createInput(app) {
     for (const key of [...held.keys()]) noteOff(key);
   }
 
-  return { noteOn, noteOff, allOff };
+  /** Sustain pedal (MIDI CC 64): note-offs are held back until the pedal is lifted. */
+  function setSustain(on) {
+    sustain = on;
+    if (on) return;
+    const now = engine.ctx.currentTime;
+    for (const v of sustained.splice(0)) v?.release(now);
+  }
+
+  return { noteOn, noteOff, allOff: () => { allOff(); setSustain(false); }, setSustain };
 }

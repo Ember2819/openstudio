@@ -11,6 +11,8 @@ const vlq = (n) => {
 const u32 = (n) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
 const u16 = (n) => [(n >> 8) & 255, n & 255];
 const text = (s) => [...new TextEncoder().encode(s)];
+/** Meta text event body: length is the UTF-8 byte count, not the JS string length. */
+const metaText = (type, s) => { const b = text(s); return [0xff, type, ...vlq(b.length), ...b]; };
 
 function chunk(id, data) {
   return [...text(id), ...u32(data.length), ...data];
@@ -48,7 +50,7 @@ export function buildMidi(store, { song }) {
 
   const tempo = Math.round(60000000 / proj.bpm);
   tracks.push(chunk('MTrk', [
-    0, 0xff, 0x03, ...vlq(proj.name.length), ...text(proj.name),
+    0, ...metaText(0x03, proj.name),
     0, 0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255,
     0, 0xff, 0x58, 0x04, 4, 2, 24, 8,
     0, 0xff, 0x2f, 0x00,
@@ -61,18 +63,23 @@ export function buildMidi(store, { song }) {
     const isDrum = ch.type === 'sf' && ch.bank === 128;
     let midiCh;
     if (isDrum) midiCh = 9;
-    else { if (nextChannel === 9) nextChannel++; midiCh = nextChannel++ % 16; }
+    else {
+      // 16 channels minus the GM drum channel; wrap around rather than ever landing on 9
+      midiCh = nextChannel % 15;
+      if (midiCh >= 9) midiCh++;
+      nextChannel++;
+    }
 
     const events = [];
     for (const n of notes) {
-      const key = isDrum && ch.fixedKey != null ? ch.fixedKey + (n.p - 60) : n.p;
+      const key = Math.max(0, Math.min(127, isDrum && ch.fixedKey != null ? ch.fixedKey + (n.p - 60) : n.p));
       const vel = Math.max(1, Math.min(127, Math.round(n.v * 127)));
       events.push({ t: Math.round(n.s * TICKS_PER_STEP), order: 1, data: [0x90 | midiCh, key, vel] });
       events.push({ t: Math.max(Math.round((n.s + n.l) * TICKS_PER_STEP), Math.round(n.s * TICKS_PER_STEP) + 1), order: 0, data: [0x80 | midiCh, key, 0] });
     }
     events.sort((a, b) => a.t - b.t || a.order - b.order);
 
-    const body = [0, 0xff, 0x03, ...vlq(ch.name.length), ...text(ch.name)];
+    const body = [0, ...metaText(0x03, ch.name)];
     if (ch.type === 'sf' && !isDrum) body.push(0, 0xc0 | midiCh, ch.program & 127);
     let last = 0;
     for (const e of events) { body.push(...vlq(e.t - last), ...e.data); last = e.t; }

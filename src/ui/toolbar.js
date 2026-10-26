@@ -20,6 +20,7 @@ export function createToolbar(app) {
       { separator: true },
       { label: 'Open demo project', action: actions.loadDemo },
       { label: 'Import sample…', action: actions.addSamplerFromFile },
+      { label: 'Import MIDI file…', action: () => actions.importMidiFile() },
       { separator: true },
       { label: 'Export audio (WAV)…', shortcut: 'Ctrl+R', action: actions.exportWav },
       { label: 'Export MIDI…', action: actions.exportMidi },
@@ -294,7 +295,8 @@ export function createToolbar(app) {
     }
   }
   function update() {
-    const pos = transport.position();
+    // pattern mode shows the position inside the looping pattern, like FL Studio
+    const pos = transport.mode === 'pattern' && transport.playing ? transport.patternPosition() : transport.position();
     if (timeMode === 'ms') {
       const t = transport.formatTime(pos);
       timeBig.textContent = `${t.m}:${String(t.s).padStart(2, '0')}`;
@@ -320,5 +322,11 @@ export function createToolbar(app) {
     redoBtn.disabled = !store.redoStack.length;
   }
 
-  return { update, refreshProject };
+  /** Show a status message (e.g. while rendering) in the hint panel; null clears it. */
+  const setBusy = (text) => {
+    hintText.textContent = text || '';
+    document.body.classList.toggle('busy', !!text);
+  };
+
+  return { update, refreshProject, setBusy };
 }
