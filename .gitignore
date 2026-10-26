@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# large audio assets are downloaded by `npm run assets` (see assets/CREDITS.md)
+assets/soundfonts/*.sf2
+
+# build output / packaging
+dist/
+out/
+*.tgz
+
+# logs, caches, temp
+*.log
+npm-debug.log*
+.eslintcache
+.cache/
+tmp/
+
+# editors / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# local project files you may save while testing
+/*.osp

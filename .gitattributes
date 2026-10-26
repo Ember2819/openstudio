@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.sf2 binary
+*.png binary
+*.wav binary
+*.mp3 binary
+*.osp text

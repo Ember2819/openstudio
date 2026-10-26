@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Lint + unit tests (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - name: Restore instrument bank
+        uses: actions/cache@v4
+        with:
+          path: assets/soundfonts
+          key: soundfont-${{ hashFiles('scripts/fetch-assets.mjs') }}
+      - run: npm run assets
+      - run: npm test
+
+  e2e:
+    name: End-to-end smoke test (Electron)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: System libraries for Electron
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1 libasound2t64 libxss1 libxtst6
+      - run: npm ci
+      - name: Restore instrument bank
+        uses: actions/cache@v4
+        with:
+          path: assets/soundfonts
+          key: soundfont-${{ hashFiles('scripts/fetch-assets.mjs') }}
+      - run: npm run assets
+      - run: npm run test:e2e

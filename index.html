@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; script-src 'self'">
+  <title>OpenStudio</title>
+  <link rel="stylesheet" href="styles/theme.css">
+  <link rel="stylesheet" href="styles/toolbar.css">
+  <link rel="stylesheet" href="styles/windows.css">
+  <link rel="stylesheet" href="styles/panels.css">
+</head>
+<body>
+  <div id="app">
+    <header id="toolbar"></header>
+    <div id="workspace">
+      <aside id="browser"></aside>
+      <div id="browser-splitter"></div>
+      <main id="desktop"></main>
+    </div>
+  </div>
+  <div id="overlay-root"></div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

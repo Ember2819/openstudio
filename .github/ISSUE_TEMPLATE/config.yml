@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/Ember2819/openstudio/discussions
+    about: Ask questions and share ideas in Discussions.

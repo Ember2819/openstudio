@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an improvement or a missing DAW feature
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the workflow, not just the feature. Mention how other DAWs handle it if that helps.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to see?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered

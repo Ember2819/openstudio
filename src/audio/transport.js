@@ -1,0 +1,252 @@
+import { Emitter } from '../util.js';
+import { STEPS_PER_BEAT, STEPS_PER_BAR } from '../state.js';
+import { applyTarget, curveAt, normToValue, targetValid } from '../automation.js';
+
+const LOOKAHEAD = 0.12; // seconds scheduled ahead
+const TICK_MS = 25;
+
+/**
+ * Fire everything that starts on `step`: notes, audio clips, automation. Shared by live playback and
+ * offline export. opts: { metronome, first } — `first` is true on the first step after a start/seek/loop jump,
+ * so audio clips that are already running get started part-way in.
+ */
+export function scheduleStep(store, engine, step, time, sd, opts = {}) {
+  const proj = store.project;
+  if (opts.metronome && step % STEPS_PER_BEAT === 0) engine.click(time, step % STEPS_PER_BAR === 0);
+
+  const anySolo = proj.channels.some((c) => c.solo);
+  const swing = proj.swing || 0;
+  const emit = (pat, local) => {
+    const shift = Math.floor(local) % 2 === 1 ? swing * sd * 0.5 : 0;
+    for (const ch of proj.channels) {
+      if (ch.mute || (anySolo && !ch.solo)) continue;
+      const notes = pat.notes[ch.id];
+      if (!notes) continue;
+      for (const n of notes) {
+        if (n.m) continue;
+        if (n.s >= local - 1e-6 && n.s < local + 1 - 1e-6) {
+          engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd);
+        }
+      }
+    }
+  };
+
+  if (proj.mode === 'pattern') {
+    const pat = store.currentPattern;
+    if (pat) emit(pat, step % store.patternSteps(pat));
+    return;
+  }
+
+  for (const clip of proj.playlist.clips) {
+    if (clip.mute || step < clip.start || step >= clip.start + clip.len) continue;
+    const track = proj.playlist.tracks[clip.track];
+    if (track?.mute) continue;
+    const type = clip.type || 'pattern';
+    if (type === 'pattern') {
+      const pat = store.pattern(clip.pat);
+      if (!pat) continue;
+      const len = store.patternSteps(pat);
+      emit(pat, (((step - clip.start + clip.offset) % len) + len) % len);
+    } else if (type === 'audio') {
+      if (step !== clip.start && !(opts.first && step > clip.start)) continue;
+      const sample = store.samples.get(clip.sampleId);
+      if (!sample?.buffer) continue;
+      const into = step - clip.start;
+      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1, clip.id);
+    } else if (type === 'auto') {
+      const auto = store.automation(clip.autoId);
+      if (!auto || !targetValid(store, auto.target)) continue;
+      const local = step - clip.start;
+      const v0 = normToValue(store, auto.target, curveAt(auto.points, local));
+      const v1 = normToValue(store, auto.target, curveAt(auto.points, local + 1));
+      applyTarget(store, engine, auto.target, v0, time, v1, time + sd);
+    }
+  }
+}
+
+/**
+ * Step-based sequencer. One "step" = a 16th note. Position is exposed in (fractional) steps.
+ */
+export class Transport extends Emitter {
+  constructor(store, engine) {
+    super();
+    this.store = store;
+    this.engine = engine;
+    this.playing = false;
+    this.recording = false;
+    this.metronome = false;
+    this.loopEnabled = false;
+    this.jumped = true;
+    this.startStep = 0; // where Stop returns to
+    this.resumeStep = 0; // where Play resumes from
+    this.nextStep = 0;
+    this.nextTime = 0;
+    this.timer = null;
+    this.queue = []; // {time, step} history for UI position
+    this.openRecordNotes = new Map();
+    store.on('project', () => { if (this.playing) this.stop(); });
+  }
+
+  get ctx() { return this.engine.ctx; }
+  get bpm() { return this.store.project.bpm; }
+  get stepDur() { return 60 / this.bpm / STEPS_PER_BEAT; }
+  get mode() { return this.store.project.mode; }
+
+  setMode(mode) {
+    if (this.store.project.mode === mode) return;
+    this.store.project.mode = mode;
+    this.emit('mode');
+    this.emit('change');
+  }
+
+  toggleMode() { this.setMode(this.mode === 'pattern' ? 'song' : 'pattern'); }
+
+  setBpm(bpm) {
+    this.store.project.bpm = Math.min(522, Math.max(10, Math.round(bpm * 1000) / 1000));
+    this.store.dirty = true;
+    this.emit('bpm');
+  }
+
+  setMetronome(on) { this.metronome = on; this.emit('change'); }
+  setLoop(on) { this.loopEnabled = on; this.emit('change'); }
+  setRecording(on) { this.recording = on; this.emit('change'); }
+
+  // -------------------------------------------------------------- control
+  play() {
+    if (this.playing) return;
+    this.engine.ensure();
+    this.playing = true;
+    this.nextStep = Math.floor(this.resumeStep + 1e-6);
+    this.nextTime = this.ctx.currentTime + 0.05;
+    this.queue = [];
+    this.jumped = true;
+    this._tick();
+    this.timer = setInterval(() => this._tick(), TICK_MS);
+    this.emit('change');
+  }
+
+  pause() {
+    if (!this.playing) return;
+    this.resumeStep = this.position();
+    this._halt();
+    this.emit('change');
+  }
+
+  togglePlay() { this.playing ? this.pause() : this.play(); }
+
+  stop() {
+    this._halt();
+    this.resumeStep = this.startStep;
+    this.closeRecordNotes();
+    this.emit('change');
+  }
+
+  _halt() {
+    clearInterval(this.timer);
+    this.timer = null;
+    this.playing = false;
+    this.engine.killAll();
+  }
+
+  seek(step, { setStart = true } = {}) {
+    step = Math.max(0, step);
+    this.resumeStep = step;
+    if (setStart) this.startStep = step;
+    if (this.playing) {
+      this.engine.killAll();
+      this.nextStep = Math.floor(step);
+      this.nextTime = this.ctx.currentTime + 0.03;
+      this.queue = [];
+      this.jumped = true;
+    }
+    this.emit('change');
+  }
+
+  // -------------------------------------------------------------- position
+  /** Current play position in steps (fractional), based on the audio clock. */
+  position() {
+    if (!this.playing) return this.resumeStep;
+    const now = this.ctx.currentTime;
+    const q = this.queue;
+    let i = q.length - 1;
+    while (i > 0 && q[i].time > now) i--;
+    if (i < 0 || q.length === 0) return this.resumeStep;
+    const e = q[i];
+    if (e.time > now) return Math.max(0, e.step - (e.time - now) / this.stepDur);
+    return e.step + (now - e.time) / this.stepDur;
+  }
+
+  /** Position within the current pattern (pattern mode wraps). */
+  patternPosition() {
+    const pos = this.position();
+    if (this.mode !== 'pattern') return pos;
+    const len = this.store.patternSteps(this.store.currentPattern);
+    return pos % len;
+  }
+
+  // ------------------------------------------------------------ scheduling
+  _tick() {
+    const horizon = this.ctx.currentTime + LOOKAHEAD;
+    while (this.nextTime < horizon) {
+      const loop = this.store.project.loop;
+      if (this.loopEnabled && this.mode === 'song' && loop && this.nextStep >= loop.end) {
+        this.nextStep = loop.start;
+        this.jumped = true;
+      }
+      this._scheduleStep(this.nextStep, this.nextTime);
+      this.jumped = false;
+      this.queue.push({ time: this.nextTime, step: this.nextStep });
+      this.nextTime += this.stepDur;
+      this.nextStep++;
+    }
+    const cutoff = this.ctx.currentTime - 1;
+    while (this.queue.length > 2 && this.queue[1].time < cutoff) this.queue.shift();
+  }
+
+  _scheduleStep(step, time) {
+    scheduleStep(this.store, this.engine, step, time, this.stepDur, { metronome: this.metronome, first: this.jumped });
+  }
+
+  // -------------------------------------------------------------- recording
+  recordNoteOn(ch, pitch, vel) {
+    if (!this.recording || !this.playing || this.mode !== 'pattern') return;
+    const pat = this.store.currentPattern;
+    const pos = this.patternPosition();
+    const snapped = Math.round(pos * 4) / 4;
+    this.store.checkpoint();
+    const note = this.store.addNote(pat, ch.id, { p: pitch, s: snapped % this.store.patternSteps(pat), l: 0.25, v: vel });
+    this.openRecordNotes.set(`${ch.id}:${pitch}`, { note, startPos: pos, pat });
+    this.store.emit('notes');
+  }
+
+  recordNoteOff(ch, pitch) {
+    const open = this.openRecordNotes.get(`${ch.id}:${pitch}`);
+    if (!open) return;
+    this.openRecordNotes.delete(`${ch.id}:${pitch}`);
+    const len = this.patternPosition() - open.startPos;
+    open.note.l = Math.max(0.25, Math.round((len < 0 ? len + this.store.patternSteps(open.pat) : len) * 4) / 4);
+    this.store.normalizePattern(open.pat);
+    this.store.emit('notes');
+  }
+
+  closeRecordNotes() {
+    for (const [, open] of this.openRecordNotes) open.note.l = Math.max(open.note.l, 0.25);
+    this.openRecordNotes.clear();
+  }
+
+  // ---------------------------------------------------------------- format
+  formatTime(step) {
+    const sec = (step * this.stepDur);
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    const cs = Math.floor((sec * 100) % 100);
+    return { m, s, cs };
+  }
+
+  formatBst(step) {
+    const bar = Math.floor(step / STEPS_PER_BAR) + 1;
+    const beat = Math.floor((step % STEPS_PER_BAR) / STEPS_PER_BEAT) + 1;
+    const tick = Math.floor(((step % STEPS_PER_BEAT) / STEPS_PER_BEAT) * 96);
+    return { bar, beat, tick };
+  }
+}

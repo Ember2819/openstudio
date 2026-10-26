@@ -1,0 +1,45 @@
+{
+  "name": "openstudio",
+  "version": "0.2.0",
+  "description": "OpenStudio \u2014 an open-source, pattern-based digital audio workstation (Electron + Web Audio)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "assets": "node scripts/fetch-assets.mjs",
+    "lint": "eslint .",
+    "test": "node --test test/",
+    "test:e2e": "node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "electron": "^35.0.0",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0"
+  },
+  "license": "MIT",
+  "private": true,
+  "author": "Olen Thompson and OpenStudio contributors",
+  "keywords": [
+    "daw",
+    "music",
+    "audio",
+    "web-audio",
+    "electron",
+    "sequencer",
+    "soundfont"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "allowScripts": {
+    "electron@35.7.5": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ember2819/openstudio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ember2819/openstudio/issues"
+  },
+  "homepage": "https://github.com/Ember2819/openstudio#readme"
+}
