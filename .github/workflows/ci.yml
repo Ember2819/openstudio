@@ -22,7 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - name: Restore instrument bank
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: assets/soundfonts
           key: soundfont-${{ hashFiles('scripts/fetch-assets.mjs') }}
@@ -44,7 +44,7 @@ jobs:
           sudo apt-get install -y xvfb libgtk-3-0 libnss3 libgbm1 libasound2t64 libxss1 libxtst6
       - run: npm ci
       - name: Restore instrument bank
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: assets/soundfonts
           key: soundfont-${{ hashFiles('scripts/fetch-assets.mjs') }}
