@@ -1,12 +1,10 @@
 # Builds the Windows version (64-bit) and uploads it to a GitHub Release.
-# Triggers when a version tag (v*) is pushed, or manually from the Actions tab.
+# Manual only (Actions tab); version tags are handled by release.yml, which
+# builds every platform, so this must not also fire on tags.
 name: Windows release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
 
 permissions:
   contents: write
