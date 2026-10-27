@@ -5,8 +5,20 @@ import { showMenu } from './menu.js';
 import { promptDialog } from './dialog.js';
 import { MIXER_TRACKS } from '../state.js';
 import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
+import { overlayScrollbars, wheelScrollsHorizontally } from './scrollbars.js';
+import { T, appearance } from '../theme.js';
 
-const METER_H = 150;
+const METER_W = 12;
+const THUMB_H = 16;
+
+/** Fader position (0..1) for a dB value — the inverse of faderToGain. */
+function dbToFader(db) {
+  const g = Math.pow(10, db / 20);
+  return g >= 1 ? 0.8 + (db / 6) * 0.2 : 0.8 * Math.pow(g, 1 / 2.5);
+}
+const SCALE_MARKS = [6, 0, -6, -12, -24, -48].map((db) => [db > 0 ? `+${db}` : String(db), dbToFader(db)]);
+/** CSS offset from the bottom of the fader for a position; the thumb's centre travels the same line. */
+const faderOffset = (v) => `calc(${v} * (100% - ${THUMB_H}px) + ${THUMB_H / 2}px)`;
 
 export function createMixer(app) {
   const { store, wm, engine } = app;
@@ -22,7 +34,11 @@ export function createMixer(app) {
   const masterHolder = h('div', { class: 'mx-master' });
   const fxPanel = h('div', { class: 'mx-fx' });
   win.body.classList.add('mx-body');
-  win.body.append(masterHolder, h('div', { class: 'mx-scroll' }, stripsEl), fxPanel);
+  const stripsScroll = h('div', { class: 'mx-scroll' }, stripsEl);
+  const stripsPane = h('div', { class: 'mx-scroll-wrap' }, stripsScroll);
+  win.body.append(masterHolder, stripsPane, fxPanel);
+  overlayScrollbars(stripsScroll, { host: stripsPane, y: false });
+  wheelScrollsHorizontally(stripsScroll);
 
   const mixer = () => store.project.mixer;
   const isRouted = (i) => i === 0 || store.project.channels.some((c) => c.mixer === i);
@@ -58,9 +74,9 @@ export function createMixer(app) {
     // fader
     const thumb = h('div', { class: 'mx-thumb' });
     const rail = h('div', { class: 'mx-rail' });
-    const scale = h('div', { class: 'mx-scale' }, ...[['+6', 1], ['0', 0.8], ['-6', 0.69], ['-12', 0.6], ['-24', 0.45], ['-48', 0.22]].map(([t, v]) => h('span', { style: { bottom: `${v * 100}%` } }, t)));
-    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset' }, rail, scale, thumb);
-    const setFaderUi = () => { thumb.style.bottom = `calc(${m().vol * 100}% - 8px)`; };
+    const scale = h('div', { class: 'mx-scale' }, SCALE_MARKS.map(([t, v]) => h('span', { style: { bottom: faderOffset(v) } }, t)));
+    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset' }, rail, thumb);
+    const setFaderUi = () => { thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`; };
     const setVol = (v) => {
       m().vol = clamp(v, 0, 1);
       setFaderUi();
@@ -74,7 +90,7 @@ export function createMixer(app) {
       fader.setPointerCapture(e.pointerId);
       store.checkpoint();
       // relative drag (clicking never makes the level jump); Shift for fine control
-      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height };
+      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height - THUMB_H };
     });
     fader.addEventListener('pointermove', (e) => {
       if (!dragStart) return;
@@ -86,10 +102,13 @@ export function createMixer(app) {
     fader.addEventListener('pointercancel', () => { dragStart = null; });
     fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8); });
     fader.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'mixer', track: i, param: 'vol' }));
-    fader.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02); }, { passive: false });
 
-    const meter = h('canvas', { class: 'mx-meter', width: 18, height: METER_H });
+    const meter = h('canvas', { class: 'mx-meter' });
     const db = h('div', { class: 'mx-db' }, '0.0');
+
+    // the whole scale | fader | meter column takes the wheel, so it never scrolls the mixer by accident
+    const faderWrap = h('div', { class: 'mx-fader-wrap' }, scale, fader, h('div', { class: 'mx-meter-box' }, meter));
+    faderWrap.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02); }, { passive: false });
 
     const muteBtn = h('button', { class: 'mx-btn mute', 'data-hint': 'Mute' }, 'M');
     const soloBtn = h('button', { class: 'mx-btn solo', 'data-hint': 'Solo' }, 'S');
@@ -98,10 +117,10 @@ export function createMixer(app) {
 
     const el = h('div', { class: `mx-strip${i === 0 ? ' master' : ''}`, dataset: { track: i } },
       name, label, pan, h('div', { class: 'mx-btns' }, muteBtn, soloBtn),
-      h('div', { class: 'mx-fader-wrap' }, fader, meter), db);
+      faderWrap, db);
     el.addEventListener('pointerdown', () => { if (store.project.selected.mixer !== i) select(i); });
 
-    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), level: [0, 0], hold: [0, 0], setFaderUi, active: false };
+    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), mw: 0, mh: 0, level: [0, 0], hold: [0, 0], setFaderUi, active: false };
     const refresh = () => {
       const mm = m();
       s.pan.setValue(mm.pan);
@@ -276,13 +295,32 @@ export function createMixer(app) {
   store.on('mixerSelection', () => select(store.project.selected.mixer, true));
   build();
 
-  // Meters
+  // Meters: the canvases stretch with the window, so match their backing store to the laid-out size
+  const sizeMeters = () => {
+    const dpr = window.devicePixelRatio || 1;
+    for (const s of strips) {
+      const hh = s.meter.clientHeight;
+      if (!hh || (s.mh === hh && s.dpr === dpr)) continue;
+      s.mw = METER_W; s.mh = hh; s.dpr = dpr;
+      s.meter.width = Math.round(METER_W * dpr);
+      s.meter.height = Math.round(hh * dpr);
+      s.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      drawMeter(s, [0, 0]);
+    }
+  };
+  win.on('resize', sizeMeters);
+  win.on('show', sizeMeters);
+  store.on('project', sizeMeters);
+  appearance.on('change', () => strips.forEach((s) => drawMeter(s, [0, 0])));
+
   const drawMeter = (s, levels) => {
     const ctx = s.ctx;
-    const w = 18;
+    const w = s.mw, METER_H = s.mh;
+    if (!METER_H) return;
     ctx.clearRect(0, 0, w, METER_H);
-    ctx.fillStyle = '#10181c';
+    ctx.fillStyle = T.meterBg;
     ctx.fillRect(0, 0, w, METER_H);
+    const bw = (w - 3) / 2;
     for (let c = 0; c < 2; c++) {
       const lin = levels[c];
       const target = Math.min(1.25, lin);
@@ -291,13 +329,13 @@ export function createMixer(app) {
       const dbv = 20 * Math.log10(Math.max(s.level[c], 0.00001));
       const frac = clamp((dbv + 60) / 66, 0, 1);
       const hh = frac * METER_H;
-      const x = c * 9 + 1;
+      const x = 1 + c * (bw + 1);
       const grad = ctx.createLinearGradient(0, METER_H, 0, 0);
-      grad.addColorStop(0, '#3f9a2a'); grad.addColorStop(0.65, '#a6d838'); grad.addColorStop(0.88, '#f1c232'); grad.addColorStop(1, '#e5413a');
+      grad.addColorStop(0, T.meter1); grad.addColorStop(0.65, T.meter2); grad.addColorStop(0.88, T.meter3); grad.addColorStop(1, T.meter4);
       ctx.fillStyle = grad;
-      ctx.fillRect(x, METER_H - hh, 7, hh);
+      ctx.fillRect(x, METER_H - hh, bw, hh);
       ctx.fillStyle = 'rgba(0,0,0,.35)';
-      for (let y = 0; y < METER_H; y += 3) ctx.fillRect(x, y, 7, 1);
+      for (let y = 0; y < METER_H; y += 3) ctx.fillRect(x, y, bw, 1);
     }
   };
 

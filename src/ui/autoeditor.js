@@ -1,4 +1,5 @@
-import { h, clamp } from '../util.js';
+import { h, clamp, rgba } from '../util.js';
+import { T, appearance } from '../theme.js';
 import { showMenu } from './menu.js';
 import { sizeCanvas } from './draw.js';
 import { snapSize, snapRound } from './snap.js';
@@ -47,15 +48,16 @@ export function createAutomationEditor(app) {
     draw();
   }
   new ResizeObserver(layout).observe(wrap);
+  appearance.on('change', () => { if (win.visible) draw(); });
 
   function draw() {
     const a = auto();
     if (!W || !a) { ctx.clearRect(0, 0, W, H); return; }
     const p = plot();
     ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#26353c';
+    ctx.fillStyle = T.gridBg;
     ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#2d3f46';
+    ctx.fillStyle = T.gridA;
     ctx.fillRect(p.x, p.y, p.w, p.h);
 
     // vertical grid
@@ -65,18 +67,18 @@ export function createAutomationEditor(app) {
       const bar = s % STEPS_PER_BAR === 0, beat = s % STEPS_PER_BEAT === 0;
       if (!bar && !beat && p.w / a.len < 9) continue;
       const x = Math.round(toX(s)) + 0.5;
-      ctx.strokeStyle = bar ? '#15262d' : beat ? '#1f3139' : '#283b42';
+      ctx.strokeStyle = bar ? T.gridLineBar : beat ? T.gridLineBeat : T.gridLineStep;
       ctx.beginPath(); ctx.moveTo(x, p.y); ctx.lineTo(x, p.y + p.h); ctx.stroke();
-      if (bar) { ctx.fillStyle = '#8ea1aa'; ctx.fillText(String(s / STEPS_PER_BAR + 1), x + 4, p.y + p.h + 6); }
+      if (bar) { ctx.fillStyle = T.rulerMajor; ctx.fillText(String(s / STEPS_PER_BAR + 1), x + 4, p.y + p.h + 6); }
     }
     // horizontal grid + value labels (real units)
     for (let i = 0; i <= 4; i++) {
       const v = i / 4;
       const y = Math.round(toY(v)) + 0.5;
-      ctx.strokeStyle = i === 0 || i === 4 ? '#15262d' : '#233a42';
+      ctx.strokeStyle = i === 0 || i === 4 ? T.gridLineBar : T.gridLineEdge;
       ctx.beginPath(); ctx.moveTo(p.x, y); ctx.lineTo(p.x + p.w, y); ctx.stroke();
       if (targetValid(store, a.target)) {
-        ctx.fillStyle = '#8ea1aa';
+        ctx.fillStyle = T.rulerMajor;
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         ctx.fillText(formatTarget(store, a.target, normToValue(store, a.target, v)), p.x - 6, y);
@@ -91,13 +93,13 @@ export function createAutomationEditor(app) {
       const x = p.x + px, y = toY(v);
       if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = '#e9c46a';
+    ctx.strokeStyle = T.automation;
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.lineTo(p.x + p.w, p.y + p.h);
     ctx.lineTo(p.x, p.y + p.h);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(233,196,106,.14)';
+    ctx.fillStyle = rgba(T.automation, 0.14);
     ctx.fill();
     ctx.lineWidth = 1;
 
@@ -106,9 +108,9 @@ export function createAutomationEditor(app) {
       const x = toX(pt.x), y = toY(pt.y);
       ctx.beginPath();
       ctx.arc(x, y, i === hover ? 6 : 5, 0, Math.PI * 2);
-      ctx.fillStyle = i === hover ? '#ffffff' : '#e9c46a';
+      ctx.fillStyle = i === hover ? T.noteSelOutline : T.automation;
       ctx.fill();
-      ctx.strokeStyle = '#10181c';
+      ctx.strokeStyle = T.gridEdge;
       ctx.stroke();
     });
   }

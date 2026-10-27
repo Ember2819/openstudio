@@ -4,6 +4,7 @@ import { createKnob } from './knob.js';
 import { showMenu } from './menu.js';
 import { PARAM_META } from '../audio/instruments.js';
 import { sizeCanvas } from './draw.js';
+import { T, appearance } from '../theme.js';
 
 const TYPE_LABEL = { drum: 'Drum voice', synth: 'Synth', sampler: 'Sampler', sf: 'Instrument' };
 const iconFor = (ch) => ({ drum: 'drum', sampler: 'sampler', sf: ch.bank === 128 ? 'drum' : 'piano' }[ch.type] || 'synth');
@@ -142,10 +143,10 @@ export function createSettings(app) {
     const hh = 70;
     const ctx = canvas.getContext('2d');
     sizeCanvas(canvas, ctx, w, hh);
-    ctx.fillStyle = '#1b262c';
+    ctx.fillStyle = T.waveBg;
     ctx.fillRect(0, 0, w, hh);
     if (!s?.buffer) {
-      ctx.fillStyle = '#7b8c94';
+      ctx.fillStyle = T.textDim;
       ctx.font = '12px "Noto Sans", sans-serif';
       ctx.fillText(s ? 'Decoding…' : 'No sample loaded', 12, hh / 2 + 4);
       return;
@@ -165,6 +166,7 @@ export function createSettings(app) {
 
   store.on('selection', () => { if (win.visible && store.selectedChannel) { chId = store.selectedChannel.id; render(); } });
   store.on('channels', () => { if (win.visible) render(); });
+  appearance.on('change', () => { if (win.visible) render(); });
   store.on('soundfontReady', () => { if (win.visible) render(); });
   store.on('sampleReady', () => { if (win.visible) render(); });
   store.on('project', () => { if (win.visible) { chId = store.selectedChannel?.id ?? null; render(); } });

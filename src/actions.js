@@ -1,4 +1,4 @@
-import { promptDialog, confirmDialog, messageDialog } from './ui/dialog.js';
+import { promptDialog, confirmDialog, messageDialog, shortcutsDialog } from './ui/dialog.js';
 import { renderSteps } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { STEPS_PER_BAR } from './state.js';
@@ -9,35 +9,71 @@ import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 
+/** Help → Keyboard shortcuts. Keys: alternatives separated by " / ", combos joined with "+". */
 const SHORTCUTS = [
-  ['Space', 'Play / pause'],
-  ['Ctrl+L', 'Toggle pattern / song mode'],
-  ['F5 · F6 · F7 · F9', 'Playlist · Channel rack · Piano roll · Mixer'],
-  ['Alt+F8', 'Browser'],
-  ['F4 / Ctrl+Shift+P', 'New pattern'],
-  ['F10', 'Channel settings'],
-  ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
-  ['Ctrl+N / O / S', 'New / open / save project'],
-  ['Ctrl+R', 'Export audio'],
-  ['Ctrl+M', 'Metronome'],
-  ['+ / −', 'Next / previous pattern'],
-  ['Z S X D C V G B H N J M', 'Play the selected channel from the keyboard (lower octave)'],
-  ['Q 2 W 3 E R 5 T 6 Y 7 U', 'Play the selected channel (upper octave)'],
-  ['Piano roll: Del / Ctrl+A / Ctrl+D', 'Delete / select all / deselect'],
-  ['Piano roll: Ctrl+C / X / V', 'Copy / cut / paste notes'],
-  ['Piano roll: Ctrl+B', 'Duplicate selected notes'],
-  ['Piano roll: Ctrl+Q / Ctrl+L', 'Quick quantize / quick legato'],
-  ['Piano roll: ↑ ↓ / Ctrl+↑ ↓', 'Transpose a semitone / an octave'],
-  ['Piano roll: Alt+R', 'Randomize velocity'],
-  ['Playlist: Ctrl+B / Ctrl+D', 'Duplicate / deselect clips'],
-  ['Playlist: right-click clip title', 'Clip menu (make unique, rename, mute…)'],
-  ['Playlist ruler: Shift+drag', 'Set the loop region (double-click to clear)'],
-  ['Channel rack: Alt+↑ / Alt+↓', 'Move the selected channel'],
-  ['Channel rack: Ctrl+L', 'Route the channel to a free mixer track'],
-  ['Knob or fader: right-click', 'Create an automation clip'],
-  ['Piano roll: Ctrl+drag', 'Temporary select tool'],
-  ['Piano roll / playlist: Ctrl+wheel', 'Zoom horizontally'],
-  ['Right-click', 'Delete notes / clips, erase steps'],
+  ['General', [
+    ['Space', 'Play / pause'],
+    ['Home', 'Jump to the start'],
+    ['Ctrl+L', 'Switch pattern / song mode'],
+    ['Ctrl+M', 'Metronome'],
+    ['Ctrl+Z', 'Undo'],
+    ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
+    ['Ctrl+N', 'New project'],
+    ['Ctrl+O', 'Open project'],
+    ['Ctrl+S', 'Save'],
+    ['Ctrl+Shift+S', 'Save as'],
+    ['Ctrl+R', 'Export audio'],
+    ['Ctrl+,', 'Settings (themes, wallpaper)'],
+    ['F1', 'This list'],
+  ]],
+  ['Windows', [
+    ['F5', 'Playlist'],
+    ['F6', 'Channel rack'],
+    ['F7', 'Piano roll'],
+    ['F9', 'Mixer'],
+    ['Alt+F8', 'Browser'],
+    ['F10', 'Channel settings'],
+    ['F2', 'Rename the selected channel'],
+  ]],
+  ['Patterns', [
+    ['F4 / Ctrl+Shift+P', 'New pattern'],
+    ['+ / −', 'Next / previous pattern'],
+  ]],
+  ['Play from the computer keyboard', [
+    ['Z S X D C V G B H N J M', 'Lower octave'],
+    ['Q 2 W 3 E R 5 T 6 Y 7 U', 'Upper octave'],
+  ]],
+  ['Piano roll', [
+    ['Del', 'Delete selected notes'],
+    ['Ctrl+A / Ctrl+D', 'Select all / deselect'],
+    ['Ctrl+C / Ctrl+X / Ctrl+V', 'Copy / cut / paste'],
+    ['Ctrl+B', 'Duplicate selection'],
+    ['Ctrl+Q', 'Quick quantize'],
+    ['Ctrl+L', 'Quick legato'],
+    ['↑ / ↓', 'Transpose a semitone'],
+    ['Ctrl+↑ / Ctrl+↓', 'Transpose an octave'],
+    ['Alt+R', 'Randomize velocity'],
+    ['Ctrl+Drag', 'Temporary select tool'],
+    ['Alt+Wheel', 'Row height'],
+  ]],
+  ['Playlist', [
+    ['Ctrl+B', 'Duplicate selected clips'],
+    ['Ctrl+D', 'Deselect clips'],
+    ['Shift+Drag', 'Set the loop region (on the ruler)'],
+    ['Double-click', 'Clear the loop region (on the ruler)'],
+    ['Right-click', 'Clip menu (on a clip title)'],
+  ]],
+  ['Channel rack', [
+    ['Alt+↑ / Alt+↓', 'Move the selected channel'],
+    ['Ctrl+L', 'Route to a free mixer track'],
+  ]],
+  ['Mouse', [
+    ['Ctrl+Wheel', 'Zoom piano roll / playlist'],
+    ['Shift+Wheel', 'Scroll sideways'],
+    ['Right-click', 'Delete notes / clips, erase steps'],
+    ['Right-click', 'Automate a knob or fader'],
+    ['Double-click', 'Reset a fader'],
+  ]],
 ];
 
 export function createActions(app) {
@@ -195,7 +231,7 @@ export function createActions(app) {
     },
 
     showShortcuts() {
-      messageDialog('Keyboard shortcuts', SHORTCUTS.map(([k, d]) => `${k.padEnd(34, ' ')}${d}`).join('\n'));
+      shortcutsDialog('Keyboard shortcuts', SHORTCUTS);
     },
 
     showAbout() {

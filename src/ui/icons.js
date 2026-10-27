@@ -43,6 +43,7 @@ const ICONS = {
   mixer: L('<path d="M4 2.5v11M8 2.5v11M12 2.5v11"/><rect x="2.5" y="9" width="3" height="2.2" rx=".6" fill="currentColor"/><rect x="6.5" y="4.3" width="3" height="2.2" rx=".6" fill="currentColor"/><rect x="10.5" y="7" width="3" height="2.2" rx=".6" fill="currentColor"/>'),
   browser: L('<rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/>'),
   fx: L('<path d="M2 11.5c1.5-6 2.7-6 3.7 0s2.2-6 3.7 0 2.2-6 3.1-2.4"/>'),
+  gear: L('<circle cx="8" cy="8" r="2.2"/><path d="M6.9 1.8h2.2l.4 1.7 1.2.7 1.7-.5 1.1 1.9-1.3 1.2v1.4l1.3 1.2-1.1 1.9-1.7-.5-1.2.7-.4 1.7H6.9l-.4-1.7-1.2-.7-1.7.5-1.1-1.9 1.3-1.2V7.3L2.5 6.1l1.1-1.9 1.7.5 1.2-.7z"/>'),
   settings: L('<path d="M2.5 4.5h6M11.5 4.5h2M2.5 11.5h2M7.5 11.5h6"/><circle cx="10" cy="4.5" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/>'),
   cpu: L('<rect x="4" y="4" width="8" height="8" rx="1"/><path d="M6.5 1.5v2.5M9.5 1.5v2.5M6.5 12v2.5M9.5 12v2.5M1.5 6.5H4M1.5 9.5H4M12 6.5h2.5M12 9.5h2.5"/>'),
   help: L('<circle cx="8" cy="8" r="5.8"/><path d="M6.3 6.3a1.8 1.8 0 1 1 2.5 1.7c-.6.3-.8.7-.8 1.2"/><path d="M8 11.4h.01"/>'),

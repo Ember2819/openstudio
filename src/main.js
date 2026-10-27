@@ -3,7 +3,6 @@ import { Store } from './state.js';
 import { Engine, loadSoundfont } from './audio/engine.js';
 import { Transport } from './audio/transport.js';
 import { WindowManager } from './ui/windows.js';
-import { installKnobDefs } from './ui/knob.js';
 import { createToolbar } from './ui/toolbar.js';
 import { createChannelRack } from './ui/channelrack.js';
 import { createPianoRoll } from './ui/pianoroll.js';
@@ -21,8 +20,12 @@ import { messageDialog } from './ui/dialog.js';
 import { initMidi } from './midi.js';
 import { installAutosave } from './autosave.js';
 import { installAgent } from './agent/index.js';
+import { appearance } from './theme.js';
+import { createPreferences } from './ui/prefs.js';
 
-installKnobDefs();
+// colours first, so nothing is ever drawn with an unthemed palette
+appearance.apply();
+
 
 const app = new Emitter();
 app.store = new Store();
@@ -33,6 +36,9 @@ app.ui = { snap: 'line' };
 app.browserVisible = () => !document.getElementById('browser').classList.contains('collapsed');
 app.actions = createActions(app);
 app.input = createInput(app);
+app.appearance = appearance;
+const prefs = createPreferences();
+app.actions.togglePreferences = prefs.toggle;
 
 // the toolbar must exist first so windows are laid out against the real desktop size
 app.toolbar = createToolbar(app);

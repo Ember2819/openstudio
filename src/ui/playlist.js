@@ -5,6 +5,8 @@ import { promptDialog } from './dialog.js';
 import { createSnapSelect } from './snapselect.js';
 import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
+import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
+import { T, appearance } from '../theme.js';
 import { drawWaveform } from './peaks.js';
 import { curveAt, describeTarget } from '../automation.js';
 import { STEPS_PER_BAR, STEPS_PER_BEAT, PLAYLIST_TRACKS } from '../state.js';
@@ -69,6 +71,8 @@ export function createPlaylist(app) {
   const spacer = h('div', { class: 'pr-spacer' });
   const scroller = h('div', { class: 'pr-scroller' }, spacer);
   const gridWrap = h('div', { class: 'pr-gridwrap' }, cGrid, scroller);
+  overlayScrollbars(scroller, { host: gridWrap });
+  scrollingToolbar(toolbar);
   const playhead = h('div', { class: 'pr-playhead' });
   const overlay = h('div', { class: 'pl-overlay' }, playhead);
   const main = h('div', { class: 'pl-main' }, picker, h('div', { class: 'pl-corner' }), cRuler, heads, gridWrap, overlay);
@@ -198,10 +202,10 @@ export function createPlaylist(app) {
     const b0 = Math.floor(sx / px / STEPS_PER_BAR);
     const b1 = Math.ceil((sx + gw) / px / STEPS_PER_BAR);
     for (let b = b0; b <= b1; b++) {
-      ctx.fillStyle = b % 2 === 0 ? '#2c3f46' : '#324750';
+      ctx.fillStyle = b % 2 === 0 ? T.gridA : T.gridB;
       ctx.fillRect(b * S.pxBar - sx, 0, S.pxBar, gh);
     }
-    ctx.strokeStyle = '#1b2d34';
+    ctx.strokeStyle = T.gridLineEdge;
     ctx.lineWidth = 1;
     const t0 = Math.floor(sy / TRACK_H);
     const t1 = Math.min(PLAYLIST_TRACKS, Math.ceil((sy + gh) / TRACK_H));
@@ -213,9 +217,9 @@ export function createPlaylist(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       let color = null;
-      if (s % STEPS_PER_BAR === 0) color = '#15262d';
-      else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 22) color = '#22353c';
-      else if (px >= 14) color = '#283b42';
+      if (s % STEPS_PER_BAR === 0) color = T.gridLineBar;
+      else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 22) color = T.gridLineBeat;
+      else if (px >= 14) color = T.gridLineStep;
       if (!color) continue;
       ctx.strokeStyle = color;
       const x = Math.round(s * px - sx) + 0.5;
@@ -223,13 +227,13 @@ export function createPlaylist(app) {
     }
     tracks().forEach((t, i) => {
       if (!t.mute || i < t0 || i > t1) return;
-      ctx.fillStyle = 'rgba(15,22,26,.35)';
+      ctx.fillStyle = T.gridShade;
       ctx.fillRect(0, i * TRACK_H - sy, gw, TRACK_H);
     });
 
     const loop = store.project.loop;
     if (loop) {
-      ctx.fillStyle = transport.loopEnabled ? 'rgba(146,200,80,.09)' : 'rgba(255,255,255,.04)';
+      ctx.fillStyle = transport.loopEnabled ? T.loopFill : T.hover;
       ctx.fillRect(loop.start * px - sx, 0, (loop.end - loop.start) * px, gh);
     }
 
@@ -245,9 +249,9 @@ export function createPlaylist(app) {
     if (S.band) {
       const b = S.band;
       const x = Math.min(b.x0, b.x1) - sx, y = Math.min(b.y0, b.y1) - sy;
-      ctx.fillStyle = 'rgba(255,154,31,.12)';
+      ctx.fillStyle = T.selFill;
       ctx.fillRect(x, y, Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
-      ctx.strokeStyle = 'rgba(255,154,31,.9)';
+      ctx.strokeStyle = T.selLine;
       ctx.strokeRect(x + 0.5, y + 0.5, Math.abs(b.x1 - b.x0), Math.abs(b.y1 - b.y0));
     }
   }
@@ -271,25 +275,25 @@ export function createPlaylist(app) {
     const look = clipLook(c);
     if (!look) return;
     const sel = S.selection.has(c.id);
-    const color = look.muted ? '#6b777e' : look.color;
+    const color = look.muted ? T.clipMuted : look.color;
     const bodyY = y + CLIP_HEAD;
     const bodyH = hh - CLIP_HEAD;
     const type = typeOf(c);
 
-    ctx.fillStyle = look.muted ? 'rgba(60,72,78,.85)' : shade(color, -0.68);
+    ctx.fillStyle = shade(color, look.muted ? -0.45 : -0.68);
     roundRect(ctx, x, y, Math.max(2, w), hh, 3);
     ctx.fill();
     ctx.save();
     roundRect(ctx, x, y, Math.max(2, w), hh, 3);
     ctx.clip();
-    ctx.fillStyle = look.muted ? '#5c686f' : shade(color, -0.1);
+    ctx.fillStyle = look.muted ? T.clipMuted : shade(color, -0.1);
     ctx.fillRect(x, y, Math.max(2, w), CLIP_HEAD);
     ctx.restore();
 
     ctx.save();
     roundRect(ctx, x, bodyY, Math.max(2, w), bodyH, 2);
     ctx.clip();
-    const ink = look.muted ? 'rgba(160,172,178,.7)' : shade(color, 0.6);
+    const ink = look.muted ? T.textDim : shade(color, 0.6);
     ctx.fillStyle = ink;
     if (type === 'pattern') drawMiniNotes(ctx, c, look.pat, x, bodyY, w, bodyH, px, patInfo, gw, ink);
     else if (type === 'audio') {
@@ -305,12 +309,12 @@ export function createPlaylist(app) {
       ctx.beginPath(); ctx.rect(x + 2, y, w - 4, CLIP_HEAD); ctx.clip();
       ctx.font = '10px "Noto Sans", sans-serif';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = look.muted ? '#cfd8dc' : '#10181c';
+      ctx.fillStyle = look.muted ? T.text : '#10181c';
       ctx.fillText(look.name, Math.max(x, 0) + 6, y + CLIP_HEAD / 2 + 0.5);
       ctx.restore();
     }
 
-    ctx.strokeStyle = sel ? '#ffffff' : 'rgba(0,0,0,.65)';
+    ctx.strokeStyle = sel ? T.noteSelOutline : 'rgba(0,0,0,.65)';
     ctx.lineWidth = sel ? 2 : 1;
     roundRect(ctx, x + 0.5, y + 0.5, Math.max(2, w) - 1, hh - 1, 3);
     ctx.stroke();
@@ -379,13 +383,13 @@ export function createPlaylist(app) {
     const sx = scroller.scrollLeft;
     const px = pxStep();
     const grad = ctx.createLinearGradient(0, 0, 0, RULER_H);
-    grad.addColorStop(0, '#243239'); grad.addColorStop(1, '#17242a');
+    grad.addColorStop(0, T.rulerA); grad.addColorStop(1, T.rulerB);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, gw, RULER_H);
 
     const loop = store.project.loop;
     if (loop) {
-      ctx.fillStyle = transport.loopEnabled ? 'rgba(146,200,80,.55)' : 'rgba(150,170,180,.28)';
+      ctx.fillStyle = transport.loopEnabled ? T.loopBar : T.loopBarOff;
       ctx.fillRect(loop.start * px - sx, RULER_H - 8, (loop.end - loop.start) * px, 8);
     }
 
@@ -399,15 +403,15 @@ export function createPlaylist(app) {
       if (s % STEPS_PER_BAR === 0) {
         const bar = s / STEPS_PER_BAR;
         const major = bar % everyBars === 0;
-        ctx.strokeStyle = major ? '#8ea1aa' : '#4c5f68';
+        ctx.strokeStyle = major ? T.rulerMajor : T.rulerMinor;
         ctx.beginPath(); ctx.moveTo(x, major ? 4 : 14); ctx.lineTo(x, RULER_H); ctx.stroke();
-        if (major) { ctx.fillStyle = '#cfd9de'; ctx.fillText(String(bar + 1), x + 4, 10); }
+        if (major) { ctx.fillStyle = T.rulerText; ctx.fillText(String(bar + 1), x + 4, 10); }
       } else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 26) {
-        ctx.strokeStyle = '#4c5f68';
+        ctx.strokeStyle = T.rulerTick;
         ctx.beginPath(); ctx.moveTo(x, 17); ctx.lineTo(x, RULER_H); ctx.stroke();
       }
     }
-    ctx.strokeStyle = '#0c1519';
+    ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(0, RULER_H - 0.5); ctx.lineTo(gw, RULER_H - 0.5); ctx.stroke();
   }
 
@@ -685,6 +689,7 @@ export function createPlaylist(app) {
     if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, world(e).vx); }
   }, { passive: false });
   scroller.addEventListener('scroll', invalidate);
+  appearance.on('change', invalidate);
   heads.addEventListener('wheel', (e) => { scroller.scrollTop += e.deltaY; }, { passive: true });
   picker.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
