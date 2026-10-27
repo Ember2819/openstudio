@@ -88,7 +88,7 @@ export function createToolbar(app) {
   const menuButtons = Object.keys(menus).map((name) => {
     const b = h('button', { class: 'menu-btn' }, name);
     b.addEventListener('click', () => open(b, name));
-    b.addEventListener('pointerenter', () => { if (menuOpen && menuOpen !== b) open(b, name); });
+    b.addEventListener('pointerenter', () => { if (menuOpen !== b) open(b, name); });
     return b;
   });
   let menuOpen = null;
@@ -231,10 +231,6 @@ export function createToolbar(app) {
 
   const statusEl = h('div', { class: 'audio-status', 'data-hint': 'Audio device sample rate and output latency' });
 
-  const agentEl = h('div', { class: 'agent-status', hidden: true, 'data-hint': 'AI agents can connect over MCP and edit this project (Help → Agents)' },
-    h('span', { class: 'dot' }), h('span', { class: 'label' }));
-  const agentLabel = agentEl.querySelector('.label');
-
   const row2 = h('div', { class: 'tb-row tb-row2' },
     hintPanel,
     snapBtn,
@@ -242,7 +238,6 @@ export function createToolbar(app) {
     h('div', { class: 'tb-flex' }),
     h('div', { class: 'tb-group toggles' }, toggles),
     h('div', { class: 'tb-flex' }),
-    agentEl,
     statusEl);
 
   root.append(row1, row2);
@@ -346,21 +341,11 @@ export function createToolbar(app) {
     document.body.classList.toggle('busy', !!text);
   };
 
-  /** Show agent (MCP) activity next to the audio status. */
-  const attachAgent = (agent) => {
-    agentEl.hidden = false;
-    agentLabel.textContent = 'Agents ready';
-    agent.on('activity', ({ name, running, ok }) => {
-      agentEl.classList.toggle('active', running);
-      agentLabel.textContent = running ? `Agent · ${name}…` : `Agent · ${name}${ok ? '' : ' (failed)'}`;
-    });
-  };
-
   /** Shows (or with null hides) the "Update available" pill; `version` goes into its tooltip. */
   function setUpdateAvailable(version) {
     updateBtn.hidden = !version;
     if (version) updateBtn.dataset.hint = `OpenStudio ${version} is available — click to download and install`;
   }
 
-  return { update, refreshProject, setBusy, attachAgent, setUpdateAvailable };
+  return { update, refreshProject, setBusy, setUpdateAvailable };
 }

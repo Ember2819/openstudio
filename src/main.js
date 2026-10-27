@@ -23,6 +23,7 @@ import { installAgent } from './agent/index.js';
 import { appearance } from './theme.js';
 import { createPreferences } from './ui/prefs.js';
 import { Tiler } from './ui/tiling.js';
+import { createWelcome } from './ui/welcome.js';
 
 // colours first, so nothing is ever drawn with an unthemed palette
 appearance.apply();
@@ -63,6 +64,7 @@ initMidi(app);
 app.toolbar.refreshProject();
 app.autosave = installAutosave(app);
 app.autosave.offerRecovery();
+createWelcome(app).maybeShow();
 
 loadSoundfont().then(() => {
   app.store.emit('soundfontReady');
@@ -90,6 +92,6 @@ app.store.on('project', syncTitle);
 syncTitle();
 
 // MCP: lets AI agents drive the project through the server in the main process (src/agent)
-installAgent(app).then((agent) => { if (agent) app.toolbar.attachAgent(agent); });
+installAgent(app);
 
 window.openstudio = app; // handy for debugging from devtools

@@ -53,6 +53,11 @@ export function messageDialog(title, message) {
   ]);
 }
 
+/** Dialog with arbitrary content and buttons ([{ label, value, primary }]); resolves to the chosen button's value (null on Escape). */
+export function customDialog(title, body, buttons, cls = '') {
+  return modal(title, body, buttons.map((b) => ({ ...b, value: () => b.value })), cls);
+}
+
 /**
  * Modal progress bar. `done` resolves (to null) when the user cancels or presses Escape;
  * `set(fraction, text)` updates the bar (fraction null = indeterminate) and `close()` dismisses it.
