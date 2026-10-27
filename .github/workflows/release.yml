@@ -1,9 +1,11 @@
 name: Release builds
 description: >-
-  Builds distributable OpenStudio packages. Windows produces a standalone
-  portable .exe, Linux an .AppImage, and macOS a .dmg (Mountain Disk Image).
-# For every push (also merged PR) to main all three builds will be rebuilt and
-# published to GitHub Releases as a new release containing all three artifacts.
+  Builds distributable OpenStudio packages for x64 and ARM64. Windows produces
+  standalone portable .exe files, Linux .AppImage files, and macOS .dmg files.
+# For every push (also merged PR) to main all six builds (3 platforms x 2
+# architectures) will be rebuilt and published to GitHub Releases as a new
+# release containing all artifacts, e.g.
+# OpenStudio-0.2.0-windows-x64-portable.exe
 
 on:
   push:
@@ -51,6 +53,16 @@ jobs:
           # Skip macOS code-signing; the .dmg is left unsigned
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Normalize Linux architecture suffix
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # electron-builder emits "x86_64" for Linux; normalize to "x64" so
+          # artifact names are consistent across all platforms
+          for f in release/*x86_64*; do
+            mv "$f" "${f/x86_64/x64}"
+          done
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -87,8 +99,13 @@ jobs:
           name: OpenStudio v${{ steps.ver.outputs.version }} (build ${{ github.run_number }})
           body: >-
             Automated build from commit ${{ github.sha }}.
-            Downloads: the portable OpenStudio-${{ steps.ver.outputs.version }}-Portable.exe for Windows,
-            the .AppImage for Linux, and the .dmg for macOS.
+            Downloads:
+            OpenStudio-${{ steps.ver.outputs.version }}-windows-x64-portable.exe (Windows x64),
+            OpenStudio-${{ steps.ver.outputs.version }}-windows-arm64-portable.exe (Windows on ARM),
+            OpenStudio-${{ steps.ver.outputs.version }}-linux-x64.AppImage (Linux x64),
+            OpenStudio-${{ steps.ver.outputs.version }}-linux-arm64.AppImage (Linux ARM64),
+            OpenStudio-${{ steps.ver.outputs.version }}-macos-x64.dmg (Intel Macs) and
+            OpenStudio-${{ steps.ver.outputs.version }}-macos-arm64.dmg (Apple Silicon).
           draft: false
           prerelease: false
           files: |

@@ -21,13 +21,34 @@ files:
   - '!build/**'
   - '!release/**'
 
+# Descriptive artifact names: <Name>-<version>-<platform>-<arch>[...].<ext>
+# e.g. OpenStudio-0.2.0-windows-x64-portable.exe
+#      OpenStudio-0.2.0-linux-x64.AppImage
+#      OpenStudio-0.2.0-macos-arm64.dmg
+
 mac:
   # Unsigned build — no Apple Developer account available
   identity: null
+  # arm64 is the native runner arch; x64 is included for Intel Macs
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-macos-${arch}.${ext}
 
 win:
-  target: portable # single standalone executable
+  target:
+    - target: portable
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-windows-${arch}-portable.${ext}
 
 linux:
   target:
-    - AppImage
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+  artifactName: ${productName}-${version}-linux-${arch}.${ext}
