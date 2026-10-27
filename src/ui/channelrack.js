@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu, showMenuBelow } from './menu.js';
 import { STEPS_PER_BAR } from '../state.js';
+import { overlayScrollbars } from './scrollbars.js';
 
 const TYPE_ICON = { drum: 'drum', synth: 'synth', sampler: 'sampler', sf: 'piano' };
 
@@ -44,6 +45,7 @@ export function createChannelRack(app) {
   const footer = h('div', { class: 'cr-footer' }, addBtn);
   const scroll = h('div', { class: 'cr-scroll' }, header, rowsEl, footer);
   win.body.append(scroll);
+  overlayScrollbars(scroll, { host: win.body });
   win.body.classList.add('cr-body');
 
   // ------------------------------------------------------------- row build

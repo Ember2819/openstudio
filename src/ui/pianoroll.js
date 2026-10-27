@@ -4,6 +4,8 @@ import { showMenuBelow } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
+import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
+import { T, appearance } from '../theme.js';
 import { STEPS_PER_BAR, STEPS_PER_BEAT } from '../state.js';
 import { kitKeyNames, isKitChannel } from '../audio/catalog.js';
 
@@ -127,6 +129,8 @@ export function createPianoRoll(app) {
   const spacer = h('div', { class: 'pr-spacer' });
   const scroller = h('div', { class: 'pr-scroller' }, spacer);
   const gridWrap = h('div', { class: 'pr-gridwrap' }, cGrid, scroller);
+  overlayScrollbars(scroller, { host: gridWrap });
+  scrollingToolbar(toolbar);
   const playhead = h('div', { class: 'pr-playhead' });
   const overlay = h('div', { class: 'pr-overlay' }, playhead);
   const velLabel = h('div', { class: 'pr-vel-label' }, 'Velocity');
@@ -198,9 +202,6 @@ export function createPianoRoll(app) {
     drawVelocity();
   }
 
-  const BG_WHITE = '#33454c';
-  const BG_BLACK = '#2a3a41';
-
   function drawGrid() {
     const ctx = g2.grid;
     const { gw, gh } = sizes;
@@ -217,11 +218,11 @@ export function createPianoRoll(app) {
       const pitch = PITCHES - 1 - r;
       const y = r * rh - sy;
       const kitRow = kitForGrid;
-      ctx.fillStyle = kitRow ? (kitRow.has(pitch) ? BG_WHITE : '#2a383f') : isBlackKey(pitch) ? BG_BLACK : BG_WHITE;
+      ctx.fillStyle = kitRow ? (kitRow.has(pitch) ? T.gridRowWhite : T.gridRowOff) : isBlackKey(pitch) ? T.gridRowBlack : T.gridRowWhite;
       ctx.fillRect(0, y, gw, rh);
       if (S.scale && !kitRow) {
         const inScale = SCALES[S.scale.name].includes(((pitch - S.scale.root) % 12 + 12) % 12);
-        ctx.fillStyle = inScale ? 'rgba(146,200,80,.10)' : 'rgba(8,14,18,.22)';
+        ctx.fillStyle = inScale ? T.gridScale : T.gridScaleOff;
         ctx.fillRect(0, y, gw, rh);
       }
     }
@@ -232,7 +233,7 @@ export function createPianoRoll(app) {
       const y = Math.round(r * rh - sy) + 0.5;
       const octave = pitch % 12 === 0;
       const edge = [0, 5].includes(pitch % 12) && !isBlackKey(pitch); // C/F boundaries (between white keys)
-      ctx.strokeStyle = octave ? '#1a272e' : edge ? '#233239' : '#2b3b42';
+      ctx.strokeStyle = octave ? T.gridLineOct : edge ? T.gridLineEdge : T.gridLineRow;
       ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(gw, y); ctx.stroke();
     }
 
@@ -243,11 +244,11 @@ export function createPianoRoll(app) {
       const step = q * 0.25;
       const x = Math.round(step * px - sx) + 0.5;
       let color = null;
-      if (step % STEPS_PER_BAR === 0) color = '#101b21';
-      else if (step % STEPS_PER_BEAT === 0) color = '#1a2a31';
-      else if (Number.isInteger(step) && px >= 9) color = '#27383f';
-      else if (step % 0.5 === 0 && px >= 36) color = '#2d3f46';
-      else if (px >= 72) color = '#304349';
+      if (step % STEPS_PER_BAR === 0) color = T.gridLineBar;
+      else if (step % STEPS_PER_BEAT === 0) color = T.gridLineBeat;
+      else if (Number.isInteger(step) && px >= 9) color = T.gridLineStep;
+      else if (step % 0.5 === 0 && px >= 36) color = T.gridLineSub;
+      else if (px >= 72) color = T.gridLineQ;
       if (!color) continue;
       ctx.strokeStyle = color;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, gh); ctx.stroke();
@@ -256,9 +257,9 @@ export function createPianoRoll(app) {
     // dim the area past the end of the pattern
     const endX = store.patternSteps(pat()) * px - sx;
     if (endX < gw) {
-      ctx.fillStyle = 'rgba(8,14,18,.38)';
+      ctx.fillStyle = T.gridShade;
       ctx.fillRect(Math.max(0, endX), 0, gw, gh);
-      ctx.strokeStyle = rgba('#ff9a1f', 0.55);
+      ctx.strokeStyle = rgba(T.accent, 0.55);
       ctx.beginPath(); ctx.moveTo(Math.round(endX) + 0.5, 0); ctx.lineTo(Math.round(endX) + 0.5, gh); ctx.stroke();
     }
 
@@ -292,14 +293,14 @@ export function createPianoRoll(app) {
         const y = (PITCHES - 1 - n.p) * rh - sy;
         if (y < -rh || y > gh) continue;
         const sel = S.selection.has(n);
-        const base = n.m ? '#55626a' : sel ? shade(cur.color, 0.5) : shade(cur.color, -(1 - n.v) * 0.5);
+        const base = n.m ? T.noteMuted : sel ? shade(cur.color, 0.5) : shade(cur.color, -(1 - n.v) * 0.5);
         const grad = ctx.createLinearGradient(0, y, 0, y + rh);
-        grad.addColorStop(0, n.m ? '#6a787f' : sel ? shade(cur.color, 0.7) : shade(cur.color, 0.18 - (1 - n.v) * 0.5));
+        grad.addColorStop(0, n.m ? T.noteMutedB : sel ? shade(cur.color, 0.7) : shade(cur.color, 0.18 - (1 - n.v) * 0.5));
         grad.addColorStop(1, base);
         ctx.fillStyle = grad;
         roundRect(ctx, x, y + 1, w, rh - 2, 2);
         ctx.fill();
-        ctx.strokeStyle = sel ? '#ffffff' : 'rgba(0,0,0,.55)';
+        ctx.strokeStyle = sel ? T.noteSelOutline : 'rgba(0,0,0,.55)';
         ctx.lineWidth = sel ? 1.5 : 1;
         roundRect(ctx, x + 0.5, y + 1.5, w - 1, rh - 3, 2);
         ctx.stroke();
@@ -316,9 +317,9 @@ export function createPianoRoll(app) {
       const y = Math.min(b.y0, b.y1) - sy;
       const w = Math.abs(b.x1 - b.x0);
       const hh = Math.abs(b.y1 - b.y0);
-      ctx.fillStyle = 'rgba(255,154,31,.12)';
+      ctx.fillStyle = T.selFill;
       ctx.fillRect(x, y, w, hh);
-      ctx.strokeStyle = 'rgba(255,154,31,.9)';
+      ctx.strokeStyle = T.selLine;
       ctx.lineWidth = 1;
       ctx.strokeRect(x + 0.5, y + 0.5, w, hh);
     }
@@ -330,7 +331,7 @@ export function createPianoRoll(app) {
     const sx = scroller.scrollLeft;
     const px = S.px;
     const grad = ctx.createLinearGradient(0, 0, 0, RULER_H);
-    grad.addColorStop(0, '#273840'); grad.addColorStop(1, '#1b2a31');
+    grad.addColorStop(0, T.rulerA); grad.addColorStop(1, T.rulerB);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, gw, RULER_H);
     ctx.font = '10px "Noto Sans", sans-serif';
@@ -340,20 +341,20 @@ export function createPianoRoll(app) {
     for (let s = s0; s <= s1; s++) {
       const x = Math.round(s * px - sx) + 0.5;
       if (s % STEPS_PER_BAR === 0) {
-        ctx.strokeStyle = '#8ea1aa';
+        ctx.strokeStyle = T.rulerMajor;
         ctx.beginPath(); ctx.moveTo(x, 3); ctx.lineTo(x, RULER_H); ctx.stroke();
-        ctx.fillStyle = '#d3dde2';
+        ctx.fillStyle = T.rulerText;
         ctx.fillText(String(s / STEPS_PER_BAR + 1), x + 4, 8);
       } else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 28) {
-        ctx.strokeStyle = '#586a73';
+        ctx.strokeStyle = T.rulerMinor;
         ctx.beginPath(); ctx.moveTo(x, 12); ctx.lineTo(x, RULER_H); ctx.stroke();
-        if (px * 4 >= 64) { ctx.fillStyle = '#7f929b'; ctx.fillText(`${Math.floor(s / STEPS_PER_BAR) + 1}.${(s % STEPS_PER_BAR) / STEPS_PER_BEAT + 1}`, x + 3, 8); }
+        if (px * 4 >= 64) { ctx.fillStyle = T.rulerTextDim; ctx.fillText(`${Math.floor(s / STEPS_PER_BAR) + 1}.${(s % STEPS_PER_BAR) / STEPS_PER_BEAT + 1}`, x + 3, 8); }
       } else if (px >= 14) {
-        ctx.strokeStyle = '#3f525b';
+        ctx.strokeStyle = T.rulerTick;
         ctx.beginPath(); ctx.moveTo(x, 16); ctx.lineTo(x, RULER_H); ctx.stroke();
       }
     }
-    ctx.strokeStyle = '#0c1519';
+    ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(0, RULER_H - 0.5); ctx.lineTo(gw, RULER_H - 0.5); ctx.stroke();
   }
 
@@ -363,7 +364,7 @@ export function createPianoRoll(app) {
     const sy = scroller.scrollTop;
     const rh = S.rowH;
     ctx.clearRect(0, 0, KEYS_W, gh);
-    ctx.fillStyle = '#1a252b';
+    ctx.fillStyle = T.keyBg;
     ctx.fillRect(0, 0, KEYS_W, gh);
     const r0 = Math.max(0, Math.floor(sy / rh));
     const r1 = Math.min(PITCHES - 1, Math.ceil((sy + gh) / rh));
@@ -378,16 +379,16 @@ export function createPianoRoll(app) {
       const y = r * rh - sy;
       const down = S.pressed.has(pitch);
       const grad = ctx.createLinearGradient(0, 0, KEYS_W, 0);
-      grad.addColorStop(0, down ? '#ffb55a' : '#e9eef1'); grad.addColorStop(1, down ? '#ff9a1f' : '#c3ccd1');
+      grad.addColorStop(0, down ? T.keyDownA : T.keyWhiteA); grad.addColorStop(1, down ? T.keyDownB : T.keyWhiteB);
       ctx.fillStyle = grad;
       ctx.fillRect(0, y, KEYS_W, rh);
-      ctx.strokeStyle = '#7d8b92';
+      ctx.strokeStyle = T.keyLine;
       ctx.beginPath(); ctx.moveTo(0, Math.round(y + rh) - 0.5); ctx.lineTo(KEYS_W, Math.round(y + rh) - 0.5); ctx.stroke();
       if (kit) {
         const name = kit.get(pitch);
-        if (name) { ctx.fillStyle = '#3b4a52'; ctx.fillText(name, 4, y + rh / 2 + 0.5); }
+        if (name) { ctx.fillStyle = T.keyText; ctx.fillText(name, 4, y + rh / 2 + 0.5); }
       } else if (pitch % 12 === 0) {
-        ctx.fillStyle = '#3b4a52';
+        ctx.fillStyle = T.keyText;
         ctx.fillText(noteName(pitch), KEYS_W - 24, y + rh / 2 + 0.5);
       }
     }
@@ -397,11 +398,11 @@ export function createPianoRoll(app) {
       const y = r * rh - sy;
       const down = S.pressed.has(pitch);
       const grad = ctx.createLinearGradient(0, 0, KEYS_W * 0.62, 0);
-      grad.addColorStop(0, down ? '#ff9a1f' : '#10171b'); grad.addColorStop(1, down ? '#ffb55a' : '#38464e');
+      grad.addColorStop(0, down ? T.keyDownB : T.keyBlackA); grad.addColorStop(1, down ? T.keyDownA : T.keyBlackB);
       ctx.fillStyle = grad;
       ctx.fillRect(0, y + 1, KEYS_W * 0.62, rh - 1);
     }
-    ctx.strokeStyle = '#0c1519';
+    ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(KEYS_W - 0.5, 0); ctx.lineTo(KEYS_W - 0.5, gh); ctx.stroke();
   }
 
@@ -411,13 +412,13 @@ export function createPianoRoll(app) {
       const y = r * rh - sy;
       const name = kit.get(pitch);
       const down = S.pressed.has(pitch);
-      ctx.fillStyle = down ? '#ff9a1f' : name ? '#c9d3d8' : '#26343b';
+      ctx.fillStyle = down ? T.keyDownB : name ? T.kitKey : T.kitKeyOff;
       ctx.fillRect(0, y, KEYS_W, rh);
       ctx.fillStyle = 'rgba(0,0,0,.35)';
       ctx.fillRect(0, Math.round(y + rh) - 1, KEYS_W, 1);
-      if (name) { ctx.fillStyle = '#26343b'; ctx.fillText(name, 6, y + rh / 2 + 0.5); }
+      if (name) { ctx.fillStyle = T.keyText; ctx.fillText(name, 6, y + rh / 2 + 0.5); }
     }
-    ctx.strokeStyle = '#0c1519';
+    ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(KEYS_W - 0.5, 0); ctx.lineTo(KEYS_W - 0.5, sizes.gh); ctx.stroke();
   }
 
@@ -427,7 +428,7 @@ export function createPianoRoll(app) {
     const sx = scroller.scrollLeft;
     const px = S.px;
     ctx.clearRect(0, 0, gw, VEL_H);
-    ctx.fillStyle = '#26353c';
+    ctx.fillStyle = T.gridBg;
     ctx.fillRect(0, 0, gw, VEL_H);
     const q0 = Math.floor(sx / px);
     const q1 = Math.ceil((sx + gw) / px);
@@ -435,12 +436,12 @@ export function createPianoRoll(app) {
       const bar = s % STEPS_PER_BAR === 0;
       const beat = s % STEPS_PER_BEAT === 0;
       if (!bar && !beat && px < 9) continue;
-      ctx.strokeStyle = bar ? '#101b21' : beat ? '#1a2a31' : '#2c3d44';
+      ctx.strokeStyle = bar ? T.gridLineBar : beat ? T.gridLineBeat : T.gridLineStep;
       const x = Math.round(s * px - sx) + 0.5;
       ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, VEL_H); ctx.stroke();
     }
     const endX = store.patternSteps(pat()) * px - sx;
-    if (endX < gw) { ctx.fillStyle = 'rgba(8,14,18,.38)'; ctx.fillRect(Math.max(0, endX), 0, gw, VEL_H); }
+    if (endX < gw) { ctx.fillStyle = T.gridShade; ctx.fillRect(Math.max(0, endX), 0, gw, VEL_H); }
     const cur = chan();
     if (!cur) return;
     for (const n of notes()) {
@@ -448,10 +449,10 @@ export function createPianoRoll(app) {
       if (x < -4 || x > gw + 4) continue;
       const top = VEL_H - 8 - n.v * (VEL_H - 16);
       const sel = S.selection.has(n);
-      ctx.strokeStyle = sel ? '#ffffff' : shade(cur.color, 0.1);
+      ctx.strokeStyle = sel ? T.noteSelOutline : shade(cur.color, 0.1);
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.moveTo(x, VEL_H - 4); ctx.lineTo(x, top); ctx.stroke();
-      ctx.fillStyle = sel ? '#ffffff' : shade(cur.color, 0.35);
+      ctx.fillStyle = sel ? T.noteSelOutline : shade(cur.color, 0.35);
       ctx.beginPath(); ctx.arc(x, top, 4, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke();
     }
@@ -658,6 +659,7 @@ export function createPianoRoll(app) {
     }
   }, { passive: false });
   scroller.addEventListener('scroll', invalidate);
+  appearance.on('change', invalidate);
 
   // piano keys: click to audition
   let keyHeld = null;

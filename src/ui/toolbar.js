@@ -4,6 +4,7 @@ import { createKnob, hint } from './knob.js';
 import { showMenuBelow } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
+import { T } from '../theme.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
@@ -67,6 +68,8 @@ export function createToolbar(app) {
       { label: 'Pattern mode', checked: transport.mode === 'pattern', action: () => transport.setMode('pattern') },
     ],
     TOOLS: () => [
+      { label: 'Settings…', shortcut: 'Ctrl+,', action: () => actions.togglePreferences() },
+      { separator: true },
       { label: 'Channel settings…', shortcut: 'F10', action: () => actions.openChannelSettings(store.selectedChannel?.id) },
       { label: 'Clear current pattern', action: actions.clearPattern },
       { label: 'Reset mixer', action: actions.resetMixer },
@@ -169,8 +172,9 @@ export function createToolbar(app) {
   const undoBtn = h('button', { class: 'tbtn', 'data-hint': 'Undo (Ctrl+Z)', onClick: actions.undo }, icon('undo'));
   const redoBtn = h('button', { class: 'tbtn', 'data-hint': 'Redo (Ctrl+Y)', onClick: actions.redo }, icon('redo'));
   const saveBtn = h('button', { class: 'tbtn', 'data-hint': 'Save project (Ctrl+S)', onClick: () => actions.saveProject(false) }, icon('save'));
-  const exportBtn = h('button', { class: 'tbtn', 'data-hint': 'Export audio (Ctrl+R)', onClick: actions.exportWav }, icon('export'));
-  const helpBtn = h('button', { class: 'tbtn', 'data-hint': 'Keyboard shortcuts (F1)', onClick: actions.showShortcuts }, icon('help'));
+  const exportBtn = h('button', { class: 'tbtn tb-export', 'data-hint': 'Export audio (Ctrl+R)', onClick: actions.exportWav }, icon('export'));
+  const helpBtn = h('button', { class: 'tbtn tb-help', 'data-hint': 'Keyboard shortcuts (F1)', onClick: actions.showShortcuts }, icon('help'));
+  const prefsBtn = h('button', { class: 'tbtn tb-prefs', 'data-hint': 'Settings — themes, colours and wallpaper (Ctrl+,)', onClick: () => actions.togglePreferences() }, icon('gear'));
 
   const updateBtn = h('button', { class: 'update-pill', hidden: true, onClick: () => actions.checkForUpdates() }, icon('export'), 'Update available');
 
@@ -186,7 +190,8 @@ export function createToolbar(app) {
     h('div', { class: 'knob-pair' }, masterKnob, pitchKnob),
     h('div', { class: 'tb-flex' }),
     updateBtn,
-    h('div', { class: 'tb-group' }, undoBtn, redoBtn, saveBtn, exportBtn, helpBtn));
+    h('div', { class: 'tb-group' }, undoBtn, redoBtn, saveBtn, exportBtn, helpBtn),
+    prefsBtn);
 
   // ------------------------------------------------------------------ row 2
   const projName = h('div', { class: 'hint-title' }, store.project.name);
@@ -299,10 +304,10 @@ export function createToolbar(app) {
       const db = 20 * Math.log10(Math.max(level[ch], 0.00001));
       const frac = Math.min(1, Math.max(0, (db + 54) / 60));
       const y = ch * 15 + 1;
-      c.fillStyle = '#161c20';
+      c.fillStyle = T.meterBg;
       c.fillRect(0, y, W, 11);
       const grad = c.createLinearGradient(0, 0, W, 0);
-      grad.addColorStop(0, '#4ea03a'); grad.addColorStop(0.75, '#b5d845'); grad.addColorStop(0.9, '#f0c030'); grad.addColorStop(1, '#e5534b');
+      grad.addColorStop(0, T.meter1); grad.addColorStop(0.75, T.meter2); grad.addColorStop(0.9, T.meter3); grad.addColorStop(1, T.meter4);
       c.fillStyle = grad;
       c.fillRect(0, y, W * frac, 11);
     }

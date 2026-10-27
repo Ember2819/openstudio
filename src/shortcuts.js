@@ -33,6 +33,7 @@ export function installShortcuts(app) {
         m: () => transport.setMetronome(!transport.metronome),
         l: () => transport.toggleMode(),
         p: () => { if (e.shiftKey) store.addPattern(); },
+        ',': () => actions.togglePreferences(),
       };
       if (map[k]) { e.preventDefault(); map[k](); }
       return;

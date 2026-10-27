@@ -97,7 +97,15 @@ class AppWindow extends Emitter {
     this.maximized = false;
     this.collapsed = false;
     this.el.classList.remove('maximized', 'collapsed');
-    this.setRect(r.x, r.y, r.w, r.h);
+    if (r === def && dw && dh) {
+      // default layouts open fully on screen, however small the window is
+      const w = Math.min(r.w, Math.max(this.minW, dw)), hh = Math.min(r.h, Math.max(this.minH, dh));
+      this.setRect(clamp(r.x, 0, Math.max(0, dw - w)), clamp(r.y, 0, Math.max(0, dh - hh)), w, hh);
+    } else {
+      this.setRect(r.x, r.y, r.w, r.h);
+      // a saved layout may come from a bigger screen
+      if (dw && dh) this.clampToDesktop();
+    }
     const vis = initial && saved ? saved.visible : this.defaultVisible;
     if (vis) this.show(); else this.hide();
     if (initial && saved?.max) this.toggleMaximize();
@@ -121,6 +129,7 @@ class AppWindow extends Emitter {
     const dw = this.mgr.desktop.clientWidth;
     const dh = this.mgr.desktop.clientHeight;
     this.w = Math.min(this.w, Math.max(this.minW, dw));
+    this.h = Math.min(this.h, Math.max(this.minH, dh));
     this.x = clamp(this.x, 60 - this.w, dw - 60);
     this.y = clamp(this.y, 0, Math.max(0, dh - TITLE_H));
     this._apply();

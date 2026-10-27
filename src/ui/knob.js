@@ -140,14 +140,3 @@ export function createKnob(opts) {
   Object.defineProperty(el, 'value', { get: () => value });
   return el;
 }
-
-/** Inject shared SVG gradient defs once. */
-export function installKnobDefs() {
-  const holder = document.createElement('div');
-  holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
-  holder.innerHTML = `<svg width="0" height="0"><defs>
-    <radialGradient id="knobGrad" cx="40%" cy="30%" r="75%">
-      <stop offset="0%" stop-color="#7d8d96"/><stop offset="60%" stop-color="#475760"/><stop offset="100%" stop-color="#2e3b42"/>
-    </radialGradient></defs></svg>`;
-  document.body.append(holder);
-}

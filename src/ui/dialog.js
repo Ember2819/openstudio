@@ -1,6 +1,6 @@
 import { h } from '../util.js';
 
-function modal(title, body, buttons) {
+function modal(title, body, buttons, cls = '') {
   return new Promise((resolve) => {
     const shade = h('div', { class: 'modal-shade' });
     const close = (val) => { shade.remove(); window.removeEventListener('keydown', onKey, true); resolve(val); };
@@ -13,7 +13,7 @@ function modal(title, body, buttons) {
     };
     const btnEls = buttons.map((b) =>
       h('button', { class: `btn${b.primary ? ' primary' : ''}`, onClick: () => close(b.value()) }, b.label));
-    const box = h('div', { class: 'modal' },
+    const box = h('div', { class: `modal${cls ? ` ${cls}` : ''}` },
       h('div', { class: 'modal-title' }, title),
       h('div', { class: 'modal-body' }, body),
       h('div', { class: 'modal-buttons' }, btnEls));
@@ -71,4 +71,21 @@ export function progressDialog(title, message, cancelLabel = 'Cancel') {
       if (msg != null) text.textContent = msg;
     },
   };
+}
+
+/** One key combo ("Ctrl+Shift+S", "+", "Z S X") as key caps. */
+function keyCaps(combo) {
+  const parts = combo === '+' ? ['+'] : combo.includes(' ') && !combo.includes('+') ? combo.split(' ') : combo.split('+');
+  const joiner = combo.includes('+') && combo !== '+' ? '+' : '';
+  return h('span', { class: 'kbd-combo' }, parts.map((k, i) => [i && joiner ? h('span', { class: 'kbd-plus' }, joiner) : null, h('kbd', { class: /click|Drag|Wheel/.test(k) ? 'mouse' : null }, k)]));
+}
+
+/** groups: [[title, [[keys, description], …]], …]; keys may list alternatives separated by " / ". */
+export function shortcutsDialog(title, groups) {
+  const sections = groups.map(([name, rows]) => h('section', { class: 'sc-group' },
+    h('div', { class: 'sc-title' }, name),
+    rows.map(([keys, desc]) => h('div', { class: 'sc-row' },
+      h('span', { class: 'sc-desc' }, desc),
+      h('span', { class: 'sc-keys' }, keys.split(' / ').map((k, i) => [i ? h('span', { class: 'sc-or' }, '/') : null, keyCaps(k)]))))));
+  return modal(title, [h('div', { class: 'sc-grid' }, sections)], [{ label: 'Close', primary: true, value: () => true }], 'modal-wide');
 }
