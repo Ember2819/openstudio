@@ -1,0 +1,96 @@
+name: Release builds
+# Builds distributable OpenStudio packages. Windows produces a standalone
+# portable .exe, Linux an .AppImage, and macOS a .dmg (Mountain Disk Image).
+# For every push (also merged PR) to main all three builds will be rebuilt and
+# published to GitHub Releases as a new release containing all three artifacts.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allows a manual test run from the Actions tab
+
+permissions:
+  contents: write # required to create GitHub releases
+
+concurrency:
+  group: release-builds-main
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest # standalone portable .exe
+          - os: ubuntu-latest # .AppImage
+          - os: macos-latest # .dmg (unsigned)
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Fetch checksum-verified audio assets
+        run: npm run assets
+
+      - name: Run unit tests
+        run: npm test
+
+      - name: Package distributable(s)
+        run: npx electron-builder --publish never
+        env:
+          # Skip macOS code-signing; the .dmg is left unsigned
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openstudio-${{ matrix.os }}
+          path: |
+            release/*.exe
+            release/*.AppImage
+            release/*.dmg
+          if-no-files-found: error
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7 # package.json needed for the version
+
+      - name: Compute version
+        id: ver
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: openstudio-*
+          path: release
+          merge-multiple: true
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}-build${{ github.run_number }}
+          name: OpenStudio v${{ steps.ver.outputs.version }} (build ${{ github.run_number }})
+          body: >-
+            Automated build from commit ${{ github.sha }}.
+            Downloads: the portable OpenStudio-${{ steps.ver.outputs.version }}-Portable.exe for Windows,
+            the .AppImage for Linux, and the .dmg for macOS.
+          draft: false
+          prerelease: false
+          files: |
+            release/*.exe
+            release/*.AppImage
+            release/*.dmg

@@ -1,0 +1,35 @@
+# electron-builder configuration — the release.yml workflow invokes
+# `npx electron-builder` which picks this file up automatically.
+appId: dev.openstudio.app
+productName: OpenStudio
+directories:
+  output: release
+  buildResources: build
+
+# Only ship what the app needs at runtime
+files:
+  - main.js
+  - preload.js
+  - index.html
+  - src/**/*
+  - styles/**/*
+  - assets/**/*
+  - package.json
+  - '!**/*.map'
+  - '!test/**'
+  - '!docs/**'
+  - '!scripts/**'
+  - '!build/**'
+  - '!release/**'
+
+mac:
+  # Unsigned build — no Apple Developer account available
+  identity: null
+
+win:
+  target: portable # single standalone executable
+  icon: build/openstudio.ico
+
+linux:
+  target:
+    - AppImage
