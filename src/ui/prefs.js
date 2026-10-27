@@ -5,6 +5,7 @@ import { icon } from './icons.js';
 import { appearance, THEMES, ACCENTS } from '../theme.js';
 import { SOLIDS, GRADIENTS, IMAGES, gradientCss, importImageFile, themeFromWallpaper } from '../wallpapers.js';
 import { messageDialog } from './dialog.js';
+import { PROFILES, ACTIONS, MODIFIERS, comboOf, resolveCombo } from './tiling.js';
 
 const COLOR_FIELDS = [
   ['bg', 'Background', 'Behind the windows'],
@@ -16,11 +17,12 @@ const COLOR_FIELDS = [
   ['red', 'Record', 'Record and close buttons'],
 ];
 
-export function createPreferences() {
+export function createPreferences(app) {
   let tab = 'theme';
   const body = h('div', { class: 'prefs-body' });
-  const tabs = ['theme', 'wallpaper'].map((id) => {
-    const b = h('button', { class: 'prefs-tab', onClick: () => { tab = id; render(); body.scrollTop = 0; } }, id === 'theme' ? 'Theme & colours' : 'Wallpaper');
+  const TAB_NAMES = { theme: 'Theme & colours', wallpaper: 'Wallpaper', windows: 'Windows & keys' };
+  const tabs = Object.keys(TAB_NAMES).map((id) => {
+    const b = h('button', { class: 'prefs-tab', onClick: () => { tab = id; render(); body.scrollTop = 0; } }, TAB_NAMES[id]);
     b.dataset.tab = id;
     return b;
   });
@@ -202,10 +204,95 @@ export function createPreferences() {
     if (f) { tab = 'wallpaper'; useFile(f); }
   });
 
+  // ------------------------------------------------------------ windows tab
+  const seg = (options, value, onPick) => h('div', { class: 'prefs-seg' }, options.map(([id, label, hint]) =>
+    h('button', { class: value === id ? 'on' : '', 'data-hint': hint || null, onClick: () => onPick(id) }, label)));
+  const check = (label, value, onChange) => {
+    const input = h('input', { type: 'checkbox', checked: value });
+    input.addEventListener('change', () => onChange(input.checked));
+    return h('label', { class: 'prefs-check' }, input, label);
+  };
+  /** "Mod+Shift+[" → key caps in the current modifier. */
+  const bindCaps = (bind, mod) => resolveCombo(bind, mod).split(/\+(?=.)/).map((k) => h('kbd', {}, k === 'Super' ? 'Super' : k));
+
+  let capture = null; // action id waiting for a key press
+  function startCapture(id) {
+    capture = id;
+    app.tiler.capturing = true;
+    render();
+  }
+  window.addEventListener('keydown', (e) => {
+    if (!capture) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') { capture = null; app.tiler.capturing = false; render(); return; }
+    const combo = comboOf(e);
+    if (!combo) return; // waiting for a non-modifier key
+    // store it relative to the modifier when it uses it, so changing the modifier carries it along
+    const mod = app.tiler.cfg.mod.split('+');
+    const parts = combo.split('+');
+    const key = parts.pop();
+    const usesMod = mod.every((m) => parts.includes(m));
+    const rest = usesMod ? parts.filter((p) => !mod.includes(p)) : parts;
+    const bind = [usesMod ? 'Mod' : null, ...rest, key].filter(Boolean).join('+');
+    const list = app.tiler.cfg.binds[capture] || [];
+    if (!list.includes(bind)) app.tiler.setBinds(capture, [...list, bind]);
+    capture = null;
+    app.tiler.capturing = false;
+    render();
+  }, true);
+
+  function renderWindows() {
+    const t = app.tiler;
+    const cfg = t.cfg;
+    const conflicts = t.conflicts();
+
+    const shapes = h('div', { class: 'prefs-colors' }, Object.entries(PROFILES).map(([id, p]) => h('div', { class: 'prefs-row' },
+      h('span', { class: 'prefs-color-text' }, h('span', { class: 'prefs-color-label' }, p.name), h('span', { class: 'prefs-color-sub' }, `Best ${p.orient}${p.fill ? ', takes spare room' : ''}`)),
+      seg([['auto', 'Auto', `Use the built-in shape (${p.orient})`], ['wide', 'Wide'], ['tall', 'Tall'], ['square', 'Square']], cfg.orient[id] || 'auto',
+        (o) => t.setConfig({ orient: { ...cfg.orient, [id]: o } })))));
+
+    const binds = h('div', { class: 'prefs-binds' }, ACTIONS.map(([id, label]) => {
+      const list = cfg.binds[id] || [];
+      const warn = list.map((b) => conflicts.get(`${id}|${b}`)).filter(Boolean);
+      return h('div', { class: 'prefs-bind' },
+        h('span', { class: 'prefs-bind-label' }, label, warn.length ? h('span', { class: 'prefs-bind-warn' }, warn.join(' · ')) : null),
+        h('span', { class: 'prefs-bind-keys' },
+          list.map((b) => h('button', { class: `prefs-chip${conflicts.has(`${id}|${b}`) ? ' warn' : ''}`, 'data-hint': 'Click to remove this binding', onClick: () => t.setBinds(id, list.filter((x) => x !== b)) }, bindCaps(b, cfg.mod))),
+          capture === id
+            ? h('span', { class: 'prefs-chip listening' }, 'Press keys… (Esc cancels)')
+            : h('button', { class: 'prefs-chip add', 'data-hint': 'Add a key binding', onClick: () => startCapture(id) }, icon('plus'))));
+    }));
+
+    body.replaceChildren(
+      section('Layout',
+        h('div', { class: 'prefs-row' }, h('span', { class: 'prefs-color-label' }, 'Mode'),
+          seg([['floating', 'Floating', 'Drag windows anywhere'], ['tiling', 'Tiling', 'Windows tile and scroll in columns, driven by the keyboard']], cfg.mode,
+            (m) => (m === 'tiling' ? t.enter() : t.exit()))),
+        h('p', { class: 'prefs-note' }, `Tiling works like niri: columns on a strip that scrolls sideways. The window you're working in grows to the size it needs and the others make room. ${resolveCombo('Mod+T', cfg.mod)} switches modes from anywhere.`),
+        h('div', { class: 'prefs-match' }, h('button', { class: 'btn', disabled: !t.active, onClick: () => t.arrange() }, 'Re-arrange now'))),
+      section('Behaviour',
+        check('Grow the window I\'m working in', cfg.grow, (v) => t.setConfig({ grow: v })),
+        check('Animate', cfg.animate, (v) => t.setConfig({ animate: v })),
+        h('div', { class: 'prefs-row' }, h('span', { class: 'prefs-color-label' }, 'Centre focus'),
+          seg([['never', 'Never', 'Scroll just enough to show it'], ['overflow', 'Off-screen', 'Centre a column that was off-screen'], ['always', 'Always']], cfg.center, (v) => t.setConfig({ center: v }))),
+        (() => {
+          const out = h('span', { class: 'prefs-slider-val' }, `${cfg.gaps} px`);
+          const input = h('input', { type: 'range', min: 0, max: 24, step: 1, value: cfg.gaps });
+          input.addEventListener('input', () => { out.textContent = `${input.value} px`; t.setConfig({ gaps: +input.value }); });
+          return h('label', { class: 'prefs-slider' }, h('span', { class: 'prefs-color-label' }, 'Gaps'), input, out);
+        })()),
+      section('Window shapes', shapes),
+      section('Modifier key',
+        seg(Object.keys(MODIFIERS).map((m) => [m, m]), cfg.mod, (m) => t.setConfig({ mod: m })),
+        h('p', { class: 'prefs-note' }, 'Super is usually taken by the desktop (Hyprland, niri, GNOME…), so OpenStudio may never see it. Alt is the safest choice.')),
+      sectionWith('Key bindings', h('button', { class: 'prefs-link', onClick: () => t.resetBinds() }, 'Reset to defaults'), binds));
+  }
+
   function render() {
     tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     const top = body.scrollTop;
-    if (tab === 'theme') renderTheme(); else renderWallpaper();
+    if (tab === 'theme') renderTheme(); else if (tab === 'wallpaper') renderWallpaper(); else renderWindows();
     body.scrollTop = top;
   }
 
@@ -217,6 +304,9 @@ export function createPreferences() {
     render();
   });
 
+  const refreshWindows = () => { if (tab === 'windows' && !el.classList.contains('hidden')) render(); };
+  app.tiler.on('config', refreshWindows);
+  app.tiler.on('mode', refreshWindows);
   function open() { render(); el.classList.remove('hidden'); el.focus({ preventScroll: true }); }
   function close() { el.classList.add('hidden'); }
   const isOpen = () => !el.classList.contains('hidden');

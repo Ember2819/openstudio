@@ -22,6 +22,7 @@ import { installAutosave } from './autosave.js';
 import { installAgent } from './agent/index.js';
 import { appearance } from './theme.js';
 import { createPreferences } from './ui/prefs.js';
+import { Tiler } from './ui/tiling.js';
 
 // colours first, so nothing is ever drawn with an unthemed palette
 appearance.apply();
@@ -37,8 +38,6 @@ app.browserVisible = () => !document.getElementById('browser').classList.contain
 app.actions = createActions(app);
 app.input = createInput(app);
 app.appearance = appearance;
-const prefs = createPreferences();
-app.actions.togglePreferences = prefs.toggle;
 
 // the toolbar must exist first so windows are laid out against the real desktop size
 app.toolbar = createToolbar(app);
@@ -57,6 +56,9 @@ setAutomationHandler((target) => app.actions.createAutomation(target));
 const piano = createPianoRoll(app);
 const mixer = createMixer(app);
 installShortcuts(app);
+app.tiler = new Tiler(app);
+const prefs = createPreferences(app);
+app.actions.togglePreferences = prefs.toggle;
 initMidi(app);
 app.toolbar.refreshProject();
 app.autosave = installAutosave(app);
