@@ -8,6 +8,7 @@ import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
+import { ACTIONS, resolveCombo } from './ui/tiling.js';
 
 /** Help → Keyboard shortcuts. Keys: alternatives separated by " / ", combos joined with "+". */
 const SHORTCUTS = [
@@ -231,7 +232,14 @@ export function createActions(app) {
     },
 
     showShortcuts() {
-      shortcutsDialog('Keyboard shortcuts', SHORTCUTS);
+      const groups = [...SHORTCUTS];
+      const t = app.tiler;
+      if (t) {
+        const rows = ACTIONS.filter(([id]) => t.cfg.binds[id]?.length)
+          .map(([id, label]) => [t.cfg.binds[id].map((b) => resolveCombo(b, t.cfg.mod)).join(' / '), label]);
+        groups.splice(2, 0, [`Tiling windows${t.active ? '' : ' (off — first one turns it on)'}`, rows]);
+      }
+      shortcutsDialog('Keyboard shortcuts', groups);
     },
 
     showAbout() {

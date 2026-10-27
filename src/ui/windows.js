@@ -13,7 +13,7 @@ export class WindowManager extends Emitter {
     this.saved = {};
     try { this.saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { this.saved = {}; }
     this.persist = debounce(() => this._persist(), 300);
-    new ResizeObserver(() => this.windows.forEach((w) => w.clampToDesktop())).observe(desktop);
+    new ResizeObserver(() => { this.windows.forEach((w) => w.clampToDesktop()); this.emit('desktop-resize'); }).observe(desktop);
   }
 
   create(opts) {
@@ -116,8 +116,19 @@ class AppWindow extends Emitter {
     this._apply();
   }
 
+  /** Placement from the tiling manager; the floating geometry (x, y, w, h) is left alone. */
+  setTileRect(r) {
+    this.tileRect = r;
+    if (this.mgr.tiling) this._apply();
+  }
+
   _apply() {
     const s = this.el.style;
+    if (this.mgr.tiling && this.tileRect) {
+      const r = this.tileRect;
+      s.left = `${r.x}px`; s.top = `${r.y}px`; s.width = `${r.w}px`; s.height = `${r.h}px`;
+      return;
+    }
     s.left = `${this.x}px`;
     s.top = `${this.y}px`;
     s.width = `${this.w}px`;
@@ -125,7 +136,7 @@ class AppWindow extends Emitter {
   }
 
   clampToDesktop() {
-    if (this.maximized) return;
+    if (this.maximized || this.mgr.tiling) return;
     const dw = this.mgr.desktop.clientWidth;
     const dh = this.mgr.desktop.clientHeight;
     this.w = Math.min(this.w, Math.max(this.minW, dw));
@@ -161,15 +172,18 @@ class AppWindow extends Emitter {
   focus() {
     this.mgr.bringToFront(this);
     this.emit('focus');
+    this.mgr.emit('focus', this);
   }
 
   toggleCollapse() {
+    if (this.mgr.tiling) return;
     this.collapsed = !this.collapsed;
     this.el.classList.toggle('collapsed', this.collapsed);
     this._apply();
   }
 
   toggleMaximize() {
+    if (this.mgr.tiling) { this.mgr.emit('tile-maximize', this); return; }
     if (this.maximized) {
       this.maximized = false;
       this.el.classList.remove('maximized');
@@ -185,7 +199,7 @@ class AppWindow extends Emitter {
   }
 
   _startDrag(e) {
-    if (e.button !== 0 || e.target.closest('.win-btn') || this.maximized) return;
+    if (e.button !== 0 || e.target.closest('.win-btn') || this.maximized || this.mgr.tiling) return;
     const sx = e.clientX, sy = e.clientY, ox = this.x, oy = this.y;
     this.titleEl.setPointerCapture(e.pointerId);
     this.el.classList.add('dragging');
@@ -209,7 +223,7 @@ class AppWindow extends Emitter {
   }
 
   _startResize(e, dir) {
-    if (e.button !== 0 || this.maximized || this.collapsed) return;
+    if (e.button !== 0 || this.maximized || this.collapsed || this.mgr.tiling) return;
     e.preventDefault();
     e.stopPropagation();
     const handle = e.currentTarget;
