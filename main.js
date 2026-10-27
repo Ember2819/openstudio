@@ -1,6 +1,8 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, session } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const updater = require('./updater');
 
 // Dev helper: `electron . --screenshot=/tmp/out.png [--eval="js"] [--wait=1500] [--size=1600x900]`
 const argOf = (name) => {
@@ -126,6 +128,113 @@ ipcMain.handle('asset:read', async (_e, rel) => {
 if (argOf('screenshot')) {
   // dev-only: lets test scripts dump rendered audio / data to disk
   ipcMain.handle('dev:write', async (_e, file, data) => { await fs.promises.writeFile(file, Buffer.from(data)); return file; });
+}
+
+// ------------------------------------------------------------------ updates
+// The renderer never supplies URLs: it can only ask us to check, then install whatever that check found.
+const REPO = updater.repoSlug(require('./package.json'));
+const buildInfo = updater.readBuildInfo(__dirname);
+let pendingUpdate = null; // result of the last successful check
+let installing = null; // AbortController while a download is running
+let installedTarget = null; // set once a new package replaced the running one
+
+// Where the running app lives on disk, if we can replace it in place (AppImage, Windows portable exe).
+function selfPath() {
+  if (!app.isPackaged) return null;
+  if (process.platform === 'linux') return process.env.APPIMAGE || null;
+  if (process.platform === 'win32') return process.env.PORTABLE_EXECUTABLE_FILE || null;
+  return null;
+}
+
+ipcMain.handle('update:info', () => ({
+  version: app.getVersion(),
+  build: buildInfo?.build ?? null,
+  autoCheck: app.isPackaged && !!buildInfo && !argOf('screenshot'),
+  inPlace: !!selfPath(),
+  platform: process.platform,
+}));
+
+ipcMain.handle('update:check', async () => {
+  const res = await updater.checkForUpdate({ repo: REPO, current: { version: app.getVersion(), build: buildInfo?.build ?? null } });
+  pendingUpdate = res.status === 'available' ? res : null;
+  return {
+    status: res.status,
+    latest: res.latest,
+    // an update exists but nothing was built for this platform/arch -> UI falls back to the release page
+    downloadable: !!res.asset,
+    size: res.asset?.size ?? 0,
+    assetName: res.asset?.name ?? null,
+  };
+});
+
+ipcMain.handle('update:install', async (e) => {
+  if (!pendingUpdate?.asset) throw new Error('No update to install — check for updates first');
+  if (installing) throw new Error('An update is already downloading');
+  const { asset } = pendingUpdate;
+  const target = selfPath();
+  const send = (p) => { if (!e.sender.isDestroyed()) e.sender.send('update:progress', p); };
+  installing = new AbortController();
+  const signal = installing.signal;
+  const run = (dest) => updater.downloadAsset({ asset, repo: REPO, dest, onProgress: send, signal });
+
+  try {
+    if (target) {
+      // Download beside the current file so the final swap is a same-volume rename.
+      const staging = `${target}.update`;
+      try { await fs.promises.access(path.dirname(target), fs.constants.W_OK); } catch {
+        throw new Error(`OpenStudio can't write to ${path.dirname(target)}. Move the app somewhere you own, or download the update manually.`);
+      }
+      await run(staging);
+      if (process.platform === 'win32') {
+        // a running .exe can be renamed but not overwritten; the old copy is deleted on the next launch
+        await fs.promises.rm(`${target}.old`, { force: true });
+        await fs.promises.rename(target, `${target}.old`);
+        try { await fs.promises.rename(staging, target); } catch (err) {
+          await fs.promises.rename(`${target}.old`, target).catch(() => {});
+          throw err;
+        }
+      } else {
+        await fs.promises.chmod(staging, 0o755);
+        await fs.promises.rename(staging, target); // atomic; the running image keeps its old inode
+      }
+      installedTarget = target;
+      return { action: 'restart' };
+    }
+
+    // No in-place swap is possible (macOS .dmg, running from source, system-managed install): hand over the file.
+    const dest = path.join(app.getPath('downloads'), asset.name);
+    await run(dest);
+    if (process.platform === 'darwin') await shell.openPath(dest);
+    else shell.showItemInFolder(dest);
+    return { action: 'manual', path: dest };
+  } catch (err) {
+    if (target) await fs.promises.rm(`${target}.update`, { force: true });
+    throw signal.aborted ? new Error('Cancelled') : err;
+  } finally {
+    installing = null;
+  }
+});
+
+ipcMain.on('update:cancel', () => installing?.abort());
+
+ipcMain.handle('update:restart', () => {
+  if (!installedTarget) return false;
+  if (process.platform === 'win32') {
+    // app.relaunch() would start the temp-extracted copy; start the portable launcher itself instead
+    spawn(installedTarget, process.argv.slice(1), { detached: true, stdio: 'ignore' }).unref();
+    app.quit();
+  } else {
+    app.relaunch({ execPath: installedTarget, args: process.argv.slice(1) });
+    app.exit(0);
+  }
+  return true;
+});
+
+ipcMain.handle('update:openRelease', () => shell.openExternal(pendingUpdate?.latest?.url || `https://github.com/${REPO}/releases/latest`));
+
+// Tidy up the previous copy left behind by a Windows swap.
+if (process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_FILE) {
+  fs.promises.rm(`${process.env.PORTABLE_EXECUTABLE_FILE}.old`, { force: true }).catch(() => {});
 }
 
 ipcMain.on('window:title', (_e, title) => {

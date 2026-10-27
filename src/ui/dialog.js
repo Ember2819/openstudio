@@ -52,3 +52,23 @@ export function messageDialog(title, message) {
     { label: 'OK', primary: true, value: () => true },
   ]);
 }
+
+/**
+ * Modal progress bar. `done` resolves (to null) when the user cancels or presses Escape;
+ * `set(fraction, text)` updates the bar (fraction null = indeterminate) and `close()` dismisses it.
+ */
+export function progressDialog(title, message, cancelLabel = 'Cancel') {
+  const text = h('div', { style: { minWidth: '320px' } }, message);
+  const fill = h('div', { class: 'progress-fill indeterminate' });
+  const done = modal(title, [text, h('div', { class: 'progress' }, fill)], [{ label: cancelLabel, value: () => null }]);
+  const { close } = modal.last;
+  return {
+    done,
+    close: () => close(null),
+    set(fraction, msg) {
+      fill.classList.toggle('indeterminate', fraction == null);
+      fill.style.width = fraction == null ? '' : `${Math.round(Math.min(1, Math.max(0, fraction)) * 100)}%`;
+      if (msg != null) text.textContent = msg;
+    },
+  };
+}

@@ -7,6 +7,19 @@ contextBridge.exposeInMainWorld('studioAPI', {
   writeFile: (opts) => ipcRenderer.invoke('file:write', opts),
   readAsset: (rel) => ipcRenderer.invoke('asset:read', rel),
   devWrite: (file, data) => ipcRenderer.invoke('dev:write', file, data),
+  updates: {
+    info: () => ipcRenderer.invoke('update:info'),
+    check: () => ipcRenderer.invoke('update:check'),
+    install: () => ipcRenderer.invoke('update:install'),
+    cancel: () => ipcRenderer.send('update:cancel'),
+    restart: () => ipcRenderer.invoke('update:restart'),
+    openRelease: () => ipcRenderer.invoke('update:openRelease'),
+    onProgress: (fn) => {
+      const handler = (_e, p) => fn(p);
+      ipcRenderer.on('update:progress', handler);
+      return () => ipcRenderer.removeListener('update:progress', handler);
+    },
+  },
   setTitle: (title) => ipcRenderer.send('window:title', title),
   // MCP bridge (src/agent): the main process hosts the server, the renderer owns the project and runs the tools
   agent: {

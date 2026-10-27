@@ -10,6 +10,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   projects and files, transport, channels, patterns and notes, playlist, mixer and effects, automation, MIDI import/export,
   offline rendering with audio analysis, screenshots and window control. Every call is an undo step. See `docs/AGENTS.md`.
 - Toolbar indicator and Help → Agents dialog for the MCP server.
+- In-app updates: **Help → Check for updates…** (and a quiet check on startup) finds the newest GitHub release and installs it in one click — the AppImage / Windows portable exe is replaced in place and the app restarts; macOS opens the downloaded .dmg. Downloads are verified against GitHub's SHA-256 digest.
 
 ## [0.2.0]
 
