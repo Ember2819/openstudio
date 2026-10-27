@@ -21,9 +21,18 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const log = (...m) => console.error('[openstudio-mcp]', ...m);
 const send = (msg) => process.stdout.write(`${JSON.stringify(msg)}\n`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Generous: tool calls in the app may legitimately run for up to 5 minutes. Without a deadline, a request
+// whose socket dies mid-flight (app quit, crash) would hang this process — and the MCP client — forever.
+// OPENSTUDIO_MCP_TIMEOUT_MS overrides it (used by the tests).
+const FORWARD_TIMEOUT_MS = Number(process.env.OPENSTUDIO_MCP_TIMEOUT_MS) || 6 * 60 * 1000;
 
 async function post(body) {
-  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body });
+  return fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body,
+    signal: AbortSignal.timeout(FORWARD_TIMEOUT_MS),
+  });
 }
 
 let launching = null;
@@ -62,6 +71,7 @@ async function forward(line) {
       res = await post(line);
     }
   } catch (err) {
+    if (err?.name === 'TimeoutError') return fail(`OpenStudio at ${url} did not answer within ${FORWARD_TIMEOUT_MS / 60000} minutes.`);
     return fail(`Cannot reach OpenStudio at ${url} (${err.cause?.code || err.message}). Start the app (npm start) or add --launch to this command.`);
   }
   if (res.status === 202) return undefined;
