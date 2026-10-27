@@ -2,21 +2,26 @@ name: Release builds
 description: >-
   Builds distributable OpenStudio packages for x64 and ARM64. Windows produces
   standalone portable .exe files, Linux .AppImage files, and macOS .dmg files.
-# For every push (also merged PR) to main all six builds (3 platforms x 2
-# architectures) will be rebuilt and published to GitHub Releases as a new
-# release containing all artifacts, e.g.
-# OpenStudio-0.2.0-windows-x64-portable.exe
+# Releases are cut deliberately, not on every commit. To publish one:
+#   1. bump "version" in package.json and commit it
+#   2. git tag v<version> && git push origin v<version>
+# That builds all six packages (3 platforms x 2 architectures) and publishes
+# them as a GitHub Release, e.g. OpenStudio-0.3.0-windows-x64-portable.exe.
+# Pushes to main without a tag only run CI (ci.yml).
+#
+# "Run workflow" in the Actions tab does a test build of the current branch:
+# the packages are uploaded as workflow artifacts but no release is created.
 
 on:
   push:
-    branches: [main]
-  workflow_dispatch: # allows a manual test run from the Actions tab
+    tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write # required to create GitHub releases
 
 concurrency:
-  group: release-builds-main
+  group: release-builds
   cancel-in-progress: false
 
 jobs:
@@ -37,6 +42,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Check tag matches package.json version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          pkg="v$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$pkg" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version ($pkg). Bump the version first."
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
@@ -76,6 +91,7 @@ jobs:
   release:
     name: Publish release
     needs: build
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7 # package.json needed for the version
@@ -95,10 +111,10 @@ jobs:
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.ver.outputs.version }}-build${{ github.run_number }}
-          name: OpenStudio v${{ steps.ver.outputs.version }} (build ${{ github.run_number }})
+          tag_name: ${{ github.ref_name }}
+          name: OpenStudio ${{ github.ref_name }}
+          generate_release_notes: true
           body: >-
-            Automated build from commit ${{ github.sha }}.
             Downloads:
             OpenStudio-${{ steps.ver.outputs.version }}-windows-x64-portable.exe (Windows x64),
             OpenStudio-${{ steps.ver.outputs.version }}-windows-arm64-portable.exe (Windows on ARM),
