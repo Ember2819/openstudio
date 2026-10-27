@@ -195,8 +195,7 @@ export function createToolbar(app) {
 
   // ------------------------------------------------------------------ row 2
   const projName = h('div', { class: 'hint-title' }, store.project.name);
-  const hintText = h('div', { id: 'hint-text', class: 'hint-text' }, '');
-  const hintPanel = h('div', { class: 'hint-panel' }, projName, hintText);
+  const hintPanel = h('div', { class: 'hint-panel' }, projName);
 
   const snapBtn = createSnapSelect(app);
 
@@ -266,9 +265,10 @@ export function createToolbar(app) {
     redoBtn.disabled = !store.redoStack.length;
   };
 
+  let busyText = '';
   const refreshProject = () => {
     const p = store.project;
-    projName.textContent = `${store.dirty ? '• ' : ''}${p.name}`;
+    projName.textContent = busyText || `${store.dirty ? '• ' : ''}${p.name}`;
     const pat = store.currentPattern;
     patName.textContent = pat.name;
     patSwatch.style.background = pat.color;
@@ -335,9 +335,10 @@ export function createToolbar(app) {
     redoBtn.disabled = !store.redoStack.length;
   }
 
-  /** Show a status message (e.g. while rendering) in the hint panel; null clears it. */
+  /** Show a status message (e.g. while rendering) in place of the project name; null clears it. */
   const setBusy = (text) => {
-    hintText.textContent = text || '';
+    busyText = text || '';
+    refreshProject();
     document.body.classList.toggle('busy', !!text);
   };
 

@@ -14,8 +14,31 @@ export function showAutomationMenu(e, target, extra = []) {
   ], e.clientX, e.clientY);
 }
 
+/** Floating tooltip that follows the pointer (top-right of it), so hints never cover the control being hovered. */
+let tipEl = null;
+let tipX = 0;
+let tipY = 0;
+const placeTip = () => {
+  if (!tipEl) return;
+  const w = tipEl.offsetWidth;
+  const hgt = tipEl.offsetHeight;
+  const x = tipX + 14 + w > window.innerWidth - 4 ? tipX - 14 - w : tipX + 14;
+  const y = tipY - 14 - hgt < 4 ? tipY + 18 : tipY - 14 - hgt;
+  tipEl.style.left = `${Math.max(4, x)}px`;
+  tipEl.style.top = `${y}px`;
+};
+window.addEventListener('pointermove', (e) => { tipX = e.clientX; tipY = e.clientY; placeTip(); }, true);
+
 export const hint = {
-  set(text) { const el = document.getElementById('hint-text'); if (el) el.textContent = text || ''; },
+  set(text) {
+    if (!text) { tipEl?.remove(); tipEl = null; return; }
+    if (!tipEl) {
+      tipEl = h('div', { class: 'value-bubble' });
+      document.body.append(tipEl);
+    }
+    tipEl.textContent = text;
+    placeTip();
+  },
   clear() { this.set(''); },
 };
 
