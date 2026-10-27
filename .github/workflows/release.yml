@@ -1,7 +1,6 @@
 name: Release builds
-description: >-
-  Builds distributable OpenStudio packages. Windows produces a standalone
-  portable .exe, Linux an .AppImage, and macOS a .dmg (Mountain Disk Image).
+# Builds distributable OpenStudio packages. Windows produces a standalone
+# portable .exe, Linux an .AppImage, and macOS a .dmg (Mountain Disk Image).
 # For every push (also merged PR) to main all three builds will be rebuilt and
 # published to GitHub Releases as a new release containing all three artifacts.
 
@@ -29,9 +28,9 @@ jobs:
           - os: macos-latest # .dmg (unsigned)
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -66,7 +65,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # package.json needed for the version
+      - uses: actions/checkout@v7 # package.json needed for the version
 
       - name: Compute version
         id: ver

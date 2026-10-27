@@ -4,6 +4,7 @@ appId: dev.openstudio.app
 productName: OpenStudio
 directories:
   output: release
+  buildResources: build
 
 # Only ship what the app needs at runtime
 files:
@@ -27,6 +28,7 @@ mac:
 
 win:
   target: portable # single standalone executable
+  icon: build/openstudio.ico
 
 linux:
   target:

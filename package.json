@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "electron": "^35.0.0",
+    "electron": "^45.0.0",
     "electron-builder": "^26.18.0",
     "electron-packager": "^17.1.2",
     "eslint": "^10.13.0",
@@ -36,7 +36,7 @@
     "node": ">=22"
   },
   "allowScripts": {
-    "electron@35.7.5": true
+    "electron@45.0.0": true
   },
   "repository": {
     "type": "git",
