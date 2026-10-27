@@ -9,7 +9,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - First-launch welcome dialog: recommends tiling mode (floating stays the default) and points to Settings, update checks and the MCP server.
 
 ### Changed
-- Menu-bar menus (File, Edit, View…) open on hover instead of needing a click.
+- Menu-bar menus (File, Edit, View…) open on hover instead of needing a click, and close by themselves when the pointer leaves both the word and its menu.
 - The project-name box in the toolbar is the same height as the snap and pattern controls.
 - The toolbar's project-name box shows only the project name; hover hints are a tooltip beside the cursor instead of text inside that box.
 - Help → Agents (MCP server)… opens Settings → Agents instead of a dialog.

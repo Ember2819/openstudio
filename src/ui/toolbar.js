@@ -1,7 +1,7 @@
 import { h } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob, hint } from './knob.js';
-import { showMenuBelow } from './menu.js';
+import { showMenuBelow, closeMenus } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
@@ -92,10 +92,23 @@ export function createToolbar(app) {
     return b;
   });
   let menuOpen = null;
+  // a menu-bar menu closes itself once the pointer has been off both its word and its menu (incl. submenus) for a moment
+  let leaveTimer = null;
+  const onMenuPointerMove = (e) => {
+    const over = e.target.closest?.('.menu') || menuButtons.some((b) => b.contains(e.target));
+    if (over) { clearTimeout(leaveTimer); leaveTimer = null; } else if (!leaveTimer) leaveTimer = setTimeout(closeMenus, 220);
+  };
   function open(btn, name) {
     menuOpen = btn;
     menuButtons.forEach((m) => m.classList.toggle('open', m === btn));
-    showMenuBelow(btn, menus[name](), { onClose: () => { menuOpen = null; menuButtons.forEach((m) => m.classList.remove('open')); } });
+    showMenuBelow(btn, menus[name](), { onClose: () => {
+      menuOpen = null;
+      menuButtons.forEach((m) => m.classList.remove('open'));
+      clearTimeout(leaveTimer);
+      leaveTimer = null;
+      window.removeEventListener('pointermove', onMenuPointerMove, true);
+    } });
+    window.addEventListener('pointermove', onMenuPointerMove, true);
   }
 
   // -------------------------------------------------------------- transport
