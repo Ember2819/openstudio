@@ -16,6 +16,8 @@ a few days.
 OpenStudio is a local desktop app. The areas most relevant to security are:
 - parsing untrusted files (`.osp` projects, audio files, SoundFonts);
 - the Electron bridge in `preload.js` / `main.js` (file dialogs, asset loading);
+- the local MCP server (`mcp/`, `docs/AGENTS.md`): it listens on loopback only, rejects foreign `Host`/`Origin`
+  headers, and its file tools act with the user's permissions;
 - the asset downloader (`scripts/fetch-assets.mjs`), which verifies a pinned SHA-256 checksum.
 
 The renderer runs with `contextIsolation` on, `nodeIntegration` off and a restrictive Content-Security-Policy.

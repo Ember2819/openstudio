@@ -76,3 +76,8 @@
 
 .audio-status { font-size: 10.5px; color: var(--text-dim); text-align: right; line-height: 1.25; min-width: 120px; padding-right: 2px; }
 .audio-status b { color: var(--text); font-weight: 500; }
+.agent-status { display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 10.5px; color: var(--text-dim); white-space: nowrap; }
+.agent-status[hidden] { display: none; }
+.agent-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); }
+.agent-status.active { color: var(--text); }
+.agent-status.active .dot { background: var(--accent); }

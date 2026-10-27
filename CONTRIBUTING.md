@@ -33,11 +33,13 @@ Useful commands: `npm run lint`, `npm test`, `npm run test:e2e`. CI runs all thr
 
 ```
 main.js, preload.js      Electron main process and bridge (file dialogs, asset loading)
+mcp/                     MCP server for AI agents (protocol + main↔renderer bridge)
 index.html               Shell; loads src/main.js as an ES module
 src/state.js             Project model, undo/redo, serialization
 src/audio/               Engine, transport/scheduler, SoundFont parser + sampler, synth, effects
 src/ui/                  One module per window (toolbar, rack, piano roll, playlist, mixer, …)
 src/automation.js        Automation targets and curve maths
+src/agent/               The MCP tools agents use (see docs/AGENTS.md)
 src/midi*.js, input.js   MIDI input, MIDI file export, live note input
 styles/                  Design tokens (theme.css) and per-area CSS
 test/                    Unit tests (node:test) and the e2e smoke script
@@ -73,6 +75,8 @@ with `xvfb-run -a`. Open DevTools in the normal app with <kbd>Ctrl</kbd>+<kbd>Sh
   project saving pick it up automatically.
 - **A synth/sampler parameter** — extend the metadata in `src/audio/instruments.js`; the settings window renders it.
 - **A window** — create a module in `src/ui/` that calls `app.wm.create(...)`, then register it in `src/main.js`.
+- **An agent tool** — add it to `src/agent/tools/` (see [docs/AGENTS.md](docs/AGENTS.md#adding-a-tool)); anything a
+  person can do in the UI should be doable by an agent, so new features usually need a tool and a test.
 - **Project-format changes** — keep old projects loading (`Store.load` fills defaults) and add a test.
 
 ## Commit messages and pull requests

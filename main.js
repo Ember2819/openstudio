@@ -132,16 +132,45 @@ ipcMain.on('window:title', (_e, title) => {
   if (mainWindow) mainWindow.setTitle(title);
 });
 
-app.whenReady().then(() => {
+// ---- MCP server: lets AI agents drive the project (see docs/AGENTS.md) ----
+// On by default, listening on 127.0.0.1 only. `--no-mcp` (or OPENSTUDIO_MCP=0) turns it off,
+// `--mcp-port=N` / OPENSTUDIO_MCP_PORT picks the port (0 = any free port).
+const DEFAULT_MCP_PORT = 6736;
+let agentHost = null;
+
+async function startAgents() {
+  const off = process.argv.includes('--no-mcp') || process.env.OPENSTUDIO_MCP === '0';
+  if (off) { ipcMain.handle('agent:info', () => null); return; }
+  const port = Number(argOf('mcp-port') ?? process.env.OPENSTUDIO_MCP_PORT ?? DEFAULT_MCP_PORT);
+  try {
+    const { startAgentHost } = require('./mcp/bridge');
+    agentHost = await startAgentHost({
+      ipcMain,
+      getWindow: () => mainWindow,
+      version: app.getVersion(),
+      port,
+      instructions: require('./mcp/instructions'),
+    });
+    console.log(`[mcp] listening on ${agentHost.url}`);
+  } catch (err) {
+    console.error(`[mcp] could not start on port ${port}: ${err.message}`);
+    ipcMain.handle('agent:info', () => null);
+  }
+}
+
+app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
   const allowed = (perm) => perm === 'midi' || perm === 'midiSysex';
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(allowed(perm)));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => allowed(perm));
+  await startAgents();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+app.on('before-quit', () => { agentHost?.close(); });
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

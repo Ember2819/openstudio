@@ -34,7 +34,7 @@ export function createChannelRack(app) {
     onStart: () => store.checkpoint(), onChange: (v) => { store.project.swing = v; },
   });
   swingKnob.addEventListener('pointerdown', (e) => e.stopPropagation(), true);
-  store.on('project', () => swingKnob.setValue(store.project.swing));
+  for (const evt of ['project', 'settings']) store.on(evt, () => swingKnob.setValue(store.project.swing));
   win.titleExtra.append(h('span', { class: 'tb-flex' }), h('span', { class: 'cr-steps-lbl' }, 'Swing'), swingKnob, h('span', { class: 'cr-steps-lbl' }, 'Steps'), stepsBtn);
 
   const header = h('div', { class: 'cr-header' }, h('div', { class: 'cr-left cr-left-head' }), h('div', { class: 'cr-leds' }));

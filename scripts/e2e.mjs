@@ -18,7 +18,7 @@ if (!existsSync(join(root, 'assets/soundfonts/GeneralUser-GS.sf2'))) {
 }
 
 const args = ['.', '--no-sandbox', '--disable-gpu', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'openstudio-ud-'))}`,
-  `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300'];
+  '--no-mcp', `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300'];
 const headless = !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 const cmd = headless ? 'xvfb-run' : electron;
 const full = headless ? ['-a', '-s', '-screen 0 1600x900x24', electron, ...args] : args;

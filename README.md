@@ -27,6 +27,8 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **Playlist** with pattern, audio and automation clips, loop region, drag-and-drop of samples and audio files.
 - **Mixer** with 125 inserts, sends (feedback-protected), 10 effect slots per track and stereo meters.
 - **Automation** — right-click any knob or fader to create an automation clip with an editable curve.
+- **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md): compose, arrange, mix,
+  automate, render and export — you watch it happen live and can undo any of it.
 - Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live recording.
 
 ## Getting started
@@ -56,12 +58,43 @@ If Electron's binary is broken by a skipped postinstall step or a corrupted down
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> / <kbd>O</kbd> / <kbd>R</kbd> | Save, open, export audio |
 | Right-click a knob | Create an automation clip |
 
+## Agents (MCP)
+
+OpenStudio serves the Model Context Protocol on `http://127.0.0.1:6736/mcp` while it runs (this computer only;
+`--no-mcp` turns it off), so an AI agent can compose, arrange, mix and export in the open app while you watch.
+
+**Quick setup:** download the OpenStudio app from the [releases page](https://github.com/Ember2819/openstudio/releases),
+then copy this prompt into your coding agent (Claude Code, Codex, Cursor, …) and it will connect itself:
+
+````text
+Set up OpenStudio (an open-source DAW) so you can work on music projects in it through its built-in MCP server.
+
+1. Find the OpenStudio app I downloaded (look in Downloads and the usual app locations: OpenStudio-*.exe,
+   OpenStudio-*.AppImage, OpenStudio.app) and launch it. If you can't find it, ask me where it is. Linux AppImages
+   may need `chmod +x` first. Leave it running.
+2. Check that http://127.0.0.1:6736/mcp is up: POST a JSON-RPC `ping` to it. If the port is busy, the app prints
+   `[mcp] listening on <url>` on start-up; use that URL instead.
+3. Register it as an MCP server named "openstudio" (Streamable HTTP, no auth) in whichever way YOUR client supports.
+   For Claude Code: `claude mcp add --transport http openstudio http://127.0.0.1:6736/mcp`. For clients with a JSON
+   config: `{ "mcpServers": { "openstudio": { "url": "http://127.0.0.1:6736/mcp" } } }`. If your client only
+   supports stdio MCP servers, use the bridge in the OpenStudio repo instead:
+   `node scripts/mcp-stdio.mjs --launch` (clone https://github.com/Ember2819/openstudio if needed).
+4. Reload or restart yourself if your client needs that to pick up new MCP servers, then confirm the `openstudio`
+   tools are available (e.g. call `get_project`).
+5. Read https://github.com/Ember2819/openstudio/blob/main/docs/AGENTS.md for the tool list and conventions
+   (time is in steps: 16 = 1 bar; MIDI 60 = C5; use `render_audio` to check the mix since you can't hear it).
+6. Tell me when it works, then ask what I'd like to make. Don't overwrite my unsaved work.
+````
+
+More setup options, the tool list and the security model are in [docs/AGENTS.md](docs/AGENTS.md).
+
 ## Development
 
 ```bash
 npm run lint        # ESLint
 npm test            # unit tests (node:test) — store, automation, MIDI writer, SoundFont parser
 npm run test:e2e    # launches the real app headlessly and smoke-tests playback, mixing, export
+npm run test:e2e:mcp # drives the real app through its MCP server with the official client
 ```
 
 The app is plain ES modules loaded straight by Electron — edit a file and restart. A headless screenshot /

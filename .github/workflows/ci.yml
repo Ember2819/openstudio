@@ -50,3 +50,4 @@ jobs:
           key: soundfont-${{ hashFiles('scripts/fetch-assets.mjs') }}
       - run: npm run assets
       - run: npm run test:e2e
+      - run: npm run test:e2e:mcp

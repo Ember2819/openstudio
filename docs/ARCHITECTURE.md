@@ -18,6 +18,8 @@ Web Audio API; everything is driven by one project model.
 ## Process model
 - `main.js` (Electron main): creates the window, file dialogs, reads bundled assets, MIDI permission. It also
   contains the dev-only screenshot/eval harness (active only with `--screenshot`).
+- `mcp/`: the MCP server for AI agents (`server.js` protocol, `bridge.js` main↔renderer wiring). See
+  [AGENTS.md](AGENTS.md).
 - `preload.js`: exposes a small `window.studioAPI` bridge (`contextIsolation` on, `nodeIntegration` off).
 - `src/main.js` (renderer entry): builds the `app` object — store, engine, transport, window manager, actions —
   and creates each window. `window.openstudio` exposes it for debugging and tests.
@@ -83,7 +85,16 @@ automation clip and ramps the matching `AudioParam` (or sets the effect paramete
   use an invisible native scroller for scrolling and draw only the visible region.
 - `knob.js`, `menu.js`, `dialog.js`, `snapselect.js` — shared controls. Colours come from `styles/theme.css`.
 
+## Agents (`src/agent/`, `mcp/`)
+The project lives in the renderer, so the MCP server (main process) only relays: the renderer registers its tool
+definitions and executes calls (`src/agent/index.js`, one at a time) against the same `Store`/`Transport`/`Engine`
+the UI uses. Tools wrap mutations in `edit()` — one undo step, rolled back if the call fails — and emit the usual
+store events, so windows update as an agent works. `render_audio` reuses the offline renderer and analyses the
+result (`analysis.js`). Details in [AGENTS.md](AGENTS.md).
+
 ## Testing
 - `test/*.test.mjs` — `node:test` unit tests for DOM-free modules (store, automation, MIDI writer, SoundFont parser).
+- `test/agent-*.test.mjs`, `test/mcp-server.test.mjs` — the agent tools (real Store, stub engine) and the MCP server
+  (checked with the official MCP client). `scripts/e2e-mcp.mjs` drives the real app through MCP.
 - `test/e2e/smoke.js` — runs inside the real app via `scripts/e2e.mjs` (playback levels, effects, sends,
   automation, audio clips, save/load, offline render).

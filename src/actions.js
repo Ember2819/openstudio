@@ -202,6 +202,21 @@ export function createActions(app) {
       messageDialog('About OpenStudio', 'OpenStudio 0.2\nAn open-source digital audio workstation inspired by the classic pattern-based workflow.\n\nBuilt with Electron and the Web Audio API.');
     },
 
+    showAgents() {
+      const url = app.agent?.url;
+      if (!url) {
+        messageDialog('Agents (MCP server)', 'The MCP server is off. Start OpenStudio without --no-mcp (and without OPENSTUDIO_MCP=0), and make sure its port is free, to let AI agents work on your projects.');
+        return;
+      }
+      messageDialog('Agents (MCP server)', [
+        'OpenStudio exposes your project to AI agents through the Model Context Protocol. Agents can do everything you can: write notes, build the playlist, mix, add effects, automate, render and export. Every edit lands on your undo stack.',
+        `Endpoint (this computer only):\n  ${url}`,
+        `Claude Code:\n  claude mcp add --transport http openstudio ${url}`,
+        `Other clients (stdio): run  node scripts/mcp-stdio.mjs  — it bridges to the endpoint above.`,
+        'Details: docs/AGENTS.md',
+      ].join('\n\n'));
+    },
+
     /** Create an automation clip for a knob/fader and open its editor. */
     createAutomation(target) {
       const norm = valueToNorm(store, target, readTarget(store, target));
