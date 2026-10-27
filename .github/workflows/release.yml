@@ -47,6 +47,12 @@ jobs:
       - name: Run unit tests
         run: npm test
 
+      - name: Stamp build number
+        # lets the installed app compare itself with the newest release (see updater.js)
+        run: node scripts/stamp-build.mjs
+        env:
+          BUILD_NUMBER: ${{ github.run_number }}
+
       - name: Package distributable(s)
         run: npx electron-builder --publish never
         env:

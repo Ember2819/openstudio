@@ -11,6 +11,8 @@ files:
   - main.js
   - preload.js
   - mcp/**/*
+  - updater.js
+  - buildinfo.json
   - index.html
   - src/**/*
   - styles/**/*

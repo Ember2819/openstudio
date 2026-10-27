@@ -10,6 +10,7 @@ import { createPianoRoll } from './ui/pianoroll.js';
 import { createPlaylist } from './ui/playlist.js';
 import { createMixer } from './ui/mixer.js';
 import { createBrowser } from './ui/browser.js';
+import { createUpdater } from './ui/updater.js';
 import { createSettings } from './ui/settings.js';
 import { createAutomationEditor } from './ui/autoeditor.js';
 import { setAutomationHandler } from './ui/knob.js';
@@ -35,6 +36,10 @@ app.input = createInput(app);
 
 // the toolbar must exist first so windows are laid out against the real desktop size
 app.toolbar = createToolbar(app);
+const updater = createUpdater(app);
+app.actions.checkForUpdates = () => updater.check();
+app.actions.autoCheckUpdates = updater.autoCheck;
+app.actions.setAutoCheckUpdates = updater.setAutoCheck;
 const settings = createSettings(app);
 app.actions.openChannelSettings = settings.open;
 app.browser = createBrowser(app);

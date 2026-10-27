@@ -74,6 +74,10 @@ export function createToolbar(app) {
     HELP: () => [
       { label: 'Keyboard shortcuts', shortcut: 'F1', action: actions.showShortcuts },
       { label: 'Agents (MCP server)…', action: actions.showAgents },
+      { separator: true },
+      { label: 'Check for updates…', action: () => actions.checkForUpdates() },
+      { label: 'Check for updates on startup', checked: actions.autoCheckUpdates(), action: () => actions.setAutoCheckUpdates(!actions.autoCheckUpdates()) },
+      { separator: true },
       { label: 'About OpenStudio', action: actions.showAbout },
     ],
   };
@@ -168,6 +172,8 @@ export function createToolbar(app) {
   const exportBtn = h('button', { class: 'tbtn', 'data-hint': 'Export audio (Ctrl+R)', onClick: actions.exportWav }, icon('export'));
   const helpBtn = h('button', { class: 'tbtn', 'data-hint': 'Keyboard shortcuts (F1)', onClick: actions.showShortcuts }, icon('help'));
 
+  const updateBtn = h('button', { class: 'update-pill', hidden: true, onClick: () => actions.checkForUpdates() }, icon('export'), 'Update available');
+
   const row1 = h('div', { class: 'tb-row tb-row1' },
     h('div', { class: 'menubar' }, menuButtons),
     h('div', { class: 'tb-sep' }),
@@ -179,6 +185,7 @@ export function createToolbar(app) {
     meters,
     h('div', { class: 'knob-pair' }, masterKnob, pitchKnob),
     h('div', { class: 'tb-flex' }),
+    updateBtn,
     h('div', { class: 'tb-group' }, undoBtn, redoBtn, saveBtn, exportBtn, helpBtn));
 
   // ------------------------------------------------------------------ row 2
@@ -344,5 +351,11 @@ export function createToolbar(app) {
     });
   };
 
-  return { update, refreshProject, setBusy, attachAgent };
+  /** Shows (or with null hides) the "Update available" pill; `version` goes into its tooltip. */
+  function setUpdateAvailable(version) {
+    updateBtn.hidden = !version;
+    if (version) updateBtn.dataset.hint = `OpenStudio ${version} is available — click to download and install`;
+  }
+
+  return { update, refreshProject, setBusy, attachAgent, setUpdateAvailable };
 }

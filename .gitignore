@@ -10,6 +10,9 @@ out/
 release/
 *.tgz
 
+# stamped by CI so the app knows its build number
+buildinfo.json
+
 # logs, caches, temp
 *.log
 npm-debug.log*
