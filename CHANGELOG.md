@@ -5,6 +5,17 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Added
+- First-launch welcome dialog: recommends tiling mode (floating stays the default) and points to Settings, update checks and the MCP server.
+
+### Changed
+- Menu-bar menus (File, Edit, View…) open on hover instead of needing a click.
+- The project-name box in the toolbar is the same height as the snap and pattern controls.
+- Update check failures against a private repository now say so.
+
+### Removed
+- The "Agents ready" indicator in the toolbar (Help → Agents (MCP server)… is unchanged).
+
 ## [0.3.0]
 
 ### Added

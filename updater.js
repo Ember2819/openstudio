@@ -66,7 +66,7 @@ async function checkForUpdate({ repo, current, platform = process.platform, arch
     signal: AbortSignal.timeout(15000),
   });
   // GitHub also answers 404 for private repositories, so this must not be mistaken for "up to date"
-  if (res.status === 404) throw new Error('No public releases were found for this project');
+  if (res.status === 404) throw new Error('No public releases were found for this project. If the project\'s GitHub repository is private, updates can\'t be checked until its releases are made public.');
   if (!res.ok) throw new Error(`GitHub answered ${res.status} ${res.statusText}`.trim());
   const rel = await res.json();
 
