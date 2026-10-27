@@ -4,6 +4,7 @@ appId: dev.openstudio.app
 productName: OpenStudio
 directories:
   output: release
+  buildResources: build
 
 # Only ship what the app needs at runtime
 files:
@@ -44,6 +45,7 @@ win:
         - x64
         - arm64
   artifactName: ${productName}-${version}-windows-${arch}-portable.${ext}
+  icon: build/openstudio.ico
 
 linux:
   target:
