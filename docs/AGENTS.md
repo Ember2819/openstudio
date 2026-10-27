@@ -17,6 +17,14 @@ Start OpenStudio (`npm start`). It listens on `http://127.0.0.1:6736/mcp` (Strea
 claude mcp add --transport http openstudio http://127.0.0.1:6736/mcp
 ```
 
+**OpenCode** — add to `~/.config/opencode/opencode.json` (or `opencode.json` in a project), then restart OpenCode
+```json
+{ "$schema": "https://opencode.ai/config.json", "mcp": { "openstudio": { "type": "remote", "url": "http://127.0.0.1:6736/mcp", "enabled": true } } }
+```
+
+**Easiest:** Settings → *Agents* has a **Copy quickstart** button for Claude Code and for OpenCode. Paste the copied
+prompt into the agent and it registers the server in its own config for you.
+
 **Clients that take a JSON config** (Cursor, VS Code, …)
 ```json
 { "mcpServers": { "openstudio": { "url": "http://127.0.0.1:6736/mcp" } } }
@@ -28,7 +36,7 @@ with `--launch` starts OpenStudio for you if it is not running:
 { "mcpServers": { "openstudio": { "command": "node", "args": ["/path/to/openstudio/scripts/mcp-stdio.mjs", "--launch"] } } }
 ```
 
-Help → *Agents (MCP server)…* in the app shows the live endpoint.
+Help → *Agents (MCP server)…* (Settings → Agents) shows the live endpoint.
 
 | Setting | How |
 | --- | --- |

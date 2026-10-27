@@ -75,7 +75,9 @@ Set up OpenStudio (an open-source DAW) so you can work on music projects in it t
 2. Check that http://127.0.0.1:6736/mcp is up: POST a JSON-RPC `ping` to it. If the port is busy, the app prints
    `[mcp] listening on <url>` on start-up; use that URL instead.
 3. Register it as an MCP server named "openstudio" (Streamable HTTP, no auth) in whichever way YOUR client supports.
-   For Claude Code: `claude mcp add --transport http openstudio http://127.0.0.1:6736/mcp`. For clients with a JSON
+   For Claude Code: `claude mcp add --transport http openstudio http://127.0.0.1:6736/mcp`. For OpenCode: add
+   `"mcp": { "openstudio": { "type": "remote", "url": "http://127.0.0.1:6736/mcp", "enabled": true } }` to
+   `~/.config/opencode/opencode.json` and restart it. For clients with a JSON
    config: `{ "mcpServers": { "openstudio": { "url": "http://127.0.0.1:6736/mcp" } } }`. If your client only
    supports stdio MCP servers, use the bridge in the OpenStudio repo instead:
    `node scripts/mcp-stdio.mjs --launch` (clone https://github.com/Ember2819/openstudio if needed).

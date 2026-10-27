@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('studioAPI', {
       return () => ipcRenderer.removeListener('update:progress', handler);
     },
   },
+  copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   setTitle: (title) => ipcRenderer.send('window:title', title),
   // MCP bridge (src/agent): the main process hosts the server, the renderer owns the project and runs the tools
   agent: {

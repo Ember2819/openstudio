@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell } = require('electron');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -236,6 +236,8 @@ ipcMain.handle('update:openRelease', () => shell.openExternal(pendingUpdate?.lat
 if (process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_FILE) {
   fs.promises.rm(`${process.env.PORTABLE_EXECUTABLE_FILE}.old`, { force: true }).catch(() => {});
 }
+
+ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text)); return true; });
 
 ipcMain.on('window:title', (_e, title) => {
   if (mainWindow) mainWindow.setTitle(title);

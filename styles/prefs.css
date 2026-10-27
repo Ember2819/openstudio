@@ -17,7 +17,7 @@
 .prefs-head-ico { color: var(--accent); display: inline-flex; }
 .prefs-title { font-size: 14px; font-weight: 600; color: var(--text-bright); }
 .prefs-tabs { flex: none; display: flex; gap: 2px; margin: 12px 16px 4px; padding: 2px; background: var(--inset); border: 1px solid var(--line); border-radius: 6px; }
-.prefs-tab { flex: 1; height: 26px; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); font-weight: 500; }
+.prefs-tab { flex: 1 1 auto; white-space: nowrap; padding: 0 8px; height: 26px; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); font-weight: 500; }
 .prefs-tab:hover { color: var(--text); }
 .prefs-tab.on { background: var(--surface-3); color: var(--text-bright); }
 .prefs-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 16px 20px; }
@@ -103,6 +103,9 @@
 .btn:disabled { opacity: .45; cursor: default; pointer-events: none; }
 
 /* windows & keys */
+.prefs-agent { margin-top: 12px; }
+.prefs-agent .prefs-note { margin-top: 4px; }
+.prefs-copy { width: 100%; height: 30px; }
 .prefs-note { margin: 8px 0 4px; font-size: 11px; line-height: 1.5; color: var(--text-dim); }
 .prefs-sec .prefs-check + .prefs-check { margin-top: 8px; }
 .prefs-sec > .prefs-check { min-height: 26px; }

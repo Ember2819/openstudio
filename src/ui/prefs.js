@@ -5,6 +5,7 @@ import { icon } from './icons.js';
 import { appearance, THEMES, ACCENTS } from '../theme.js';
 import { SOLIDS, GRADIENTS, IMAGES, gradientCss, importImageFile, themeFromWallpaper } from '../wallpapers.js';
 import { messageDialog } from './dialog.js';
+import { claudePrompt, opencodePrompt } from './agentprompts.js';
 import { PROFILES, ACTIONS, MODIFIERS, comboOf, resolveCombo } from './tiling.js';
 
 const COLOR_FIELDS = [
@@ -20,7 +21,7 @@ const COLOR_FIELDS = [
 export function createPreferences(app) {
   let tab = 'theme';
   const body = h('div', { class: 'prefs-body' });
-  const TAB_NAMES = { theme: 'Theme & colours', wallpaper: 'Wallpaper', windows: 'Windows & keys' };
+  const TAB_NAMES = { theme: 'Theme', wallpaper: 'Wallpaper', windows: 'Windows & keys', agents: 'Agents' };
   const tabs = Object.keys(TAB_NAMES).map((id) => {
     const b = h('button', { class: 'prefs-tab', onClick: () => { tab = id; render(); body.scrollTop = 0; } }, TAB_NAMES[id]);
     b.dataset.tab = id;
@@ -289,10 +290,36 @@ export function createPreferences(app) {
       sectionWith('Key bindings', h('button', { class: 'prefs-link', onClick: () => t.resetBinds() }, 'Reset to defaults'), binds));
   }
 
+  // ------------------------------------------------------------ agents tab
+  function renderAgents() {
+    const url = app.agent?.url;
+    const copy = (btn, label, text) => {
+      (window.studioAPI?.copyText ? window.studioAPI.copyText(text) : navigator.clipboard.writeText(text)).then(() => {
+        btn.textContent = 'Copied!';
+        setTimeout(() => { btn.textContent = label; }, 1600);
+      }, () => messageDialog('Copy failed', 'Could not reach the clipboard. Select the prompt text manually instead:\n\n' + text));
+    };
+    const quick = (label, desc, makePrompt) => {
+      const btn = h('button', { class: 'btn primary prefs-copy', disabled: !url, 'data-hint': 'Copies a prompt — paste it into the agent and it sets itself up' }, label);
+      btn.addEventListener('click', () => copy(btn, label, makePrompt(url)));
+      return h('div', { class: 'prefs-agent' }, btn, h('p', { class: 'prefs-note' }, desc));
+    };
+    body.replaceChildren(
+      section('Connect an AI agent',
+        h('p', { class: 'prefs-note' }, url
+          ? 'OpenStudio runs an MCP server so AI agents can write notes, build the arrangement, mix and render. Copy a quickstart, paste it into your agent, and it will connect itself — every edit it makes is on your undo stack.'
+          : 'The MCP server is off. Start OpenStudio without --no-mcp (and without OPENSTUDIO_MCP=0), and make sure its port is free, to let AI agents work on your projects.'),
+        quick('Copy quickstart for Claude Code', 'Tells Claude Code to run claude mcp add for you.', claudePrompt),
+        quick('Copy quickstart for OpenCode', 'Tells OpenCode to add the server to its opencode.json config.', opencodePrompt)),
+      section('Endpoint',
+        h('p', { class: 'prefs-note' }, url ? `${url}  (this computer only)` : 'Not running'),
+        h('p', { class: 'prefs-note' }, 'Other clients: add it as a Streamable HTTP MCP server with this URL, or use node scripts/mcp-stdio.mjs for stdio-only clients. Details: docs/AGENTS.md')));
+  }
+
   function render() {
     tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     const top = body.scrollTop;
-    if (tab === 'theme') renderTheme(); else if (tab === 'wallpaper') renderWallpaper(); else renderWindows();
+    if (tab === 'theme') renderTheme(); else if (tab === 'wallpaper') renderWallpaper(); else if (tab === 'agents') renderAgents(); else renderWindows();
     body.scrollTop = top;
   }
 
@@ -307,7 +334,7 @@ export function createPreferences(app) {
   const refreshWindows = () => { if (tab === 'windows' && !el.classList.contains('hidden')) render(); };
   app.tiler.on('config', refreshWindows);
   app.tiler.on('mode', refreshWindows);
-  function open() { render(); el.classList.remove('hidden'); el.focus({ preventScroll: true }); }
+  function open(which) { if (TAB_NAMES[which]) tab = which; render(); el.classList.remove('hidden'); el.focus({ preventScroll: true }); }
   function close() { el.classList.add('hidden'); }
   const isOpen = () => !el.classList.contains('hidden');
   return { open, close, toggle: () => (isOpen() ? close() : open()), isOpen };

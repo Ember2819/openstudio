@@ -59,6 +59,7 @@ const mixer = createMixer(app);
 installShortcuts(app);
 app.tiler = new Tiler(app);
 const prefs = createPreferences(app);
+app.prefs = prefs;
 app.actions.togglePreferences = prefs.toggle;
 initMidi(app);
 app.toolbar.refreshProject();

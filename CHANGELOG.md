@@ -11,6 +11,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 ### Changed
 - Menu-bar menus (File, Edit, View…) open on hover instead of needing a click.
 - The project-name box in the toolbar is the same height as the snap and pattern controls.
+- The toolbar's project-name box shows only the project name; hover hints are a tooltip beside the cursor instead of text inside that box.
+- Help → Agents (MCP server)… opens Settings → Agents instead of a dialog.
 - Update check failures against a private repository now say so.
 
 ### Removed
