@@ -65,6 +65,10 @@ export const DRUM_KIT = [
   { name: 'Rim', voice: 'rim' },
   { name: 'Cowbell', voice: 'cowbell' },
   { name: 'Crash', voice: 'crash' },
+  { name: 'Ride', voice: 'ride' },
+  { name: 'Shaker', voice: 'shaker' },
+  { name: 'Tambourine', voice: 'tambourine' },
+  { name: 'Clave', voice: 'clave' },
 ];
 
 export const SYNTH_PRESETS = {
@@ -72,19 +76,38 @@ export const SYNTH_PRESETS = {
     { name: 'Sub Bass', params: { wave1: 'sine', wave2: 'triangle', mix: 0.25, detune: 0, octave2: -1, cutoff: 1400, res: 0.7, envAmt: 0.1, attack: 0.005, decay: 0.2, sustain: 0.9, release: 0.1 } },
     { name: 'Saw Bass', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.5, detune: 12, octave2: -1, cutoff: 900, res: 4, envAmt: 0.65, attack: 0.004, decay: 0.22, sustain: 0.35, release: 0.1 } },
     { name: 'Pluck Bass', params: { wave1: 'square', wave2: 'sawtooth', mix: 0.3, detune: 5, octave2: 0, cutoff: 700, res: 6, envAmt: 0.9, attack: 0.002, decay: 0.14, sustain: 0.0, release: 0.08 } },
+    { name: 'Acid Bass', params: { wave1: 'sawtooth', wave2: 'square', mix: 0.2, detune: 3, octave2: -1, cutoff: 480, res: 9, envAmt: 0.95, attack: 0.002, decay: 0.18, sustain: 0.0, release: 0.06 } },
+    { name: 'Dark Repeater', params: { wave1: 'square', wave2: 'square', mix: 0.45, detune: -9, octave2: -1, cutoff: 1100, res: 2.5, envAmt: 0.35, attack: 0.01, decay: 0.3, sustain: 0.55, release: 0.15 } },
   ],
   Leads: [
     { name: 'Saw Lead', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.6, detune: 14, octave2: 0, cutoff: 6500, res: 2, envAmt: 0.3, attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.2 } },
     { name: 'Square Lead', params: { wave1: 'square', wave2: 'square', mix: 0.4, detune: 7, octave2: 1, cutoff: 5200, res: 1.2, envAmt: 0.2, attack: 0.008, decay: 0.15, sustain: 0.75, release: 0.15 } },
     { name: 'Soft Sine', params: { wave1: 'sine', wave2: 'triangle', mix: 0.35, detune: 4, octave2: 1, cutoff: 9000, res: 0.5, envAmt: 0, attack: 0.02, decay: 0.3, sustain: 0.8, release: 0.3 } },
+    { name: 'Supersaw', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.2, detune: 10, octave2: 0, unison: 5, spread: 40, cutoff: 7200, res: 1, envAmt: 0.25, attack: 0.02, decay: 0.3, sustain: 0.8, release: 0.35 } },
+    { name: 'Whistle', params: { wave1: 'sine', wave2: 'sine', mix: 0.3, detune: 6, octave2: 1, cutoff: 12000, res: 2.5, envAmt: 0.1, attack: 0.015, decay: 0.2, sustain: 0.85, release: 0.25 } },
   ],
   Pads: [
     { name: 'Warm Pad', params: { wave1: 'sawtooth', wave2: 'triangle', mix: 0.5, detune: 9, octave2: 0, cutoff: 1800, res: 0.8, envAmt: 0.25, attack: 0.5, decay: 0.8, sustain: 0.75, release: 1.2 } },
     { name: 'Glass Pad', params: { wave1: 'triangle', wave2: 'sine', mix: 0.55, detune: 7, octave2: 1, cutoff: 7000, res: 0.6, envAmt: 0.1, attack: 0.7, decay: 1, sustain: 0.8, release: 1.5 } },
+    { name: 'Dark Pad', params: { wave1: 'sawtooth', wave2: 'square', mix: 0.35, detune: 5, octave2: -1, cutoff: 850, res: 1.2, envAmt: 0.3, attack: 1.2, decay: 1.5, sustain: 0.7, release: 2.5 } },
+    { name: 'Choir Pad', params: { wave1: 'triangle', wave2: 'triangle', mix: 0.5, detune: 12, octave2: 0, unison: 3, spread: 22, cutoff: 3200, res: 0.7, envAmt: 0.15, attack: 0.6, decay: 1, sustain: 0.85, release: 2 } },
+  ],
+  Keys: [
+    { name: 'E Piano', params: { wave1: 'sine', wave2: 'triangle', mix: 0.3, detune: 2, octave2: 0, cutoff: 2500, res: 1.5, envAmt: 0.4, attack: 0.002, decay: 0.5, sustain: 0.15, release: 0.25 } },
+    { name: 'Clav', params: { wave1: 'square', wave2: 'sawtooth', mix: 0.4, detune: 4, octave2: 0, cutoff: 1800, res: 5, envAmt: 0.8, attack: 0.001, decay: 0.2, sustain: 0.2, release: 0.1 } },
+  ],
+  Bells: [
+    { name: 'FM Bell', params: { wave1: 'sine', wave2: 'sine', mix: 0.5, detune: 0, octave2: 2, cutoff: 14000, res: 0.5, envAmt: 0.05, attack: 0.001, decay: 1.2, sustain: 0.0, release: 0.8 } },
+    { name: 'Music Box', params: { wave1: 'triangle', wave2: 'sine', mix: 0.25, detune: 0, octave2: 2, cutoff: 9000, res: 0.8, envAmt: 0.1, attack: 0.001, decay: 0.7, sustain: 0.0, release: 0.4 } },
+  ],
+  Brass: [
+    { name: 'Brass Section', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.5, detune: 12, octave2: 0, cutoff: 2500, res: 1.5, envAmt: 0.5, attack: 0.06, decay: 0.4, sustain: 0.7, release: 0.3 } },
+    { name: 'Soft Horn', params: { wave1: 'triangle', wave2: 'sawtooth', mix: 0.45, detune: 6, octave2: 0, cutoff: 1600, res: 1, envAmt: 0.35, attack: 0.09, decay: 0.5, sustain: 0.75, release: 0.4 } },
   ],
   Plucks: [
     { name: 'Soft Pluck', params: { wave1: 'triangle', wave2: 'sine', mix: 0.4, detune: 3, octave2: 1, cutoff: 3000, res: 1, envAmt: 0.6, attack: 0.002, decay: 0.3, sustain: 0.0, release: 0.2 } },
     { name: 'Bell Pluck', params: { wave1: 'sine', wave2: 'sine', mix: 0.5, detune: 0, octave2: 2, cutoff: 12000, res: 0.5, envAmt: 0.0, attack: 0.001, decay: 0.9, sustain: 0.0, release: 0.5 } },
+    { name: 'Kalimba', params: { wave1: 'sine', wave2: 'triangle', mix: 0.2, detune: 1, octave2: 1, cutoff: 6000, res: 1.2, envAmt: 0.2, attack: 0.001, decay: 0.45, sustain: 0.0, release: 0.25 } },
   ],
 };
 
@@ -255,6 +278,89 @@ const DRUMS = {
     const end = t + 1.4 * p.decay + 0.05;
     n.start(t); n.stop(end);
     return finish([n], g, end);
+  },
+  ride(ctx, dest, t, v, k, p) {
+    const d = p.decay;
+    // washy metal: inharmonic square partials through a bandpass, plus a short "ping" on top
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 5800 * k;
+    bp.Q.value = 0.5;
+    const g = ctx.createGain();
+    env(g, t, v * 0.35, 1.2 * d, 0.002);
+    const wash = [317, 392, 554, 831, 1244].map((f) => {
+      const o = ctx.createOscillator();
+      o.type = 'square';
+      o.frequency.value = f * 4.6 * k;
+      o.connect(bp);
+      o.start(t);
+      o.stop(t + 1.3 * d + 0.06);
+      return o;
+    });
+    bp.connect(g).connect(dest);
+    const ping = ctx.createOscillator();
+    ping.type = 'sine';
+    ping.frequency.value = 1050 * k;
+    const pg = ctx.createGain();
+    env(pg, t, v * 0.3, 0.4 * d, 0.001);
+    ping.connect(pg).connect(dest);
+    ping.start(t); ping.stop(t + 0.5 * d + 0.05);
+    const end = t + 1.3 * d + 0.06;
+    return finish([...wash, ping], g, end);
+  },
+  shaker(ctx, dest, t, v, k, p) {
+    const d = p.decay;
+    const n = noise(ctx);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 5200 * k;
+    bp.Q.value = 1.6;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 3000 + p.tone * 3000;
+    const g = ctx.createGain();
+    env(g, t, v * 0.5, 0.09 * d, 0.02); // a shaker swells instead of clicking
+    n.connect(bp).connect(hp).connect(g).connect(dest);
+    const end = t + 0.14 * d + 0.05;
+    n.start(t); n.stop(end);
+    return finish([n], g, end);
+  },
+  tambourine(ctx, dest, t, v, k, p) {
+    const d = p.decay;
+    const n = noise(ctx);
+    const g = ctx.createGain();
+    env(g, t, v * 0.5, 0.22 * d, 0.002);
+    const jangle = (freq, q) => {
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = freq * k;
+      bp.Q.value = q;
+      n.connect(bp).connect(g);
+    };
+    jangle(8200, 1.2);
+    jangle(11400, 2);
+    const end = t + 0.3 * d + 0.05;
+    n.start(t); n.stop(end);
+    return finish([n], g, end);
+  },
+  clave(ctx, dest, t, v, k, p) {
+    const d = p.decay;
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = 2450 * k;
+    const g = ctx.createGain();
+    env(g, t, v * 0.8, 0.035 * d);
+    const o2 = ctx.createOscillator();
+    o2.type = 'triangle';
+    o2.frequency.value = 1230 * k;
+    const g2 = ctx.createGain();
+    env(g2, t, v * 0.25, 0.02 * d);
+    o.connect(g).connect(dest);
+    o2.connect(g2).connect(dest);
+    const end = t + 0.08 * d + 0.03;
+    o.start(t); o.stop(end);
+    o2.start(t); o2.stop(end);
+    return finish([o, o2], g, end);
   },
 };
 
