@@ -15,7 +15,7 @@ export default [
   },
   {
     // Electron main process + preload (CommonJS)
-    files: ['main.js', 'preload.js'],
+    files: ['main.js', 'preload.js', 'mcp/**/*.js'],
     languageOptions: { ecmaVersion: 2024, sourceType: 'commonjs', globals: { ...globals.node } },
   },
   {

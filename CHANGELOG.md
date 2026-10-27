@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Added
+- MCP server (Streamable HTTP on `127.0.0.1:6736/mcp`, plus a stdio bridge) with tools for everything a person can do:
+  projects and files, transport, channels, patterns and notes, playlist, mixer and effects, automation, MIDI import/export,
+  offline rendering with audio analysis, screenshots and window control. Every call is an undo step. See `docs/AGENTS.md`.
+- Toolbar indicator and Help → Agents dialog for the MCP server.
+
 ## [0.2.0]
 
 ### Added

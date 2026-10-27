@@ -19,6 +19,7 @@ import { createInput } from './input.js';
 import { messageDialog } from './ui/dialog.js';
 import { initMidi } from './midi.js';
 import { installAutosave } from './autosave.js';
+import { installAgent } from './agent/index.js';
 
 installKnobDefs();
 
@@ -74,5 +75,8 @@ requestAnimationFrame(frame);
 const syncTitle = () => window.studioAPI?.setTitle(`${app.store.dirty ? '*' : ''}${app.store.project.name} — OpenStudio`);
 app.store.on('project', syncTitle);
 syncTitle();
+
+// MCP: lets AI agents drive the project through the server in the main process (src/agent)
+installAgent(app).then((agent) => { if (agent) app.toolbar.attachAgent(agent); });
 
 window.openstudio = app; // handy for debugging from devtools

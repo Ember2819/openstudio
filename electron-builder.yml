@@ -10,6 +10,7 @@ directories:
 files:
   - main.js
   - preload.js
+  - mcp/**/*
   - index.html
   - src/**/*
   - styles/**/*
