@@ -117,3 +117,23 @@ test('web pages and rebound hosts are refused', async () => {
     assert.equal(res, 403);
   });
 });
+
+test('JSON-RPC ids must be a string or a number', async () => {
+  await withServer(async (url) => {
+    for (const id of [[1], { n: 1 }, true]) {
+      const res = await (await post(url, { jsonrpc: '2.0', id, method: 'ping' })).json();
+      assert.equal(res.error.code, -32600, `id ${JSON.stringify(id)} should be rejected`);
+      assert.equal(res.id, null);
+    }
+  });
+});
+
+test('an oversized request does not poison the connection for the next one', async () => {
+  await withServer(async (url) => {
+    const huge = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'ping', params: { blob: 'x'.repeat(20 * 1024 * 1024) } });
+    assert.equal((await post(url, huge)).status, 413);
+    // the same fetch agent reuses the keep-alive connection the oversized request rode in on
+    const next = await (await post(url, rpc(2, 'ping'))).json();
+    assert.deepEqual(next, { jsonrpc: '2.0', id: 2, result: {} });
+  });
+});

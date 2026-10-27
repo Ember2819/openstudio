@@ -12,6 +12,8 @@ const http = require('http');
 
 const SUPPORTED_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const MAX_BODY = 16 * 1024 * 1024;
+// Beyond this we stop reading and kill the socket: nothing legitimate is that large.
+const DRAIN_CAP = 64 * 1024 * 1024;
 
 const ERR = { PARSE: -32700, INVALID_REQUEST: -32600, METHOD_NOT_FOUND: -32601, INVALID_PARAMS: -32602, INTERNAL: -32603 };
 
@@ -32,6 +34,17 @@ function originAllowed(origin) {
   } catch {
     return false;
   }
+}
+
+/** Read and discard an unread request body (up to a cap) before replying, so the client's keep-alive
+ * connection is not reset out from under its next request. Destroys (and returns false) past the cap. */
+async function drain(req, cap = DRAIN_CAP) {
+  let extra = 0;
+  for await (const chunk of req) {
+    extra += chunk.length;
+    if (extra > cap) { req.destroy(); return false; }
+  }
+  return true;
 }
 
 function createMcpServer({ backend, name, version, instructions }) {
@@ -73,6 +86,10 @@ function createMcpServer({ backend, name, version, instructions }) {
   /** Returns the response for a request, or null for notifications and client responses. */
   async function handleMessage(msg) {
     if (!isObject(msg) || msg.jsonrpc !== '2.0') return rpcError(isObject(msg) ? msg.id : null, ERR.INVALID_REQUEST, 'Not a JSON-RPC 2.0 message');
+    // JSON-RPC ids are strings or numbers (absent for notifications); anything else is a protocol error
+    if (msg.id !== undefined && msg.id !== null && typeof msg.id !== 'number' && typeof msg.id !== 'string') {
+      return rpcError(null, ERR.INVALID_REQUEST, 'The request id must be a string or a number');
+    }
     if (typeof msg.method !== 'string') return null; // a response to a server request: we never send any
     if (msg.id === undefined || msg.id === null) return null; // notification (initialized, cancelled, …)
     return handleRequest(msg);
@@ -84,19 +101,29 @@ function createMcpServer({ backend, name, version, instructions }) {
       res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(text), ...headers });
       res.end(text);
     };
+    // reply only after the request has been fully read: responding on an unread body makes the client's
+    // socket get reset, which would also kill its next request on that keep-alive connection
+    const reply = async (status, body, headers = {}) => {
+      if (!await drain(req)) return;
+      send(status, body, headers);
+    };
 
-    if (!hostAllowed(req.headers.host) || !originAllowed(req.headers.origin)) return send(403, rpcError(null, ERR.INVALID_REQUEST, 'Forbidden host or origin'));
-    if (new URL(req.url, `http://127.0.0.1:${port}`).pathname !== '/mcp') return send(404, rpcError(null, ERR.INVALID_REQUEST, 'The MCP endpoint is /mcp'));
-    if (req.method !== 'POST') return send(405, rpcError(null, ERR.INVALID_REQUEST, 'Use POST'), { Allow: 'POST' });
-    if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return send(415, rpcError(null, ERR.INVALID_REQUEST, 'Content-Type must be application/json'));
+    if (!hostAllowed(req.headers.host) || !originAllowed(req.headers.origin)) return reply(403, rpcError(null, ERR.INVALID_REQUEST, 'Forbidden host or origin'));
+    if (new URL(req.url, `http://127.0.0.1:${port}`).pathname !== '/mcp') return reply(404, rpcError(null, ERR.INVALID_REQUEST, 'The MCP endpoint is /mcp'));
+    if (req.method !== 'POST') return reply(405, rpcError(null, ERR.INVALID_REQUEST, 'Use POST'), { Allow: 'POST' });
+    if (!/^application\/json\b/i.test(req.headers['content-type'] || '')) return reply(415, rpcError(null, ERR.INVALID_REQUEST, 'Content-Type must be application/json'));
 
     const chunks = [];
     let size = 0;
+    let tooBig = false;
     for await (const chunk of req) {
       size += chunk.length;
-      if (size > MAX_BODY) return send(413, rpcError(null, ERR.INVALID_REQUEST, 'Request too large'));
-      chunks.push(chunk);
+      if (size > DRAIN_CAP) { req.destroy(); return; }
+      if (tooBig) continue; // keep reading (and discarding) so the connection survives for the next request
+      if (size > MAX_BODY) tooBig = true;
+      else chunks.push(chunk);
     }
+    if (tooBig) return send(413, rpcError(null, ERR.INVALID_REQUEST, 'Request too large'));
     let body;
     try {
       body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -120,8 +147,9 @@ function createMcpServer({ backend, name, version, instructions }) {
       return new Promise((resolve, reject) => {
         server = http.createServer((req, res) => {
           handleHttp(req, res, server.address()?.port).catch((err) => {
+            if (res.destroyed) return;
             if (!res.headersSent) res.writeHead(500, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify(rpcError(null, ERR.INTERNAL, err.message)));
+            if (!res.writableEnded) res.end(JSON.stringify(rpcError(null, ERR.INTERNAL, err.message)));
           });
         });
         server.once('error', reject);

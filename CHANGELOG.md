@@ -12,6 +12,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - Toolbar indicator and Help → Agents dialog for the MCP server.
 - In-app updates: **Help → Check for updates…** (and a quiet check on startup) finds the newest GitHub release and installs it in one click — the AppImage / Windows portable exe is replaced in place and the app restarts; macOS opens the downloaded .dmg. Downloads are verified against GitHub's SHA-256 digest.
 
+### Fixed
+- MCP server: replies now wait until the request body has been fully read (unread bodies are drained, up to a 64 MB cap), so one rejected or oversized request can no longer reset the keep-alive connection and take the client's next request down with it; oversized requests get a 413, and JSON-RPC ids that are not strings or numbers are rejected with a protocol error.
+- MCP stdio bridge: forwarded requests time out after six minutes (override with `OPENSTUDIO_MCP_TIMEOUT_MS`) instead of hanging forever when the app dies mid-call.
+
 ## [0.2.0]
 
 ### Added
