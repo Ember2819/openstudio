@@ -1,4 +1,4 @@
-import { promptDialog, confirmDialog, messageDialog, shortcutsDialog } from './ui/dialog.js';
+import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDialog } from './ui/dialog.js';
 import { renderSteps } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { STEPS_PER_BAR } from './state.js';
@@ -308,13 +308,20 @@ export function createActions(app) {
       if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return; }
       transport.stop();
       app.toolbar?.setBusy?.('Rendering…');
+      const dlg = progressDialog('Exporting audio', 'Preparing…');
+      const abort = new AbortController();
+      dlg.done.then(() => abort.abort());
       let rendered;
       try {
-        rendered = await renderSteps(store, steps);
+        rendered = await renderSteps(store, steps, {
+          signal: abort.signal,
+          onProgress: (f) => dlg.set(f, `Rendering… ${Math.round(f * 100)}%`),
+        });
       } catch (err) {
-        messageDialog('Export failed', err.message);
+        if (err.name !== 'AbortError') messageDialog('Export failed', err.message);
         return;
       } finally {
+        dlg.close();
         app.toolbar?.setBusy?.(null);
       }
       await window.studioAPI.writeFile({ suggestedName: `${proj.name}.wav`, data: encodeWav(rendered), filters: [{ name: 'WAV audio', extensions: ['wav'] }] });

@@ -78,6 +78,16 @@
   for (let i = 0; i < d.length; i += 11) rp = Math.max(rp, Math.abs(d[i]));
   ok('offline render has signal and no NaN', rp > 0.01 && !Number.isNaN(rp));
 
+  // export progress: monotonic, ends at 1; an abort rejects instead of hanging
+  const prog = [];
+  await renderSteps(s, 32, { tail: 1, onProgress: (f) => prog.push(f) });
+  ok('render reports progress', prog.length > 2 && prog[0] === 0 && prog.at(-1) === 1 && prog.every((f, i) => !i || f >= prog[i - 1]));
+  const ctl = new AbortController();
+  let abortName = null;
+  setTimeout(() => ctl.abort(), 20);
+  try { await renderSteps(s, 256, { tail: 1, signal: ctl.signal }); } catch (e) { abortName = e.name; }
+  ok('render can be cancelled', abortName === 'AbortError');
+
   // song playback wraps at the end of the arrangement when no loop is set
   t.setLoop(false);
   t.stop();
