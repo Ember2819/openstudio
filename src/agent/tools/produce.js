@@ -177,38 +177,48 @@ export const tools = [
       const { from, to } = busiestWindow(store);
       const strength = a.strength ?? 0.7;
 
-      const before = await renderLevels(app, { from, to });
+      // Full-mix renders are the expensive part (a stem is a fraction of the cost), so the mix is measured only
+      // twice: now, to know how loud everything is, and at the end, to set the master level with headroom.
+      // The safety limiter is bypassed for both: it hides how hot a mix really is.
+      const before = await renderLevels(app, { from, to, unlimited: true });
       if (before.peakDb < -80) return { ...report, calibrated: false, note: 'The render is silent: check that channels are not muted and have notes in the section that plays.' };
-      const rows = [];
-      const adjustments = [];
-      for (const ch of stems.slice(0, 24)) {
-        const role = roleOf(ch);
-        const target = before.rmsDb + (MIX_ROLES[role] ?? MIX_ROLES.chords).rel;
-        const stem = await renderLevels(app, { from, to, only: ch });
-        if (stem.rmsDb < -70) { rows.push({ channel: ch.id, name: ch.name, role, note: 'silent in the measured bars' }); continue; }
-        const delta = Math.max(-7, Math.min(6, (target - stem.rmsDb) * strength));
-        adjustments.push({ ch, delta });
-        rows.push({ channel: ch.id, name: ch.name, role, rmsDb: round(stem.rmsDb, 1), targetDb: round(target, 1), changeDb: round(delta, 1) });
+      const rows = new Map();
+      let todo = stems.slice(0, 24);
+      for (let pass = 0; pass < 2 && todo.length; pass++) {
+        const adjustments = [];
+        for (const ch of todo) {
+          const role = roleOf(ch);
+          const target = before.rmsDb + (MIX_ROLES[role] ?? MIX_ROLES.chords).rel;
+          const stem = await renderLevels(app, { from, to, only: ch });
+          const row = rows.get(ch.id) ?? rows.set(ch.id, { channel: ch.id, name: ch.name, role, changeDb: 0 }).get(ch.id);
+          if (stem.rmsDb < -70) { row.note = 'silent in the measured bars'; continue; }
+          row.rmsDb = round(stem.rmsDb, 1);
+          row.targetDb = round(target, 1);
+          const delta = Math.max(-8, Math.min(6, (target - stem.rmsDb) * strength));
+          if (Math.abs(delta) > (pass ? 1.5 : 0.4)) { adjustments.push({ ch, delta }); row.changeDb = round(row.changeDb + delta, 1); }
+        }
+        if (!adjustments.length) break;
+        edit(store, () => {
+          for (const { ch, delta } of adjustments) nudge(store, ch, delta);
+          store.emit('mixer'); store.emit('channels'); store.emit('mixerSelection');
+        });
+        // channels do not affect each other's solo level, so only the ones that moved a lot need a second look
+        todo = adjustments.filter(({ delta }) => Math.abs(delta) > 3).map(({ ch }) => ch);
       }
-      edit(store, () => {
-        for (const { ch, delta } of adjustments) if (Math.abs(delta) > 0.4) nudge(store, ch, delta);
-        store.emit('mixer'); store.emit('channels'); store.emit('mixerSelection');
-      });
 
-      // the loudness may have moved: leave the master with headroom
-      let after = await renderLevels(app, { from, to });
+      const ceiling = -2;
+      const hot = await renderLevels(app, { from, to, unlimited: true });
       let masterDb = 0;
-      const ceiling = -1.5;
-      if (after.peakDb > ceiling || after.peakDb < -12) {
-        masterDb = Math.max(-12, Math.min(6, ceiling - after.peakDb));
+      if (hot.peakDb > ceiling || hot.peakDb < -14) {
+        masterDb = Math.max(-18, Math.min(6, ceiling - hot.peakDb));
         edit(store, () => { proj.mixer[0].vol = round(gainToFader(faderToGain(proj.mixer[0].vol) * Math.pow(10, masterDb / 20)), 3); store.emit('mixer'); });
-        after = await renderLevels(app, { from, to });
       }
+      const rows_ = [...rows.values()];
       return {
         ...report, calibrated: true,
         measuredBars: `${from / 16 + 1}-${to / 16}`,
-        stems: rows,
-        master: { peakDb: round(after.peakDb, 1), rmsDb: round(after.rmsDb, 1), faderChangeDb: round(masterDb, 1), before: { peakDb: round(before.peakDb, 1), rmsDb: round(before.rmsDb, 1) } },
+        stems: rows_,
+        master: { peakDb: round(hot.peakDb + masterDb, 1), rmsDb: round(hot.rmsDb + masterDb, 1), faderChangeDb: round(masterDb, 1), before: { peakDb: round(before.peakDb, 1), rmsDb: round(before.rmsDb, 1) }, note: 'levels before the final safety limiter' },
         next: 'render_audio (stems: true) to confirm, and listen on the user\'s side: tell them what you changed.',
       };
     },

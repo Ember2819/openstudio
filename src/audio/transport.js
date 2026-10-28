@@ -91,7 +91,8 @@ export class Transport extends Emitter {
     this.timer = null;
     this.queue = []; // {time, step} history for UI position
     this.openRecordNotes = new Map();
-    store.on('project', () => { if (this.playing) this.stop(); });
+    // a new or loaded project stops playback; undo / redo keeps it going (the scheduler reads the project afresh on every step)
+    store.on('project', (e) => { if (this.playing && !e?.history) this.stop(); });
   }
 
   get ctx() { return this.engine.ctx; }

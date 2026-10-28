@@ -157,8 +157,15 @@ export const tools = [
         };
         const color = (role) => first(role)?.color ?? null;
 
+        // a riser leads into every chorus / drop that follows a quieter section, unless the structure placed its own
+        const leadsIntoLift = (i) => {
+          const next = sections[i + 1];
+          const cur = sections[i];
+          return !!next && (next.kind === 'chorus' || next.kind === 'drop') && !cur.riser && cur.kind !== 'build' && (cur.energy ?? 0.7) < (next.energy ?? 0.7) - 0.15;
+        };
         let cursor = 0;
-        for (const sec of sections) {
+        for (const [index, sec0] of sections.entries()) {
+          const sec = leadsIntoLift(index) ? { ...sec0, riser: true } : sec0;
           const kind = sec.kind ?? 'verse';
           const energy = sec.energy ?? 0.7;
           const active = SECTION_ROLES[kind] ?? SECTION_ROLES.verse;

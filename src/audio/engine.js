@@ -92,6 +92,7 @@ export class Engine {
     limiter.attack.value = 0.002;
     limiter.release.value = 0.1;
     t.gate.connect(limiter).connect(this.ctx.destination);
+    this.limiter = limiter;
     this.tracks[0] = t;
   }
 
@@ -102,6 +103,18 @@ export class Engine {
    */
   track(i) {
     return this.tracks[i] ?? this._buildTrack(i);
+  }
+
+  /**
+   * Send the master straight to the output, skipping the final safety limiter. Used by offline measurements to see
+   * how hot a mix really is: the limiter flattens the peaks, so a mix that is 6 dB too loud still reads "-1 dB".
+   */
+  bypassLimiter(on = true) {
+    const t = this.tracks[0];
+    t.gate.disconnect();
+    t.gate.connect(t.split);
+    if (on) t.gate.connect(this.ctx.destination);
+    else t.gate.connect(this.limiter);
   }
 
   _buildTrack(i) {

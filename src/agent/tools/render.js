@@ -52,7 +52,7 @@ export const tools = [
       tail: num('Seconds of release/reverb tail to include after the last step (default 2)', { minimum: 0, maximum: 20 }),
       path: str('Also write the render to this absolute .wav path'),
       sampleRate: int('Sample rate for the render (default 44100)', { minimum: 8000, maximum: 96000 }),
-      stems: bool('Also render every channel on its own (over the busiest 8 bars, or fromStep-toStep) and report its level, brightness and share of the mix, with warnings about channels that are inaudible, dominate, or fight for the same range'),
+      stems: bool('Also render every channel on its own (over the busiest 4 bars, or fromStep-toStep) and report its level, brightness and share of the mix, with warnings about channels that are inaudible, dominate, or fight for the same range'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, title: 'Render and analyse audio' },
     async run(a, app) {

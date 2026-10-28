@@ -93,7 +93,7 @@ export class Store extends Emitter {
     if (!this.undoStack.length) return false;
     this.redoStack.push(this.snapshot());
     this.project = JSON.parse(this.undoStack.pop());
-    this.emit('project');
+    this.emit('project', { history: true });
     return true;
   }
 
@@ -101,7 +101,7 @@ export class Store extends Emitter {
     if (!this.redoStack.length) return false;
     this.undoStack.push(this.snapshot());
     this.project = JSON.parse(this.redoStack.pop());
-    this.emit('project');
+    this.emit('project', { history: true });
     return true;
   }
 

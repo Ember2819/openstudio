@@ -14,7 +14,7 @@ export function levelsOf(buf) {
 }
 
 /** The window (in steps) with the most going on: `bars` bars of the song, or all of it when it is shorter. */
-export function busiestWindow(store, bars = 8) {
+export function busiestWindow(store, bars = 4) {
   const { notes, steps } = flattenSong(store);
   const total = Math.max(1, Math.ceil(steps / 16));
   if (total <= bars) return { from: 0, to: Math.max(16, steps) };
@@ -32,12 +32,12 @@ export function busiestWindow(store, bars = 8) {
  * Render steps [from, to) with only `only` audible (or everything) and return its levels, optionally with the
  * spectral balance. The project's solo flags are restored afterwards.
  */
-export async function measure(app, { from, to, only = null, sampleRate = 32000, withSpectrum = false }) {
+export async function measure(app, { from, to, only = null, sampleRate = 22050, withSpectrum = false, unlimited = false }) {
   const proj = app.store.project;
   const keep = proj.channels.map((c) => c.solo);
   try {
     if (only) proj.channels.forEach((c) => { c.solo = c.id === only.id; });
-    const buf = await renderSteps(app.store, to, { from, tail: 1, sampleRate });
+    const buf = await renderSteps(app.store, to, { from, tail: 1, sampleRate, configure: unlimited ? (engine) => engine.bypassLimiter() : undefined });
     const out = levelsOf(buf);
     if (withSpectrum && out.peakDb > -80) {
       const L = buf.getChannelData(0), R = buf.getChannelData(1);
