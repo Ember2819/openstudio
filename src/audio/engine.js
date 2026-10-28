@@ -1,4 +1,4 @@
-import { playDrum, playSynth, playSample } from './instruments.js';
+import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { playSoundfont } from './soundfont.js';
 import { createEffect } from './effects.js';
@@ -21,6 +21,7 @@ export function loadSoundfont() {
 }
 
 const MAX_VOICES = 160;
+const SILENT = Object.freeze([0, 0]);
 
 export class Engine {
   constructor(store, ctx = new AudioContext({ latencyHint: 'interactive' })) {
@@ -38,7 +39,6 @@ export class Engine {
     this.clickBuffer = null;
 
     this._buildMaster();
-    for (let i = 1; i < MIXER_TRACKS; i++) this._buildTrack(i);
     this.syncAll();
 
     this.unsubscribe = [
@@ -95,14 +95,33 @@ export class Engine {
     this.tracks[0] = t;
   }
 
+  /**
+   * A mixer strip, built on first use. Only a handful of the 125 inserts are ever used, and each strip is ~9
+   * nodes (two of them analysers that the browser keeps processing), so strips nobody routes to stay unbuilt —
+   * which also makes every offline render (export, agent analysis) start much faster.
+   */
+  track(i) {
+    return this.tracks[i] ?? this._buildTrack(i);
+  }
+
   _buildTrack(i) {
     const t = this._newStrip(i);
     t.gate.connect(this.tracks[0].input);
     this.tracks[i] = t;
+    this._rebuildFxChain(i);
+    this._applyStrip(i);
+    return t;
+  }
+
+  /** A strip whose settings are all at their defaults does nothing, so it needs no nodes until something uses it. */
+  _stripIdle(i) {
+    const m = this.store.project.mixer[i];
+    return !this.tracks[i] && m.vol === 0.8 && m.pan === 0 && !m.mute && !m.solo && !m.fx.some(Boolean) && !Object.keys(m.sends || {}).length;
   }
 
   _rebuildFxChain(i) {
-    const t = this.tracks[i];
+    if (this._stripIdle(i)) return;
+    const t = this.track(i);
     const slots = this.store.project.mixer[i].fx;
     t.input.disconnect();
     for (const n of t.fxNodes) n.output.disconnect();
@@ -150,16 +169,21 @@ export class Engine {
   syncMixer() {
     const mixer = this.store.project.mixer;
     const anySolo = mixer.some((m, i) => i > 0 && m.solo);
-    const now = this.ctx.currentTime;
-    mixer.forEach((m, i) => {
-      const t = this.tracks[i];
-      t.pan.pan.setTargetAtTime(m.pan, now, 0.01);
-      t.fader.gain.setTargetAtTime(faderToGain(m.vol), now, 0.01);
-      const audible = i === 0 || (!m.mute && (!anySolo || m.solo));
-      t.gate.gain.setTargetAtTime(audible ? 1 : 0, now, 0.01);
-    });
+    this._anySolo = anySolo;
+    mixer.forEach((m, i) => { if (!this._stripIdle(i)) this._applyStrip(i); });
     this._applyChannelMuting();
     this._syncRouting();
+  }
+
+  _applyStrip(i) {
+    const t = this.track(i);
+    const m = this.store.project.mixer[i];
+    const anySolo = this._anySolo ?? this.store.project.mixer.some((x, k) => k > 0 && x.solo);
+    const now = this.ctx.currentTime;
+    t.pan.pan.setTargetAtTime(m.pan, now, 0.01);
+    t.fader.gain.setTargetAtTime(faderToGain(m.vol), now, 0.01);
+    const audible = i === 0 || (!m.mute && (!anySolo || m.solo));
+    t.gate.gain.setTargetAtTime(audible ? 1 : 0, now, 0.01);
   }
 
   _syncRouting() {
@@ -172,8 +196,8 @@ export class Engine {
         let entry = this.sendNodes.get(key);
         if (!entry) {
           const node = this.ctx.createGain();
-          this.tracks[i].gate.connect(node);
-          node.connect(this.tracks[Number(dest)].input);
+          this.track(i).gate.connect(node);
+          node.connect(this.track(Number(dest)).input);
           entry = { from: i, node };
           this.sendNodes.set(key, entry);
         }
@@ -182,7 +206,7 @@ export class Engine {
     });
     for (const [key, entry] of this.sendNodes) {
       if (want.has(key)) continue;
-      this.tracks[entry.from].gate.disconnect(entry.node);
+      this.tracks[entry.from]?.gate.disconnect(entry.node);
       entry.node.disconnect();
       this.sendNodes.delete(key);
     }
@@ -223,7 +247,7 @@ export class Engine {
       n.pan.pan.setTargetAtTime(ch.pan, now, 0.01);
       if (n.mixer !== ch.mixer) {
         n.mute.disconnect();
-        n.mute.connect(this.tracks[ch.mixer].input);
+        n.mute.connect(this.track(ch.mixer).input);
         n.mixer = ch.mixer;
       }
       this._decodeSampleFor(ch);
@@ -282,7 +306,7 @@ export class Engine {
     g.gain.setValueAtTime(gain, t);
     g.gain.setValueAtTime(gain, t + Math.max(0, length - 0.006));
     g.gain.linearRampToValueAtTime(0, t + length);
-    src.connect(g).connect(this.tracks[mixer]?.input ?? this.tracks[0].input);
+    src.connect(g).connect(this.track(mixer in this.store.project.mixer ? mixer : 0).input);
     src.start(t, offset, length);
     const v = { nodes: [src], out: g, end: t + length + 0.02, release() {} };
     this.voices.add(v);
@@ -301,6 +325,10 @@ export class Engine {
     let v = null;
     if (ch.type === 'drum') v = playDrum(this.ctx, node.gain, ch.voice, t, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'synth') v = playSynth(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'fm') v = playFm(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'organ') v = playOrgan(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'pluck') v = playPluck(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'sfx') v = playSfx(this.ctx, node.gain, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'sampler') {
       const s = this.store.samples.get(ch.sampleId);
       if (s?.buffer) v = playSample(this.ctx, node.gain, s.buffer, pitch, t, dur, vel, semis, ch.params);
@@ -393,6 +421,7 @@ export class Engine {
   /** Returns [peakL, peakR] (linear 0..1+) for a mixer track. */
   readLevels(i) {
     const t = this.tracks[i];
+    if (!t) return SILENT;
     const buf = this.meterBuf;
     const peak = (an) => {
       an.getFloatTimeDomainData(buf);

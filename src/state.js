@@ -210,7 +210,7 @@ export class Store extends Emitter {
     const ch = {
       id,
       name,
-      type, // 'drum' | 'synth' | 'sampler'
+      type, // 'sf' | 'drum' | 'sampler' | a generator from ENGINES (synth, fm, organ, pluck, sfx)
       voice,
       params: { ...defaultParams(type, voice), ...(preset || {}) },
       vol: 0.78,

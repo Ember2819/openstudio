@@ -131,8 +131,8 @@ export function applyTarget(store, engine, t, value, time, value1 = null, time1 
   };
   switch (t.kind) {
     case 'mixer': {
-      const strip = engine.tracks[t.track];
-      if (!strip) return;
+      if (!store.project.mixer[t.track]) return;
+      const strip = engine.track(t.track);
       if (t.param === 'pan') ramp(strip.pan.pan, value, value1);
       else ramp(strip.fader.gain, faderToGain(value), value1 == null ? null : faderToGain(value1));
       break;

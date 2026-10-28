@@ -134,6 +134,26 @@ export class Transport extends Emitter {
 
   togglePlay() { this.playing ? this.pause() : this.play(); }
 
+  /** 'playing', 'paused' (stopped part-way through) or 'stopped' (at the start point). */
+  get state() {
+    if (this.playing) return 'playing';
+    return Math.abs(this.resumeStep - this.startStep) > 1e-6 ? 'paused' : 'stopped';
+  }
+
+  /** Jump back to the very beginning and clear the start marker. Keeps playing if it was playing. */
+  restart() { this.seek(0); }
+
+  /**
+   * How far the song runs, in steps: the last bar that has clips in song mode (the loop end while a loop is
+   * on), the whole pattern in pattern mode. 0 when there is nothing to play.
+   */
+  get lengthSteps() {
+    if (this.mode === 'pattern') return this.store.patternSteps(this.store.currentPattern);
+    const loop = this.store.project.loop;
+    if (this.loopEnabled && loop) return loop.end;
+    return Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+  }
+
   stop() {
     this._halt();
     this.resumeStep = this.startStep;

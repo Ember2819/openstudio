@@ -11,7 +11,7 @@ test('drum kit voices are unique and implemented', () => {
   const voices = DRUM_KIT.map((d) => d.voice);
   assert.equal(new Set(names).size, names.length, 'duplicate kit entry name');
   assert.equal(new Set(voices).size, voices.length, 'duplicate kit voice');
-  for (const d of DRUM_KIT) assert.match(d.voice, /^[a-z]+$/, d.name);
+  for (const d of DRUM_KIT) assert.match(d.voice, /^[a-z0-9]+$/, d.name);
 });
 
 test('synth presets only use known parameters inside their ranges', () => {

@@ -2,12 +2,12 @@ import { h } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu } from './menu.js';
-import { PARAM_META } from '../audio/instruments.js';
+import { PARAM_META, ENGINES, ENGINE_PRESETS, defaultParams } from '../audio/instruments.js';
 import { sizeCanvas } from './draw.js';
 import { T, appearance } from '../theme.js';
 
-const TYPE_LABEL = { drum: 'Drum voice', synth: 'Synth', sampler: 'Sampler', sf: 'Instrument' };
-const iconFor = (ch) => ({ drum: 'drum', sampler: 'sampler', sf: ch.bank === 128 ? 'drum' : 'piano' }[ch.type] || 'synth');
+const TYPE_LABEL = { drum: 'Drum voice', sampler: 'Sampler', sf: 'Instrument', ...Object.fromEntries(Object.entries(ENGINES).map(([k, v]) => [k, v.label])) };
+const iconFor = (ch) => ({ drum: 'drum', sampler: 'sampler', organ: 'keys', pluck: 'wave', sfx: 'wave', sf: ch.bank === 128 ? 'drum' : 'piano' }[ch.type] || 'synth');
 
 export function createSettings(app) {
   const { store, wm, engine, actions } = app;
@@ -46,7 +46,7 @@ export function createSettings(app) {
     const pan = createKnob({ value: ch.pan, min: -1, max: 1, def: 0, size: 38, bipolar: true, label: 'Panning', target: { kind: 'channel', id: ch.id, param: 'pan' }, fmt: (v) => (Math.abs(v) < 0.01 ? 'Centered' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'left' : 'right'}`), onStart: () => store.checkpoint(), onChange: (v) => { ch.pan = v; store.emit('channelMix'); } });
     const head = h('div', { class: 'cs-head' },
       nameBtn,
-      ch.type === 'sf' ? presetPicker(ch) : h('span', { class: 'cs-type' }, ch.type === 'drum' ? `${TYPE_LABEL.drum} · ${ch.voice}` : TYPE_LABEL[ch.type]),
+      ch.type === 'sf' ? presetPicker(ch) : ENGINE_PRESETS[ch.type] ? enginePicker(ch) : h('span', { class: 'cs-type' }, ch.type === 'drum' ? `${TYPE_LABEL.drum} · ${ch.voice}` : TYPE_LABEL[ch.type]),
       h('div', { class: 'tb-flex' }),
       h('div', { class: 'cs-knob' }, vol, h('span', {}, 'Vol')),
       h('div', { class: 'cs-knob' }, pan, h('span', {}, 'Pan')));
@@ -57,10 +57,10 @@ export function createSettings(app) {
     const grid = h('div', { class: 'cs-grid' });
     for (const meta of PARAM_META[ch.type]) {
       if (meta.type === 'select') {
-        const btn = h('button', { class: 'dd' }, h('span', {}, ch.params[meta.key]), h('span', { class: 'caret' }, '▼'));
+        const btn = h('button', { class: 'dd' }, h('span', {}, meta.labels?.[ch.params[meta.key]] ?? ch.params[meta.key]), h('span', { class: 'caret' }, '▼'));
         btn.addEventListener('click', () => {
           const r = btn.getBoundingClientRect();
-          showMenu(meta.options.map((o) => ({ label: o, checked: ch.params[meta.key] === o, action: () => { store.checkpoint(); ch.params[meta.key] = o; touch(); render(); } })), r.left, r.bottom);
+          showMenu(meta.options.map((o) => ({ label: meta.labels?.[o] ?? o, checked: ch.params[meta.key] === o, action: () => { store.checkpoint(); ch.params[meta.key] = o; touch(); render(); } })), r.left, r.bottom);
         });
         grid.append(h('div', { class: 'cs-param' }, btn, h('span', {}, meta.label)));
       } else if (meta.type === 'toggle') {
@@ -111,6 +111,26 @@ export function createSettings(app) {
             submenu: f.presets.map((p) => ({ label: p.name, checked: p.bank === ch.bank && p.program === ch.program, action: () => apply({ bank: p.bank, program: p.program, name: p.name }) })),
           }));
       showMenu(items, r.left, r.bottom);
+    });
+    return btn;
+  }
+
+  /** Preset chooser for the built-in generators: replaces the channel's parameters with the preset's. */
+  function enginePicker(ch) {
+    const cats = ENGINE_PRESETS[ch.type];
+    const all = Object.values(cats).flat();
+    const same = (p) => Object.entries(p.params).every(([k, v]) => ch.params[k] === v);
+    const current = all.find(same);
+    const btn = h('button', { class: 'dd cs-preset', 'data-hint': `Load a ${TYPE_LABEL[ch.type].toLowerCase()} preset` }, h('span', {}, current?.name ?? `${TYPE_LABEL[ch.type]} · custom`), h('span', { class: 'caret' }, '▼'));
+    btn.addEventListener('click', () => {
+      const r = btn.getBoundingClientRect();
+      showMenu(Object.entries(cats).map(([cat, list]) => ({
+        label: cat,
+        submenu: list.map((p) => ({
+          label: p.name, checked: same(p),
+          action: () => { store.checkpoint(); ch.params = { ...defaultParams(ch.type), ...p.params }; touch(); render(); engine.preview(ch, ch.type === 'sfx' ? 60 : /bass/i.test(cat) ? 48 : 60, 0.8, 0.8); },
+        })),
+      })), r.left, r.bottom);
     });
     return btn;
   }

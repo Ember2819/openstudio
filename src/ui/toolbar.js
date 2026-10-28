@@ -5,6 +5,7 @@ import { showMenuBelow, closeMenus } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
+import { createScrub } from './scrub.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
@@ -116,8 +117,9 @@ export function createToolbar(app) {
   const songBtn = h('button', { class: 'ps-half', 'data-hint': 'Song mode — plays the playlist (Ctrl+L)', onClick: () => transport.setMode('song') }, 'SONG');
   const modeSwitch = h('div', { class: 'mode-switch' }, patBtn, songBtn);
 
+  const restartBtn = h('button', { class: 'tbtn big restart', 'data-hint': 'Back to the start (Home)', onClick: () => transport.restart() }, icon('restart'));
   const playBtn = h('button', { class: 'tbtn big play', 'data-hint': 'Play / Pause (Space)', onClick: () => transport.togglePlay() }, icon('play'));
-  const stopBtn = h('button', { class: 'tbtn big stop', 'data-hint': 'Stop', onClick: () => transport.stop() }, icon('stop'));
+  const stopBtn = h('button', { class: 'tbtn big stop', 'data-hint': 'Stop — back to where playback started', onClick: () => transport.stop() }, icon('stop'));
   const recBtn = h('button', { class: 'tbtn big rec', 'data-hint': 'Record notes from the keyboard into the piano roll', onClick: () => transport.setRecording(!transport.recording) }, icon('record'));
   const metroBtn = h('button', { class: 'tbtn', 'data-hint': 'Metronome (Ctrl+M)', onClick: () => transport.setMetronome(!transport.metronome) }, icon('metronome'));
 
@@ -152,10 +154,11 @@ export function createToolbar(app) {
   // time display
   let timeMode = 'ms';
   const timeLabel = h('div', { class: 'time-label' }, 'M:S:CS');
+  const stateLabel = h('div', { class: 'time-state' }, h('i', { class: 'state-dot' }), h('span', {}, 'STOPPED'));
   const timeBig = h('span', { class: 'time-big' }, '0:00');
   const timeSmall = h('span', { class: 'time-small' }, '.00');
   const timeBox = h('div', { class: 'time-box', 'data-hint': 'Song position — click to switch between M:S:CS and B:S:T' },
-    timeLabel, h('div', { class: 'time-digits' }, timeBig, timeSmall));
+    stateLabel, timeLabel, h('div', { class: 'time-digits' }, timeBig, timeSmall));
   timeBox.addEventListener('click', () => { timeMode = timeMode === 'ms' ? 'bst' : 'ms'; timeLabel.textContent = timeMode === 'ms' ? 'M:S:CS' : 'B:S:T'; });
 
   // master meter + voices / memory
@@ -195,7 +198,7 @@ export function createToolbar(app) {
     h('div', { class: 'menubar' }, menuButtons),
     h('div', { class: 'tb-sep' }),
     modeSwitch,
-    h('div', { class: 'tb-group' }, playBtn, stopBtn, recBtn),
+    h('div', { class: 'tb-group transport-btns' }, restartBtn, playBtn, stopBtn, recBtn),
     tempoBox,
     h('div', { class: 'tb-group' }, metroBtn, loopBtn),
     timeBox,
@@ -243,11 +246,13 @@ export function createToolbar(app) {
 
   const statusEl = h('div', { class: 'audio-status', 'data-hint': 'Audio device sample rate and output latency' });
 
+  const scrub = createScrub(app);
+
   const row2 = h('div', { class: 'tb-row tb-row2' },
     hintPanel,
     snapBtn,
     h('div', { class: 'pat-group' }, patPrev, patBox, patNext, patAdd),
-    h('div', { class: 'tb-flex' }),
+    h('div', { class: 'tb-flex scrub-slot' }, scrub.el),
     h('div', { class: 'tb-group toggles' }, toggles),
     h('div', { class: 'tb-flex' }),
     statusEl);
@@ -268,8 +273,15 @@ export function createToolbar(app) {
   const refreshStatic = () => {
     patBtn.classList.toggle('on', transport.mode === 'pattern');
     songBtn.classList.toggle('on', transport.mode === 'song');
-    playBtn.classList.toggle('on', transport.playing);
-    playBtn.replaceChildren(icon(transport.playing ? 'pause' : 'play'));
+    const state = transport.state;
+    playBtn.classList.toggle('on', state === 'playing');
+    playBtn.classList.toggle('paused', state === 'paused');
+    playBtn.replaceChildren(icon(state === 'playing' ? 'pause' : 'play'));
+    playBtn.dataset.hint = state === 'playing' ? 'Pause (Space)' : state === 'paused' ? 'Resume (Space)' : 'Play (Space)';
+    stopBtn.classList.toggle('active', state !== 'stopped');
+    restartBtn.disabled = state === 'stopped' && transport.resumeStep === 0;
+    timeBox.dataset.state = state;
+    stateLabel.lastChild.textContent = state.toUpperCase();
     recBtn.classList.toggle('on', transport.recording);
     metroBtn.classList.toggle('on', transport.metronome);
     loopBtn.classList.toggle('on', transport.loopEnabled);
@@ -335,6 +347,7 @@ export function createToolbar(app) {
     const voices = app.engine.voiceCount;
     polyEl.textContent = `${voices} voice${voices === 1 ? '' : 's'}`;
     drawMasterMeter();
+    scrub.update();
     const now = performance.now();
     if (now - lastMem > 1000) {
       lastMem = now;

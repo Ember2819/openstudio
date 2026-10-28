@@ -5,7 +5,7 @@ import { showMenu, showMenuBelow } from './menu.js';
 import { STEPS_PER_BAR } from '../state.js';
 import { overlayScrollbars } from './scrollbars.js';
 
-const TYPE_ICON = { drum: 'drum', synth: 'synth', sampler: 'sampler', sf: 'piano' };
+const TYPE_ICON = { drum: 'drum', synth: 'synth', fm: 'synth', organ: 'keys', pluck: 'wave', sfx: 'wave', sampler: 'sampler', sf: 'piano' };
 
 export function createChannelRack(app) {
   const { store, wm, transport, engine, actions } = app;
