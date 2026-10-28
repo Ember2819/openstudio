@@ -74,6 +74,30 @@ jobs:
           # Skip macOS code-signing; the .dmg is left unsigned
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
+      - name: Splice in the FUSE-free static AppImage runtime
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # electron-builder's AppImage runtime dlopen()s libfuse.so.2, which
+          # modern distros don't ship by default, so a downloaded AppImage
+          # fails to launch out of the box. Splice in the official statically
+          # linked runtime (libfuse2 compiled in) instead; the squashfs
+          # payload is untouched.
+          pin=20251108
+          base="https://github.com/AppImage/type2-runtime/releases/download/${pin}"
+          mkdir -p runtime
+          curl -fsSL -o runtime/runtime-x86_64 "$base/runtime-x86_64"
+          curl -fsSL -o runtime/runtime-aarch64 "$base/runtime-aarch64"
+          chmod +x runtime/runtime-*
+          for f in release/*.AppImage; do
+            case "$f" in
+              *x86_64*) arch=x86_64 ;;
+              *arm64*) arch=aarch64 ;;
+              *) echo "Unknown architecture in $f" >&2; exit 1 ;;
+            esac
+            node scripts/repack-appimage.mjs "$f" "runtime/runtime-${arch}"
+          done
+
       - name: Normalize Linux architecture suffix
         if: runner.os == 'Linux'
         shell: bash
