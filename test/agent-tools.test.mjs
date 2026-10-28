@@ -155,7 +155,7 @@ test('channels: add every kind, update params, manage', async () => {
   assert.match(await callFails(app, 'add_channel', { type: 'synth', params: { cutoff: 5 } }), /between 60 and 18000/);
   assert.match(await callFails(app, 'add_channel', { type: 'synth', params: { wave1: 'noise' } }), /one of sine/);
   assert.match(await callFails(app, 'add_channel', { type: 'synth', params: { bogus: 1 } }), /no parameter "bogus"/);
-  assert.match(await callFails(app, 'add_channel', { type: 'instrument', instrument: 'Bass' }), /matches 3 instruments/);
+  assert.match(await callFails(app, 'add_channel', { type: 'instrument', instrument: 'Bass' }), /matches 5 instruments/);
   assert.match(await callFails(app, 'add_channel', { type: 'instrument', instrument: 'Kazoo' }), /No instrument matches/);
 
   const up = await call(app, 'update_channel', { channel: syn.id, name: 'Wobble', mute: true, pan: -0.3, params: { res: 6 } });
@@ -335,7 +335,7 @@ test('transport reports state and seeks by bar', async () => {
 test('catalog lookups', async () => {
   const app = makeApp();
   const inst = await call(app, 'list_catalog', { kind: 'instruments', query: 'bass' });
-  assert.equal(inst.total, 3);
+  assert.equal(inst.total, 5);
   assert.deepEqual(inst.instruments[0], { family: 'Bass', name: 'Acoustic Bass', bank: 0, program: 32 });
   const kits = await call(app, 'list_catalog', { kind: 'drum_kits', query: 'standard' });
   assert.equal(kits.kits[0].pieces.length, 3);

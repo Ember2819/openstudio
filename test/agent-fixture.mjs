@@ -9,7 +9,7 @@ import { ToolError } from '../src/agent/helpers.js';
 export const CATALOG = {
   families: [
     { name: 'Piano', presets: [{ name: 'Acoustic Grand Piano', bank: 0, program: 0 }, { name: 'Bright Acoustic Piano', bank: 0, program: 1 }] },
-    { name: 'Bass', presets: [{ name: 'Acoustic Bass', bank: 0, program: 32 }, { name: 'Fingered Bass', bank: 0, program: 33 }, { name: 'Fretless Bass', bank: 0, program: 35 }] },
+    { name: 'Bass', presets: [{ name: 'Acoustic Bass', bank: 0, program: 32 }, { name: 'Fingered Bass', bank: 0, program: 33 }, { name: 'Pick Bass', bank: 0, program: 34 }, { name: 'Fretless Bass', bank: 0, program: 35 }, { name: 'Slap Bass 1', bank: 0, program: 36 }] },
   ],
   kits: [{ name: 'Standard', bank: 128, program: 0, pieces: [{ key: 36, name: 'Bass Drum 1' }, { key: 38, name: 'Acoustic Snare' }, { key: 42, name: 'Closed Hi-Hat' }] }],
 };

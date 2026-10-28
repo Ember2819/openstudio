@@ -1,11 +1,42 @@
-import { choice, int, num, obj, ref, str } from '../schema.js';
+import { bool, choice, int, num, obj, ref, str } from '../schema.js';
 import { channelOf, fail, patternOf } from '../helpers.js';
 import { analyze, BANDS } from '../analysis.js';
 import { renderSteps } from '../../audio/render.js';
 import { encodeWav } from '../../audio/wav.js';
 import { STEPS_PER_BAR } from '../../state.js';
+import { roleOf } from '../music/roles.js';
+import { flattenSong } from '../music/critique.js';
+import { busiestWindow, measure } from '../stems.js';
 
 const MAX_SECONDS = 900;
+
+/** Per-channel loudness / brightness over a window, plus what that says about the balance. */
+async function stemReport(app, a, steps, channels) {
+  const { store } = app;
+  const win = a.fromStep !== undefined || a.toStep !== undefined
+    ? { from: Math.floor(a.fromStep ?? 0), to: Math.min(steps, Math.ceil(a.toStep ?? steps)) }
+    : busiestWindow(store);
+  if (win.to - win.from > 64 * STEPS_PER_BAR) fail('Stems over more than 64 bars take too long: narrow it with fromStep / toStep');
+  const { notes } = flattenSong(store);
+  const players = channels.filter((c) => (notes.get(c.id) ?? []).length).slice(0, 24);
+  const mix = await measure(app, { ...win });
+  const rows = [];
+  for (const ch of players) {
+    const m = await measure(app, { ...win, only: ch, withSpectrum: true });
+    rows.push({ channel: ch.id, name: ch.name, role: roleOf(ch), rmsDb: Math.round(m.rmsDb * 10) / 10, peakDb: Math.round(m.peakDb * 10) / 10, centroidHz: m.centroidHz, band: m.dominantBand, power: m.rms ** 2 });
+  }
+  const total = rows.reduce((s, r) => s + r.power, 0) || 1;
+  const warnings = [];
+  for (const r of rows) {
+    r.share = Math.round((r.power / total) * 100) / 100;
+    delete r.power;
+    if (r.role !== 'fx' && r.rmsDb < mix.rmsDb - 24) warnings.push(`"${r.name}" is ${Math.round(mix.rmsDb - r.rmsDb)} dB below the mix: nearly inaudible. Raise its fader (update_mixer_track) or auto_mix.`);
+    if (r.share > 0.5 && rows.length > 2) warnings.push(`"${r.name}" holds ${Math.round(r.share * 100)}% of the energy and will dominate the mix: lower it.`);
+  }
+  const low = rows.filter((r) => ['sub', 'bass', 'lowMid'].includes(r.band) && r.share > 0.12);
+  if (low.length > 2) warnings.push(`${low.map((r) => `"${r.name}"`).join(', ')} all sit in the low range and will mask each other: high-pass the chords / pads, or move parts up an octave.`);
+  return { barsMeasured: `${win.from / STEPS_PER_BAR + 1}-${win.to / STEPS_PER_BAR}`, mixRmsDb: Math.round(mix.rmsDb * 10) / 10, mixPeakDb: Math.round(mix.peakDb * 10) / 10, channels: rows, warnings };
+}
 
 export const tools = [
   {
@@ -21,6 +52,7 @@ export const tools = [
       tail: num('Seconds of release/reverb tail to include after the last step (default 2)', { minimum: 0, maximum: 20 }),
       path: str('Also write the render to this absolute .wav path'),
       sampleRate: int('Sample rate for the render (default 44100)', { minimum: 8000, maximum: 96000 }),
+      stems: bool('Also render every channel on its own (over the busiest 8 bars, or fromStep-toStep) and report its level, brightness and share of the mix, with warnings about channels that are inaudible, dominate, or fight for the same range'),
     }),
     annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, title: 'Render and analyse audio' },
     async run(a, app) {
@@ -54,6 +86,7 @@ export const tools = [
           }),
         };
         if (a.path) result.path = await app.files.write(a.path, encodeWav(rendered));
+        if (a.stems) result.stems = await stemReport(app, a, steps, store.project.channels);
         return result;
       } finally {
         proj.mode = keep.mode;

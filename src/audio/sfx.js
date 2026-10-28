@@ -38,7 +38,7 @@ function voiceOf(ctx, dest, t, end, nodes, build) {
   return { nodes, out, end: end + 0.05, release() {} };
 }
 
-/** Sound definitions. sustained: stretches to the note / length; otherwise it is a one-shot of its natural length. */
+/** Sound definitions. sustained: stretches to the note / length; otherwise it is a one-shot of its natural length. texture: an ambience that sits under a whole song rather than marking a transition. */
 export const SFX = {
   riser: {
     label: 'Riser', sustained: true,
@@ -174,7 +174,7 @@ export const SFX = {
     },
   },
   wind: {
-    label: 'Wind', sustained: true,
+    label: 'Wind', sustained: true, texture: true,
     play(ctx, dest, t, len, v, k, tone) {
       const n = noise(ctx, 'pink');
       const bp = filt(ctx, 'bandpass', 700 * k, 0.9);
@@ -188,7 +188,7 @@ export const SFX = {
     },
   },
   ocean: {
-    label: 'Ocean Waves', sustained: true,
+    label: 'Ocean Waves', sustained: true, texture: true,
     play(ctx, dest, t, len, v, k, tone) {
       const n = noise(ctx, 'brown');
       const lp = filt(ctx, 'lowpass', 900 + tone * 1500, 0.6);
@@ -200,7 +200,7 @@ export const SFX = {
     },
   },
   vinyl: {
-    label: 'Vinyl Crackle', sustained: true,
+    label: 'Vinyl Crackle', sustained: true, texture: true,
     play(ctx, dest, t, len, v, k, tone) {
       const sr = ctx.sampleRate;
       const buf = ctx.createBuffer(1, sr * 3, sr);

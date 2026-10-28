@@ -14,9 +14,12 @@ import { tools as mixerTools } from './tools/mixer.js';
 import { tools as automationTools } from './tools/automation.js';
 import { tools as renderTools } from './tools/render.js';
 import { tools as uiTools } from './tools/ui.js';
+import { tools as theoryTools } from './tools/theory.js';
+import { tools as composeTools } from './tools/compose.js';
+import { tools as produceTools } from './tools/produce.js';
 
 export const TOOLS = [
-  ...projectTools, ...catalogTools, ...channelTools, ...patternTools, ...playlistTools, ...mixerTools, ...automationTools, ...renderTools, ...uiTools,
+  ...theoryTools, ...produceTools, ...composeTools, ...projectTools, ...catalogTools, ...channelTools, ...patternTools, ...playlistTools, ...mixerTools, ...automationTools, ...renderTools, ...uiTools,
 ];
 
 /** What clients see in tools/list. */

@@ -7,8 +7,10 @@ const TICK_MS = 25;
 
 /**
  * Fire everything that starts on `step`: notes, audio clips, automation. Shared by live playback and
- * offline export. opts: { metronome, first } — `first` is true on the first step after a start/seek/loop jump,
- * so audio clips that are already running get started part-way in.
+ * offline export. opts: { metronome, first, lengths } — `first` is true on the first step after a start/seek/loop
+ * jump, so audio clips that are already running get started part-way in. `lengths` is an optional Map the caller
+ * may keep for a short while (a scheduling tick, a render batch): pattern lengths are expensive (every note is
+ * visited) and otherwise recomputed for every clip on every step.
  */
 export function scheduleStep(store, engine, step, time, sd, opts = {}) {
   const proj = store.project;
@@ -16,6 +18,11 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
 
   const anySolo = proj.channels.some((c) => c.solo);
   const swing = proj.swing || 0;
+  const lengthOf = (pat) => {
+    let len = opts.lengths?.get(pat.id);
+    if (len === undefined) { len = store.patternSteps(pat); opts.lengths?.set(pat.id, len); }
+    return len;
+  };
   const emit = (pat, local) => {
     const shift = Math.floor(local) % 2 === 1 ? swing * sd * 0.5 : 0;
     for (const ch of proj.channels) {
@@ -33,7 +40,7 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
 
   if (proj.mode === 'pattern') {
     const pat = store.currentPattern;
-    if (pat) emit(pat, step % store.patternSteps(pat));
+    if (pat) emit(pat, step % lengthOf(pat));
     return;
   }
 
@@ -45,14 +52,14 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
     if (type === 'pattern') {
       const pat = store.pattern(clip.pat);
       if (!pat) continue;
-      const len = store.patternSteps(pat);
+      const len = lengthOf(pat);
       emit(pat, (((step - clip.start + clip.offset) % len) + len) % len);
     } else if (type === 'audio') {
       if (step !== clip.start && !(opts.first && step > clip.start)) continue;
       const sample = store.samples.get(clip.sampleId);
       if (!sample?.buffer) continue;
       const into = step - clip.start;
-      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1, clip.id);
+      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1);
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
       if (!auto || !targetValid(store, auto.target)) continue;
@@ -207,6 +214,7 @@ export class Transport extends Emitter {
   // ------------------------------------------------------------ scheduling
   _tick() {
     const horizon = this.ctx.currentTime + LOOKAHEAD;
+    this._lengths = new Map(); // valid for this tick only: the user may edit patterns between ticks
     while (this.nextTime < horizon) {
       if (this.mode === 'song') {
         const loop = this.store.project.loop;
@@ -229,7 +237,7 @@ export class Transport extends Emitter {
   }
 
   _scheduleStep(step, time) {
-    scheduleStep(this.store, this.engine, step, time, this.stepDur, { metronome: this.metronome, first: this.jumped });
+    scheduleStep(this.store, this.engine, step, time, this.stepDur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
   }
 
   // -------------------------------------------------------------- recording

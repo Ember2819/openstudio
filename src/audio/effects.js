@@ -133,7 +133,8 @@ function mixer(ctx) {
   const dry = ctx.createGain();
   const wet = ctx.createGain();
   input.connect(dry).connect(output);
-  const setMix = (m) => { dry.gain.value = 1 - m * 0.7; wet.gain.value = m; };
+  // up to 50% the dry signal eases off gently; beyond that it fades to nothing, so 100% is fully wet (send buses)
+  const setMix = (m) => { dry.gain.value = m <= 0.5 ? 1 - m * 0.7 : 1.3 * (1 - m); wet.gain.value = m; };
   return { input, output, dry, wet, setMix };
 }
 
