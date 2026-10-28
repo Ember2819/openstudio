@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [0.4.0]
+
 ### Added
 - **Agents write songs, not loops.** A producer toolset for MCP agents: `setup_song` (12 styles → instruments, routing, reverb and
   delay buses, master chain), `build_song` (a full arrangement in a real song form with fills, crashes, risers and impacts),
@@ -26,6 +28,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - `npm run test:e2e` renders every drum voice and preset offline and checks level, NaN and tuning.
 
 ### Fixed
+- Linux AppImages ship a statically-linked runtime, so downloads run without `libfuse2` installed.
 - Undo and redo no longer stop playback.
 - A 100% wet effect (send buses) is now fully wet; before, 30% of the dry signal always leaked through.
 

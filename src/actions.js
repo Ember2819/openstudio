@@ -252,7 +252,7 @@ export function createActions(app) {
     },
 
     showAbout() {
-      messageDialog('About OpenStudio', 'OpenStudio 0.3\nAn open-source digital audio workstation inspired by the classic pattern-based workflow.\n\nBuilt with Electron and the Web Audio API.');
+      messageDialog('About OpenStudio', 'OpenStudio 0.4\nAn open-source digital audio workstation inspired by the classic pattern-based workflow.\n\nBuilt with Electron and the Web Audio API.');
     },
 
     showAgents() { app.prefs?.open('agents'); },
