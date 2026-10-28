@@ -158,7 +158,7 @@ export function createToolbar(app) {
   const timeBig = h('span', { class: 'time-big' }, '0:00');
   const timeSmall = h('span', { class: 'time-small' }, '.00');
   const timeBox = h('div', { class: 'time-box', 'data-hint': 'Song position — click to switch between M:S:CS and B:S:T' },
-    stateLabel, timeLabel, h('div', { class: 'time-digits' }, timeBig, timeSmall));
+    h('div', { class: 'time-head' }, stateLabel, timeLabel), h('div', { class: 'time-digits' }, timeBig, timeSmall));
   timeBox.addEventListener('click', () => { timeMode = timeMode === 'ms' ? 'bst' : 'ms'; timeLabel.textContent = timeMode === 'ms' ? 'M:S:CS' : 'B:S:T'; });
 
   // master meter + voices / memory
