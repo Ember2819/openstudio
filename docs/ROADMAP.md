@@ -5,14 +5,14 @@ Rough priorities, not promises. Pick something and open an issue before starting
 ## Near term
 - Tempo automation and time-signature support.
 - Audio recording (input device → audio clip).
-- Per-note properties in the piano roll (pan, cutoff, slide) and chord/arpeggio helpers.
+- Per-note properties in the piano roll (pan, cutoff, slide) and chord/arpeggio helpers in the UI (agents have `compose`).
 - Sampler: root key, loop points, slicing; drag-to-load into a channel.
 - Recent files.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 
 ## Mid term
 - Time-stretch and pitch-shift for audio clips.
-- More built-in effects (gate, convolution reverb, multiband) and instruments (FM, wavetable).
+- More built-in effects (gate, convolution reverb, multiband) and instruments (wavetable, sample-based pianos / strings).
 - Spectrum analyser and track meters with peak hold in the mixer; track grouping and insert routing UI.
 - Stem export (per track) and MP3/FLAC export.
 - Theming and a keyboard-shortcut editor; accessibility pass.

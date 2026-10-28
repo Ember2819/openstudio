@@ -44,6 +44,28 @@ Help → *Agents (MCP server)…* (Settings → Agents) shows the live endpoint.
 | Another port (0 = any free one) | `--mcp-port=N` or `OPENSTUDIO_MCP_PORT=N` (the port is printed on start-up: `[mcp] listening on …`) |
 | Another URL for the stdio bridge | `--url …` or `OPENSTUDIO_MCP_URL` |
 
+## Making a song: the producer workflow
+
+Agents get the best results by working like a producer, and the tools are built for that. You cannot hear what you
+are making, so the tools write music that is in key and in time, and measure what you cannot judge by ear.
+
+```
+ setup_song ──▶ build_song ──▶ analyze_song ──▶ (refine: compose, set_notes, automation) ──▶ auto_mix ──▶ render_audio ──▶ save_project
+   style, key     whole song      key, chords, register,      another seed / energy / density            balance from        levels, clipping,
+   instruments    in sections     dynamics, form, fixes       for the weak parts only                    stem renders        spectrum, stems
+```
+
+| Step | Tool | What it does |
+| --- | --- | --- |
+| Learn | `songwriting_guide`, `music_theory` | The producer's handbook (workflow, harmony, melody, rhythm, arrangement, sound, mixing, checklist), and lookups so no pitch has to be computed by hand: keys and their chords, named progressions, styles, song forms, registers |
+| Start | `setup_song` | A style (house, techno, trance, trap, hip-hop, lo-fi, pop, rock, drum & bass, synthwave, funk, ambient) becomes instruments (drums as separate channels, bass, chords, pad, arp, lead, riser and impact), each on its own mixer track with level, pan, high-pass, compression, shared reverb and delay buses, a master chain, tempo and swing |
+| Write | `build_song` | A complete first draft in a real form (intro, verse, chorus, bridge, outro; or intro, build, drop, breakdown, drop, outro): patterns per section with rising energy, drum fills, crashes, risers and impacts, clips placed on named playlist tracks |
+| Write | `compose` | Generate parts into a pattern: drums with accents, ghost notes and fills; bass following the chord roots; voice-led chords and pads; arpeggios; melodies built from a motif that is answered and resolved. Same seed, same music |
+| Arrange | `arrange` | Lay existing patterns out as sections, bar by bar |
+| Review | `analyze_song` | Works from the notes: detected key and how much of the music stays in it, chord per bar, whether the bass follows, register clashes, flat velocities, the energy curve, missing intro / ending / variation, and a fix for each |
+| Mix | `auto_mix` | Role-based mix, then (calibrate) renders the loudest bars once per channel and corrects the faders; reports the levels it measured |
+| Listen | `render_audio` | Levels, clipping, loudness over time, spectral balance; `stems: true` adds a per-channel breakdown with masking warnings |
+
 ## What agents can do
 
 Time is measured in **steps**: 1 step = a 16th note, 4 = a beat, 16 = a bar (4/4 only). Pitches are MIDI numbers
@@ -52,18 +74,31 @@ referred to by id (channels and patterns also by unique name).
 
 | Area | Tools |
 | --- | --- |
+| Producer | `songwriting_guide`, `music_theory`, `setup_song`, `build_song`, `compose`, `arrange`, `analyze_song`, `auto_mix` (see above) |
 | Project | `get_project`, `set_project` (name, tempo, swing, master pitch, pattern/song mode, loop, metronome), `new_project`, `open_project`, `save_project`, `import_midi`, `export_midi`, `history` (undo/redo) |
 | Transport | `transport` (play, pause, stop, seek by step or bar, status) |
-| Discover | `list_catalog` (General MIDI instruments, drum kits and pieces, synth presets, drum voices, effects, channel parameters, automation targets) |
-| Channels | `add_channel` (instrument, drum_kit, synth, drum, sampler), `update_channel`, `manage_channel` (remove, clone, move, select, route to a free mixer track), `preview_note`, `import_sample` |
+| Discover | `list_catalog` (General MIDI instruments, drum kits and pieces, presets of the five built-in generators, synthesized drum voices, effects, channel parameters, automation targets) |
+| Channels | `add_channel` (instrument, drum_kit, synth, fm, organ, pluck, sfx, drum, sampler), `update_channel` (also `role`, and `preset` for the built-in generators), `manage_channel` (remove, clone, move, select, route to a free mixer track), `preview_note`, `import_sample` |
 | Patterns & notes | `get_pattern`, `add_pattern`, `update_pattern`, `pattern_action`, `set_notes`, `add_notes`, `set_steps` (step-sequencer grid strings), `remove_notes`, `transform_notes` (transpose, shift, quantize, legato, velocity, humanize, duplicate, reverse, mute) |
 | Playlist | `get_playlist`, `add_clips` (pattern, audio, automation), `update_clips`, `edit_clips` (remove, duplicate, make unique, fit, mute), `update_playlist_track` |
 | Mixer | `get_mixer_track`, `update_mixer_track`, `set_effect`, `move_effect`, `set_send`, `reset_mixer` |
 | Automation | `create_automation`, `get_automation`, `update_automation`, `remove_automation` |
-| Hear & see | `render_audio` (offline render + analysis: peak/RMS/crest, clipping, loudness per bar, spectral balance, warnings; optional WAV file; optionally one channel soloed), `screenshot`, `show_window`, `set_selection` |
+| Hear & see | `render_audio` (offline render + analysis: peak/RMS/crest, clipping, loudness per bar, spectral balance, warnings; optional WAV file; optionally one channel soloed; `stems` per-channel breakdown), `screenshot`, `show_window`, `set_selection` |
 
-Agents cannot hear, so `render_audio` is their ears: it tells them whether the mix is silent, clipping, too quiet,
-bass-heavy, or phase-problematic, and how loudness develops over the song.
+### Instruments
+
+Every channel is one of:
+
+| Type | What it is |
+| --- | --- |
+| `instrument`, `drum_kit` | The bundled General MIDI SoundFont: 128 melodic instruments with variations and 13 real drum kits |
+| `synth` | Subtractive synth: two oscillators from 11 waveforms (including pulse widths, vocal, reed, glass), unison, sub oscillator, noise, 12 / 24 dB filter with key tracking, drive, vibrato and filter LFO; ~50 presets (basses, leads, pads, stabs, arps, plucks, bells) |
+| `fm` | Three-operator FM with a decaying modulation index and tremolo: electric pianos, mallets, bells, bass, pads, brass |
+| `organ` | Tonewheel organ: nine drawbars, percussion, key click and a rotary speaker |
+| `pluck` | Karplus-Strong plucked strings (nylon and steel guitar, harp, koto, banjo, mandolin, pizzicato, upright bass) |
+| `sfx` | Sound effects: risers, downlifters, tonal swells, noise sweeps, whooshes, reverse crashes, impacts, booms, bass drops, lasers, zaps, droplets, sirens, wind, ocean, vinyl crackle, sparkle, tape stop. A riser as long as its note |
+| `drum` | 26 synthesized drum voices (808 / punchy / acoustic-style kicks and snares, claps, snaps, rimshots, hats, toms, congas, bongos, cowbell, wood block, triangle, cabasa, shakers, cymbals) |
+| `sampler` | Plays an audio file |
 
 ### Safety rails
 
@@ -91,6 +126,10 @@ project files and export audio anywhere you can write. Use `--no-mcp` if that is
   calls, adds `screenshot`, and provides path-based file access in place of the human file dialogs.
 - `src/agent/` — the tools. One file per area in `src/agent/tools/`; `schema.js` validates arguments;
   `analysis.js` powers `render_audio`.
+
+### Roles
+
+Every channel has a role (`kick`, `snare`, `clap`, `hat`, `openhat`, `perc`, `tom`, `crash`, `ride`, `drums` for a whole kit, `bass`, `chords`, `stabs`, `pad`, `arp`, `lead`, `fx`). `setup_song` sets them; otherwise they are guessed from the instrument and name, and `update_channel` can set one. `compose`, `build_song`, `auto_mix` and `analyze_song` use roles to decide what each channel plays and how it is mixed.
 
 ### Adding a tool
 

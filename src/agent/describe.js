@@ -3,10 +3,11 @@ import { PARAM_META } from '../audio/instruments.js';
 import { noteName } from '../util.js';
 import { MIXER_TRACKS, STEPS_PER_BAR } from '../state.js';
 import { round } from './helpers.js';
+import { roleOf } from './music/roles.js';
 
 export function channelInfo(app, ch) {
   const cat = app.actions.catalog?.();
-  const out = { id: ch.id, name: ch.name, type: ch.type, vol: round(ch.vol), pan: round(ch.pan), mute: ch.mute, solo: ch.solo, mixer: ch.mixer, color: ch.color };
+  const out = { id: ch.id, name: ch.name, type: ch.type, role: roleOf(ch), vol: round(ch.vol), pan: round(ch.pan), mute: ch.mute, solo: ch.solo, mixer: ch.mixer, color: ch.color };
   if (ch.type === 'drum') out.voice = ch.voice;
   if (ch.type === 'sf') {
     out.bank = ch.bank;
@@ -83,6 +84,7 @@ export function summarize(app) {
     filePath: store.filePath,
     unsavedChanges: store.dirty,
     bpm: p.bpm,
+    ...(p.song ? { song: p.song } : {}),
     swing: p.swing,
     masterPitch: p.masterPitch,
     mode: p.mode,

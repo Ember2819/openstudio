@@ -17,7 +17,9 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - 261 General MIDI instruments and 13 drum kits (TR-808/909, Electronic, Jazz, Orchestral, …) from the
   [GeneralUser GS](assets/CREDITS.md) SoundFont, played by a built-in sampler engine (velocity, loops, envelopes,
   filters, vibrato, hi-hat choke).
-- Built-in subtractive synth (dual oscillator, unison, filter envelope) and a sampler for your own audio files.
+- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO),
+  an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps, textures);
+  26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio files.
 - Mixer effects: reverb, delay, chorus, phaser, distortion, filter, EQ, compressor, limiter, stereo width.
 
 **Workflow**
@@ -27,8 +29,9 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **Playlist** with pattern, audio and automation clips, loop region, drag-and-drop of samples and audio files.
 - **Mixer** with 125 inserts, sends (feedback-protected), 10 effect slots per track and stereo meters.
 - **Automation** — right-click any knob or fader to create an automation clip with an editable curve.
-- **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md): compose, arrange, mix,
-  automate, render and export — you watch it happen live and can undo any of it.
+- **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
+  pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
+  by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
 - Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live recording.
 
 ## Getting started

@@ -1,7 +1,8 @@
 import { COLOR, PITCH, bool, choice, int, num, obj, ref, str, arr } from '../schema.js';
 import { channelOf, checkParam, edit, fail, parsePitch, pickByName, round } from '../helpers.js';
 import { channelInfo } from '../describe.js';
-import { DRUM_KIT, PARAM_META, SYNTH_PRESETS } from '../../audio/instruments.js';
+import { DRUM_KIT, PARAM_META, ENGINE_PRESETS, ENGINES, DRUM_VOICES, defaultParams } from '../../audio/instruments.js';
+import { ROLES } from '../music/styles.js';
 import { MIXER_TRACKS } from '../../state.js';
 
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -65,17 +66,18 @@ export const tools = [
   {
     name: 'add_channel',
     title: 'Add channel',
-    description: 'Add an instrument channel to the rack (like ADD → One more channel). type "instrument": a General MIDI sound (give instrument name, or program/bank). "drum_kit": a SoundFont drum kit (kit name or program), optionally one piece (name or key) to make a single-drum channel. "synth": the built-in synth, optionally from a preset. "drum": a built-in synthesized drum voice. "sampler": plays a sample (a sample id from import_sample, or a file path). Returns the new channel; its id is used everywhere else. The new channel becomes selected.',
+    description: 'Add an instrument channel to the rack (like ADD → One more channel). type "instrument": a General MIDI sound (give instrument name, or program/bank). "drum_kit": a SoundFont drum kit (kit name or program), optionally one piece (name or key) to make a single-drum channel. Built-in generators, each with presets (list_catalog synth_presets): "synth" (subtractive: basses, leads, pads, stabs), "fm" (electric pianos, bells, mallets, bass), "organ" (drawbar organ), "pluck" (guitar, harp, koto, banjo, bass strings), "sfx" (risers, impacts, sweeps, textures). "drum": a synthesized drum voice (list_catalog drum_voices). "sampler": plays a sample (a sample id from import_sample, or a file path). Returns the new channel; its id is used everywhere else. The new channel becomes selected. To get a whole set of instruments for a style at once use setup_song.',
     inputSchema: obj({
-      type: choice(['instrument', 'drum_kit', 'synth', 'drum', 'sampler'], 'Kind of channel'),
+      type: choice(['instrument', 'drum_kit', 'synth', 'fm', 'organ', 'pluck', 'sfx', 'drum', 'sampler'], 'Kind of channel'),
       name: str('Channel name (defaults to the instrument / piece / preset name)'),
       instrument: str('instrument: General MIDI sound name, e.g. "Grand Piano" (see list_catalog)'),
       bank: int('instrument: SoundFont bank (default 0)', { minimum: 0, maximum: 127 }),
       program: int('instrument: program number 0-127', { minimum: 0, maximum: 127 }),
       kit: { type: ['string', 'integer'], description: 'drum_kit: kit name or program number' },
       piece: { type: ['string', 'integer'], description: 'drum_kit: piece name or key; omit for the full kit on one channel' },
-      preset: str('synth: preset name, e.g. "Saw Bass" (see list_catalog synth_presets)'),
-      voice: choice(DRUM_KIT.map((d) => d.voice), 'drum: built-in drum voice'),
+      preset: str('synth / fm / organ / pluck / sfx: preset name, e.g. "Saw Bass", "FM E-Piano", "Jazz Organ", "Nylon Guitar", "Riser" (see list_catalog synth_presets)'),
+      voice: choice(DRUM_VOICES, 'drum: built-in drum voice'),
+      role: choice(ROLES, 'What the channel is for (kick, bass, chords, pad, arp, lead, fx …); compose, build_song and auto_mix use it. Default: guessed.'),
       sample: int('sampler: sample id from import_sample'),
       path: str('sampler: absolute path of an audio file to import and use'),
       params: PARAMS,
@@ -102,9 +104,10 @@ export const tools = [
             : (() => { const pc = resolvePiece(kit, a.piece); return { name: pc.name, type: 'sf', bank: 128, program: kit.program, fixedKey: pc.key }; })();
           break;
         }
-        case 'synth': {
-          const preset = a.preset === undefined ? null : pickByName(Object.values(SYNTH_PRESETS).flat(), a.preset, 'synth preset');
-          spec = { name: preset?.name ?? 'Synth', type: 'synth', preset: preset?.params ?? SYNTH_PRESETS.Leads[0].params };
+        case 'synth': case 'fm': case 'organ': case 'pluck': case 'sfx': {
+          const list = Object.values(ENGINE_PRESETS[a.type]).flat();
+          const preset = a.preset === undefined ? (a.type === 'synth' ? ENGINE_PRESETS.synth.Leads[0] : null) : pickByName(list, a.preset, `${a.type} preset`);
+          spec = { name: preset?.name ?? ENGINES[a.type].label, type: a.type, preset: preset?.params ?? null };
           break;
         }
         case 'drum': {
@@ -127,6 +130,7 @@ export const tools = [
       if (a.color) spec.color = a.color;
       return edit(store, () => {
         const ch = store.addChannel(spec);
+        if (a.role) ch.role = a.role;
         if (a.vol !== undefined) ch.vol = a.vol;
         if (a.pan !== undefined) ch.pan = a.pan;
         if (a.params) applyParams(ch, a.params);
@@ -149,6 +153,8 @@ export const tools = [
       color: COLOR,
       mixer: int('Mixer track to route to', { minimum: 0, maximum: 125 }),
       params: PARAMS,
+      role: choice(ROLES, 'What the channel is for (kick, bass, chords, pad, arp, lead, fx …)'),
+      preset: str('synth / fm / organ / pluck / sfx channels: load this preset (replaces all parameters); see list_catalog synth_presets'),
       instrument: str('instrument channels: new General MIDI sound name'),
       bank: int('instrument channels: bank', { minimum: 0, maximum: 127 }),
       program: int('instrument channels: program', { minimum: 0, maximum: 127 }),
@@ -167,6 +173,13 @@ export const tools = [
         if (a.solo !== undefined) ch.solo = a.solo;
         if (a.color) ch.color = a.color;
         if (a.mixer !== undefined) ch.mixer = mixerIndex(a.mixer);
+        if (a.role) ch.role = a.role;
+        if (a.preset !== undefined) {
+          if (!ENGINE_PRESETS[ch.type]) fail('Only synth, fm, organ, pluck and sfx channels have presets');
+          const p = pickByName(Object.values(ENGINE_PRESETS[ch.type]).flat(), a.preset, `${ch.type} preset`);
+          ch.params = { ...defaultParams(ch.type), ...p.params };
+          if (a.name === undefined) ch.name = p.name;
+        }
         if (a.params) applyParams(ch, a.params);
         const newSound = a.instrument !== undefined || a.program !== undefined || a.bank !== undefined;
         if (newSound || a.kit !== undefined || a.piece !== undefined) {

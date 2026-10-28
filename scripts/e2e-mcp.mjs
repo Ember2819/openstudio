@@ -134,6 +134,26 @@ try {
   const invalid = await run('set_project', { bpm: 'fast' });
   ok('invalid arguments are rejected clearly', invalid.res.isError && /bpm must be number/.test(invalid.error));
 
+  // the producer workflow, with real audio: setup, build, review, mix from stems, check
+  await must('new_project', { force: true });
+  const setup = await must('setup_song', { style: 'house', key: 'F minor' });
+  ok('setup_song creates the band', setup.channels.length >= 10 && setup.bpm === 124 && setup.chords.join(' ') === 'Fm Eb Db Eb');
+  const built = await must('build_song', { seed: 4, structure: 'short' });
+  ok('build_song writes a 24-bar song', built.bars === 24 && built.clips > 10 && built.sections.length === 4);
+  const review = await must('analyze_song');
+  ok('the draft analyses clean', review.key.notesInKey >= 0.95 && review.harmony.bassFollowsChords === 1 && !review.warnings.some((w) => w.severity === 'warning'), JSON.stringify(review.warnings));
+  const draft = await must('render_audio', { scope: 'song', stems: true, fromStep: 8 * 16, toStep: 16 * 16 });
+  ok('render with stems reports every channel', draft.stems?.channels.length >= 8 && draft.stems.channels.every((c) => Number.isFinite(c.rmsDb)), JSON.stringify(draft.stems?.warnings));
+  const mixed = await must('auto_mix', {});
+  ok('auto_mix calibrates from stems', mixed.calibrated && mixed.stems.length >= 8 && mixed.master.peakDb <= -0.5, JSON.stringify(mixed.master));
+  const after = await must('render_audio', { scope: 'song', stems: true });
+  ok('the mixed song is audible, not clipping, and balanced', !after.silent && after.clippedSamples === 0 && after.peakDb > -9 && after.peakDb < -0.4 && after.rmsDb > -26, JSON.stringify({ peak: after.peakDb, rms: after.rmsDb, clipped: after.clippedSamples }));
+  const spread = after.stems.channels.filter((c) => !['fx'].includes(c.role));
+  const loudest = Math.max(...spread.map((c) => c.rmsDb)), quietest = Math.min(...spread.map((c) => c.rmsDb));
+  ok('no channel is buried or dominating after the mix', loudest - quietest < 26 && after.stems.channels.every((c) => c.share < 0.6), JSON.stringify(after.stems.channels.map((c) => [c.name, c.rmsDb, c.share])));
+  console.log('  stems after mixing:', after.stems.channels.map((c) => `${c.name} ${c.rmsDb} dB (${Math.round(c.share * 100)}%)`).join(' · '));
+  console.log(`  master: peak ${after.peakDb} dB, rms ${after.rmsDb} dB over ${after.seconds} s; spectrum`, JSON.stringify(after.spectrum.energyShare));
+
   failed = results.some((r) => !r);
 } catch (err) {
   console.error(err.stack || err);

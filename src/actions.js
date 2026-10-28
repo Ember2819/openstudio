@@ -2,7 +2,7 @@ import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDi
 import { renderSteps } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { STEPS_PER_BAR } from './state.js';
-import { SYNTH_PRESETS } from './audio/instruments.js';
+import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
 import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
@@ -132,10 +132,12 @@ export function createActions(app) {
       window.studioAPI.setTitle(`${base} — OpenStudio`);
     },
 
+    /** Add a generator channel: 'drum' (preset = { name, voice }) or any engine in ENGINES (preset = { name, params }). */
     addChannel(type, preset) {
       if (type === 'drum') return store.addChannel({ name: preset.name, type: 'drum', voice: preset.voice });
-      const p = preset || SYNTH_PRESETS.Leads[0];
-      return store.addChannel({ name: preset ? preset.name : 'Synth', type: 'synth', preset: p.params });
+      if (!ENGINES[type]) throw new Error(`Unknown channel type ${type}`);
+      const p = preset || (type === 'synth' ? SYNTH_PRESETS.Leads[0] : null);
+      return store.addChannel({ name: preset ? preset.name : ENGINES[type].label, type, preset: p ? p.params : null });
     },
 
     /** Add a SoundFont channel: { name, bank, program, fixedKey?, rootPitch? } */
@@ -154,7 +156,14 @@ export function createActions(app) {
     channelMenuItems() {
       const cat = a.catalog();
       const items = [
-        { label: 'Synth', action: () => a.addChannel('synth') },
+        ...Object.entries(ENGINES).map(([type, info]) => ({
+          label: info.label,
+          submenu: [
+            { label: `Empty ${info.label.toLowerCase()}`, action: () => a.addChannel(type) },
+            { separator: true },
+            ...Object.entries(ENGINE_PRESETS[type]).map(([cat, list]) => ({ label: cat, submenu: list.map((pr) => ({ label: pr.name, action: () => a.addChannel(type, pr) })) })),
+          ],
+        })),
         { label: 'Sampler…', action: () => a.addSamplerFromFile() },
         { separator: true },
       ];

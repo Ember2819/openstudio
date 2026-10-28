@@ -1,9 +1,9 @@
 import { h, clamp } from '../util.js';
 import { icon } from './icons.js';
-import { SYNTH_PRESETS, defaultParams } from '../audio/instruments.js';
+import { ENGINE_PRESETS, ENGINES, DRUM_KIT, defaultParams } from '../audio/instruments.js';
 import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
 
-const channelIcon = (c) => ({ drum: 'drum', sampler: 'sampler', sf: c.bank === 128 ? 'drum' : 'piano' }[c.type] || 'synth');
+const channelIcon = (c) => ({ drum: 'drum', sampler: 'sampler', organ: 'keys', pluck: 'wave', sfx: 'wave', sf: c.bank === 128 ? 'drum' : 'piano' }[c.type] || 'synth');
 
 export function createBrowser(app) {
   const { store, engine, wm, actions } = app;
@@ -19,6 +19,8 @@ export function createBrowser(app) {
   let selectedPath = null;
 
   const spec = (type, extra) => ({ type, params: defaultParams(type), ...extra });
+  /** Audition low sounds low, so a bass preset is judged where it will be played. */
+  const previewPitch = (type, cat) => (cat === 'Bass' || /bass/i.test(cat) ? 48 : type === 'sfx' ? 60 : 60);
 
   function soundfontNodes() {
     const cat = actions.catalog();
@@ -83,21 +85,32 @@ export function createBrowser(app) {
         ],
       },
       ...soundfontNodes(),
-      {
-        label: 'Synth presets', icon: 'folder',
-        children: Object.entries(SYNTH_PRESETS).map(([cat, list]) => ({
+      ...Object.entries(ENGINE_PRESETS).map(([type, cats]) => ({
+        label: type === 'synth' ? 'Synth presets' : `${ENGINES[type].label} presets`, icon: 'folder',
+        children: Object.entries(cats).map(([cat, list]) => ({
           label: cat, icon: 'folder',
           children: list.map((p) => ({
-            label: p.name, icon: 'synth',
-            onClick: () => engine.previewSpec({ type: 'synth', params: { ...defaultParams('synth'), ...p.params } }, cat === 'Bass' ? 48 : 60),
-            onDbl: () => actions.addChannel('synth', p),
+            label: p.name, icon: ENGINES[type].icon,
+            onClick: () => engine.previewSpec({ type, params: { ...defaultParams(type), ...p.params } }, previewPitch(type, cat)),
+            onDbl: () => actions.addChannel(type, p),
           })),
+        })),
+      })),
+      {
+        label: 'Drum voices', icon: 'folder',
+        children: DRUM_KIT.map((d) => ({
+          label: d.name, icon: 'drum',
+          onClick: () => engine.previewSpec({ type: 'drum', voice: d.voice, params: defaultParams('drum') }, 60),
+          onDbl: () => actions.addChannel('drum', d),
         })),
       },
       {
         label: 'Generators', icon: 'folder',
         children: [
-          { label: 'Synth', icon: 'synth', onClick: () => engine.previewSpec(spec('synth')), onDbl: () => actions.addChannel('synth') },
+          ...Object.entries(ENGINES).map(([type, info]) => ({
+            label: info.label, icon: info.icon, hint: info.blurb,
+            onClick: () => engine.previewSpec(spec(type)), onDbl: () => actions.addChannel(type),
+          })),
           { label: 'Sampler…', icon: 'sampler', onDbl: () => actions.addSamplerFromFile(), onClick: () => {} },
         ],
       },

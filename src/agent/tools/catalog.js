@@ -1,7 +1,7 @@
 import { choice, int, obj, str } from '../schema.js';
 import { fail } from '../helpers.js';
 import { paramReference } from '../describe.js';
-import { DRUM_KIT, SYNTH_PRESETS } from '../../audio/instruments.js';
+import { DRUM_KIT, PARAM_META, allEnginePresets } from '../../audio/instruments.js';
 import { EFFECT_DEFS } from '../../audio/effects.js';
 import { MIXER_TRACKS } from '../../state.js';
 
@@ -55,13 +55,16 @@ export const tools = [
           };
         }
         case 'synth_presets':
-          return { presets: Object.entries(SYNTH_PRESETS).flatMap(([category, list]) => list.filter((p) => has(p.name) || has(category)).map((p) => ({ category, name: p.name, params: p.params }))) };
+          return {
+            note: 'add_channel type = the engine below, with preset = the name; update_channel preset switches an existing channel. Parameters: kind "channel_params".',
+            presets: allEnginePresets().filter((p) => has(p.name) || has(p.category) || has(p.type)).map((p) => ({ engine: p.type, category: p.category, name: p.name, params: p.params })),
+          };
         case 'drum_voices':
-          return { voices: DRUM_KIT.filter((d) => has(d.name)).map((d) => ({ name: d.name, voice: d.voice })) };
+          return { voices: DRUM_KIT.filter((d) => has(d.name)).map((d) => ({ name: d.name, voice: d.voice })), note: 'add_channel type "drum" with voice; pitch has no effect on pattern notes except tuning (use 60).' };
         case 'effects':
           return { slotsPerTrack: 10, effects: effectReference().filter((e) => has(e.type) || has(e.name)) };
         case 'channel_params':
-          return Object.fromEntries(['sf', 'synth', 'drum', 'sampler'].map((t) => [t, paramReference(t)]));
+          return Object.fromEntries(Object.keys(PARAM_META).map((t) => [t, paramReference(t)]));
         case 'automation_targets':
           return {
             formats: TARGET_FORMATS,

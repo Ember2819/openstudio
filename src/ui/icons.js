@@ -7,6 +7,7 @@ const ICONS = {
   pause: '<rect x="3.5" y="2.5" width="3" height="11" rx="1"/><rect x="9.5" y="2.5" width="3" height="11" rx="1"/>',
   stop: '<rect x="3.5" y="3.5" width="9" height="9" rx="1.5"/>',
   record: '<circle cx="8" cy="8" r="4.5"/>',
+  restart: '<rect x="2.6" y="3" width="2" height="10" rx=".8"/><path d="M13.4 3.6v8.8a.5.5 0 0 1-.78.41L6.5 8.41a.5.5 0 0 1 0-.82l6.12-4.4a.5.5 0 0 1 .78.41z"/>',
 
   // tools
   metronome: L('<path d="M5.4 14h5.2l1.1-9.5a1 1 0 0 0-.2-.7L8.9 1.6a1.2 1.2 0 0 0-1.8 0L4.5 3.8a1 1 0 0 0-.2.7z"/><path d="m8 10 3-5.5"/>'),

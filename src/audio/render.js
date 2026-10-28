@@ -7,12 +7,13 @@ import { STEPS_PER_BEAT } from '../state.js';
  * Steps are scheduled just ahead of the render position (using OfflineAudioContext.suspend) — exactly like live
  * playback — so automation that changes effect or instrument parameters lands on the right step instead of
  * being applied all at once before rendering starts.
- * opts: { tail (seconds after the last step), sampleRate, configure(engine), onProgress(fraction 0..1), signal (AbortSignal) }
+ * opts: { tail (seconds after the last step), sampleRate, from (first step to render, default 0), configure(engine),
+ *         onProgress(fraction 0..1), signal (AbortSignal) }
  * Progress is reported each time the render pauses to schedule more steps (OfflineAudioContext has no progress events).
  */
-export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, configure, onProgress, signal } = {}) {
+export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, from = 0, configure, onProgress, signal } = {}) {
   const stepDur = 60 / store.project.bpm / STEPS_PER_BEAT;
-  const seconds = steps * stepDur + tail;
+  const seconds = (steps - from) * stepDur + tail;
   const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
   const engine = new Engine(store, ctx);
   configure?.(engine);
@@ -23,18 +24,19 @@ export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, 
   await Promise.all([...ids].map((id) => engine.ensureSample(id)));
 
   const AHEAD = 4; // steps scheduled ahead of the render position
-  let next = 0;
+  let next = from;
+  const lengths = new Map(); // the project cannot change mid-render, so pattern lengths are computed once
   const scheduleUpTo = (end) => {
-    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, next * stepDur, stepDur, { first: next === 0 });
+    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, (next - from) * stepDur, stepDur, { first: next === from, lengths });
   };
-  scheduleUpTo(AHEAD);
-  for (let s = 1; s * AHEAD < steps; s++) {
-    const at = s * AHEAD;
+  scheduleUpTo(from + AHEAD);
+  for (let s = 1; s * AHEAD < steps - from; s++) {
+    const at = s * AHEAD; // steps into the render
     // suspend times are quantised to 128-frame blocks; suspend a little early so nothing is scheduled in the past
     ctx.suspend(Math.max(0, at * stepDur - 0.01)).then(() => {
       // an aborted render is simply left suspended
       if (signal?.aborted) return;
-      scheduleUpTo(at + AHEAD);
+      scheduleUpTo(from + at + AHEAD);
       onProgress?.(Math.min(0.99, (at * stepDur) / seconds));
       ctx.resume();
     });
