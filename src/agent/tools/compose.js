@@ -172,7 +172,7 @@ export const tools = [
           const patBars = Math.min(sec.bars, 8);
           const place = (pat, track, startBar, bars) => {
             const clip = store.addClip({ type: 'pattern', pat: pat.id, track: TRACKS.indexOf(track), start: startBar * STEPS_PER_BAR, len: bars * STEPS_PER_BAR });
-            placed.push({ clip: clip.id, section: sec.name, track, pattern: pat.name });
+            placed.push({ clip: clip.id, section: sec.name, track, pattern: pat.name, patternId: pat.id });
           };
           const cacheKey = (group) => `${group}|${kind}|${Math.round(energy * 10)}|${patBars}`;
 
@@ -254,6 +254,9 @@ export const tools = [
           cursor += sec.bars;
         }
 
+        // a pattern nothing was written into (a section with no drum lanes, say) is only clutter
+        const used = new Set(placed.map((p) => p.patternId));
+        proj.patterns = proj.patterns.filter((p) => !patterns.includes(p) || used.has(p.id));
         if (!proj.patterns.length) addPattern('Pattern 1', 1);
         // name the tracks that got clips, in order
         for (const [i, t] of TRACKS.entries()) {

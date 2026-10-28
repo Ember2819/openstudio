@@ -6,9 +6,39 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 ## [Unreleased]
 
 ### Added
+- **Agents write songs, not loops.** A producer toolset for MCP agents: `setup_song` (12 styles → instruments, routing, reverb and
+  delay buses, master chain), `build_song` (a full arrangement in a real song form with fills, crashes, risers and impacts),
+  `compose` (key-aware drums, bass, voice-led chords, arpeggios and motif-based melodies), `arrange`, `analyze_song` (a critic that
+  works from the notes: key, chords per bar, register clashes, dynamics, form, repetition — each warning with a fix), `auto_mix`
+  (role-based mix, calibrated from per-channel stem renders), `music_theory` and `songwriting_guide`. `render_audio` can report
+  per-channel stems and masking. The server instructions teach the workflow. See [docs/AGENTS.md](docs/AGENTS.md).
+- **New instruments:** FM synth, tonewheel organ (drawbars, percussion, rotary), Karplus-Strong plucked strings (guitar, harp, koto,
+  banjo, …) and a Sound FX generator (risers, impacts, sweeps, whooshes, lasers, vinyl crackle, ocean, …), each with presets;
+  ~25 new synth presets; the subtractive synth gains a sub oscillator, noise, 24 dB filter, key tracking, drive, vibrato, filter LFO and
+  seven new waveforms (pulse widths, vocal, reed, glass, organ, hollow).
+- **13 new synthesized drum voices:** 808 and punchy kicks, 808 and fat snares, snap, rimshot, conga, bongo, wood block, triangle,
+  cabasa, pedal hat, ride bell (26 in total). Drum noise starts at a random point each hit, so hats no longer repeat sample-identically.
+- Transport: a back-to-start button, a solid green Play while running (ring while paused), a PLAYING / PAUSED / STOPPED indicator,
+  and a song-position slider in the second toolbar row — click or drag to jump, arrow keys to nudge, with elapsed and total time,
+  bar lines and the loop region. In pattern mode it follows the pattern.
+- Channel settings: a preset menu for every generator, and the window grows to show all of a big engine's controls.
+- Channels have a `role` (kick, bass, chords, pad, lead, fx …) that agents use; it is guessed from the instrument when unset.
+- `npm run test:e2e` renders every drum voice and preset offline and checks level, NaN and tuning.
+
+### Fixed
+- Undo and redo no longer stop playback.
+- A 100% wet effect (send buses) is now fully wet; before, 30% of the dry signal always leaked through.
+
+### Performance
+- The audio engine builds mixer strips on first use instead of all 126 up front (~1,100 audio nodes, including 252 analysers the
+  browser keeps processing, for every project and every offline render).
+- The scheduler computes each pattern's length once per tick, not once per clip per step (every note was visited each time).
+- Offline renders can cover a window of the song, so analysis of one section does not render the whole thing.
+
 - First-launch welcome dialog: recommends tiling mode (floating stays the default) and points to Settings, update checks and the MCP server.
 
 ### Changed
+- Existing synth channels get key tracking (0.3), so cutoff follows the note a little: bass and high notes of one patch are closer in brightness.
 - Exporting audio shows a progress bar with a percentage, and the export can be cancelled.
 - Menu-bar menus (File, Edit, View…) open on hover instead of needing a click, and close by themselves when the pointer leaves both the word and its menu.
 - The project-name box in the toolbar is the same height as the snap and pattern controls.

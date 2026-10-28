@@ -75,7 +75,8 @@ export function createScrub(app) {
   /** Called every animation frame. Only touches the DOM for what actually changed. */
   function update() {
     const len = transport.lengthSteps;
-    const pos = transport.mode === 'pattern' && transport.playing ? transport.patternPosition() : transport.position();
+    const raw = transport.position();
+    const pos = transport.mode === 'pattern' && transport.playing && len > 0 ? raw % len : raw; // the pattern loops; one length lookup per frame
     const frac = drag ? drag.frac : len > 0 ? clamp(pos / len, 0, 1) : 0;
     const sec = (frac * len) * transport.stepDur;
 

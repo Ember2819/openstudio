@@ -78,6 +78,13 @@ export function createSettings(app) {
       }
     }
     win.body.append(grid);
+    // engines with many parameters (organ, FM, synth) need more room than the default window gives
+    if (!wm.tiling) {
+      const rows = Math.ceil(PARAM_META[ch.type].length / 6);
+      const room = (document.getElementById('desktop')?.clientHeight ?? 700) - 24;
+      const want = Math.min(room, 170 + rows * 90);
+      if (win.h < want) win.setRect(win.x, Math.max(0, Math.min(win.y, room - want)), win.w, want);
+    }
 
     const test = h('button', { class: 'btn cs-test' }, icon('play'), 'Test note');
     test.addEventListener('click', () => engine.preview(ch, 60, 0.85, 0.6));

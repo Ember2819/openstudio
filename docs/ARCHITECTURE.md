@@ -63,8 +63,11 @@ handles by rebuilding.
   derived from the audio clock, not from timers.
 - `sf2.js` — SoundFont 2 parser; resolves presets into flat *regions* (sample + generators).
   `soundfont.js` plays regions with buffer sources, filter, envelope, LFOs and exclusive-class choking.
-- `instruments.js` — built-in synth, sampler and synthesized drums plus the parameter metadata that drives the
-  settings window. `effects.js` — effect factories and their parameter metadata.
+- `instruments.js` — parameter metadata (which drives the settings window, automation and agent validation) and
+  the preset libraries of every generator; the voices live beside it: `synths.js` (subtractive, FM, organ,
+  Karplus-Strong plucked strings), `drums.js` (26 synthesized drum voices), `sfx.js` (risers, impacts, textures),
+  and `dsp.js` (shared noise, band-limited custom waveforms, envelopes). `effects.js` — effect factories and their
+  parameter metadata. Mixer strips are built the first time something uses them (`engine.track(i)`).
 - `catalog.js` — instrument/drum-kit catalogue built from the loaded SoundFont. `wav.js` — WAV encoder.
 - `render.js` — offline rendering for export. It schedules steps just ahead of the render position with
   `OfflineAudioContext.suspend()`, so parameter automation lands on the right step exactly as in live playback.
@@ -94,11 +97,20 @@ The project lives in the renderer, so the MCP server (main process) only relays:
 definitions and executes calls (`src/agent/index.js`, one at a time) against the same `Store`/`Transport`/`Engine`
 the UI uses. Tools wrap mutations in `edit()` — one undo step, rolled back if the call fails — and emit the usual
 store events, so windows update as an agent works. `render_audio` reuses the offline renderer and analyses the
-result (`analysis.js`). Details in [AGENTS.md](AGENTS.md).
+result (`analysis.js`, per-channel `stems.js`). Details in [AGENTS.md](AGENTS.md).
+
+`src/agent/music/` is the music knowledge the producer tools stand on, as pure functions (no audio, no DOM):
+`theory.js` (keys, scales, chord symbols and roman numerals, voice-led voicings, a seeded PRNG), `styles.js` (12
+styles — grooves, bass and chord rhythms, instrument casts, mix roles — plus progressions and song forms),
+`generate.js` (drums, bass, chords, pads, arpeggios and melodies as note lists), `critique.js` (the notes-only
+song critic), `roles.js`, `mixing.js` (role-based mixer setup) and `session.js` (resolves key / style / progression
+and writes a channel's part). Every generated note is fitted inside its pattern, and the same seed gives the same music.
 
 ## Testing
 - `test/*.test.mjs` — `node:test` unit tests for DOM-free modules (store, automation, MIDI writer, SoundFont parser).
+- `test/music-*.test.mjs` — theory, generators (every style: in key, in range, on the chord roots, deterministic) and the critic.
 - `test/agent-*.test.mjs`, `test/mcp-server.test.mjs` — the agent tools (real Store, stub engine) and the MCP server
   (checked with the official MCP client). `scripts/e2e-mcp.mjs` drives the real app through MCP.
-- `test/e2e/smoke.js` — runs inside the real app via `scripts/e2e.mjs` (playback levels, effects, sends,
-  automation, audio clips, save/load, offline render).
+- `test/e2e/*.js` — run inside the real app via `scripts/e2e.mjs`: `smoke.js` (playback levels, effects, sends,
+  automation, audio clips, save/load, offline render) and `voices.js` (every drum voice and preset rendered offline:
+  audible, finite, in tune).
