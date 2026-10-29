@@ -34,6 +34,41 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
 - Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live recording.
 
+**Desktop**
+- **Theming** — 12 preset themes (including light ones), 10 accent palettes and custom colours in a Settings drawer
+  (gear button, <kbd>Ctrl</kbd>+<kbd>,</kbd>); 8 preset wallpapers, gradients, solid colours or your own image (with fit,
+  dim and blur), plus **Theme from wallpaper**, which builds a matching theme from an image's colours.
+- **Tiling or floating layout** — niri-style tiling (**Alt+T**): windows tile in columns on a sideways-scrolling strip,
+  the window you're working in grows to fit and the others make room; every binding, the gaps, centre-focus and each
+  window's preferred shape are configurable in **Settings → Windows & keys**. Floating stays the default.
+- **In-app updates** — **Help → Check for updates…** finds the newest GitHub release and installs it in one click, with
+  SHA-256 verification; Linux AppImages ship a statically-linked runtime so they run without `libfuse2`.
+- Export audio with a progress bar you can cancel; a first-launch welcome; hover menus that close themselves; and a
+  transport with back-to-start, PLAYING / PAUSED / STOPPED indicators and a song-position slider.
+
+## Screenshots
+
+**Channel rack & mixer** — step sequencing with swing, mute/solo and mixer routing, beside a 125-insert mixer with
+sends and stereo meters.
+
+![Channel rack and mixer](docs/channel-rack-and-mixer.png)
+
+**Piano roll** — draw, select, delete, mute and slice tools, scale highlighting, ghost notes, quantize and a velocity lane.
+
+![Piano roll](docs/piano-roll.png)
+
+**Theming** — pick a preset theme, accent and colours, and match the whole UI to your wallpaper in one click.
+
+![Themes and wallpaper](docs/themes-and-wallpaper.png)
+
+**Layout** — floating or tiling, with per-window shape presets, gaps and centre-focus behaviour you can tune.
+
+![Tiling and window shapes](docs/layout-and-window-shapes.png)
+
+**Browser & wallpapers** — browse instruments, drum kits and project content beside the wallpaper picker.
+
+![Browser and wallpaper picker](docs/browser-and-wallpaper-picker.png)
+
 ## Getting started
 
 Requirements: [Node.js](https://nodejs.org) 22 or newer.
