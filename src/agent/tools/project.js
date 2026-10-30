@@ -3,6 +3,7 @@ import { edit, fail } from '../helpers.js';
 import { summarize, transportInfo } from '../describe.js';
 import { importMidi, parseMidi } from '../../midiimport.js';
 import { buildMidi } from '../../midifile.js';
+import { parseFlp, importFlp, flpSamplePaths } from '../../flp.js';
 import { STEPS_PER_BAR } from '../../state.js';
 
 const RO = { readOnlyHint: true, openWorldHint: false };
@@ -33,6 +34,28 @@ async function writeProject(app, path) {
   store.emit('patterns'); // refreshes the toolbar title
   setTitle(app);
   return saved;
+}
+
+async function openFlp(app, path) {
+  let flp;
+  try { flp = parseFlp(await app.files.read(path)); } catch (err) { fail(`Could not open ${path}: ${err.message}`); }
+  const dir = path.replace(/[\\/][^\\/]*$/, '');
+  const samples = new Map();
+  for (const ref of flpSamplePaths(flp)) {
+    const base = ref.split(/[\\/]/).pop();
+    for (const candidate of [ref, `${dir}/${base}`, `${dir}/Samples/${base}`]) {
+      if (candidate.includes('%')) continue;
+      try { samples.set(ref, { name: base, data: await app.files.read(candidate) }); break; } catch { /* try the next place */ }
+    }
+  }
+  app.transport.stop();
+  const report = importFlp(app.store, flp, { name: path.split(/[\\/]/).pop().replace(/\.flp$/i, ''), samples });
+  app.store.filePath = null;
+  app.store.finishLoad();
+  app.store.dirty = true;
+  app.autosave?.discard();
+  setTitle(app);
+  return { ...summarize(app), imported: { flVersion: flp.version, ...report } };
 }
 
 export const tools = [
@@ -96,11 +119,12 @@ export const tools = [
   {
     name: 'open_project',
     title: 'Open project',
-    description: 'Open an .osp project file from an absolute path. Refuses while there are unsaved changes unless force is true.',
-    inputSchema: obj({ path: str('Absolute path of the .osp file'), force: bool('Discard unsaved changes') }, ['path']),
+    description: 'Open an .osp project file from an absolute path, or import an FL Studio .flp project (patterns, notes, playlist, channels, mixer; FL plugins get built-in stand-ins, samples are looked for beside the project). Refuses while there are unsaved changes unless force is true.',
+    inputSchema: obj({ path: str('Absolute path of the .osp or .flp file'), force: bool('Discard unsaved changes') }, ['path']),
     annotations: { ...WRITE, destructiveHint: true, title: 'Open project' },
     async run(a, app) {
       guardUnsaved(app.store, a.force, 'open another project');
+      if (/\.flp$/i.test(a.path)) return openFlp(app, a.path);
       const text = new TextDecoder().decode(await app.files.read(a.path));
       app.transport.stop();
       try { app.store.load(text, a.path); } catch (err) { fail(`Could not open ${a.path}: ${err.message}`); }

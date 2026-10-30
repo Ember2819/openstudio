@@ -263,6 +263,16 @@ export function createMixer(app) {
   function sendsBlock(i, track) {
     const box = h('div', { class: 'mx-sends' }, h('div', { class: 'mx-sub' }, i === 0 ? 'Output' : 'Sends'));
     if (i === 0) { box.append(h('div', { class: 'mx-send-note' }, 'The master track feeds the audio device.')); return box; }
+    // like FL, an insert can be taken off the master (e.g. when it only feeds a bus through a send)
+    const toMaster = track.master !== false;
+    const masterBtn = h('button', { class: `mx-route${toMaster ? ' on' : ''}`, 'data-hint': toMaster ? 'Click to stop sending this track to the master' : 'Click to send this track to the master' }, toMaster ? 'On' : 'Off');
+    masterBtn.addEventListener('click', () => {
+      store.checkpoint();
+      if (track.master === false) delete track.master; else track.master = false;
+      store.emit('mixer');
+      renderFx();
+    });
+    box.append(h('div', { class: 'mx-send' }, h('span', { class: 'mx-send-name' }, '→ Master'), masterBtn));
     for (const [dest, level] of Object.entries(track.sends)) {
       const d = Number(dest);
       const knob = createKnob({

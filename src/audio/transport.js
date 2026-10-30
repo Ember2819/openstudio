@@ -32,7 +32,7 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       for (const n of notes) {
         if (n.m) continue;
         if (n.s >= local - 1e-6 && n.s < local + 1 - 1e-6) {
-          engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd);
+          engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n.pan || n.fine ? n : null);
         }
       }
     }

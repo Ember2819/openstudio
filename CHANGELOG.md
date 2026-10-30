@@ -5,6 +5,17 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Added
+- **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
+  velocity, per-note pan and fine pitch), the playlist arrangement with track names, colours and muted tracks, tempo, and
+  the mixer (insert names, colours, faders, pan, routing and recognisable effects). Layer channels play their children.
+  FL-only plugins get a built-in stand-in chosen from the plugin and channel name (3x Osc → synth, Sytrus → FM, a "Pad"
+  VST → a pad sound, "Kick" → the kick voice …); samples are found beside the project or in the FL Studio install, and
+  audio clips whose file is missing are played by the stand-in. A report lists what was substituted. Agents can do the
+  same with `open_project`.
+- Notes can carry their own **pan** and **fine pitch** (cents).
+- Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
+
 ## [0.4.0]
 
 ### Added

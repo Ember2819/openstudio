@@ -24,7 +24,7 @@ export const tools = [
   {
     name: 'update_mixer_track',
     title: 'Update mixer track',
-    description: 'Set a mixer track\'s name, fader (0-1, where 0.8 = 0 dB and 1 = +6 dB), pan (-1..1), mute, solo or colour. Only the fields you pass change.',
+    description: 'Set a mixer track\'s name, fader (0-1, where 0.8 = 0 dB and 1 = +6 dB), pan (-1..1), mute, solo, colour, or whether it feeds the master (toMaster: false for an insert that should only reach the master through a send to a bus). Only the fields you pass change.',
     inputSchema: obj({
       track: TRACK,
       name: str('Track name'),
@@ -33,6 +33,7 @@ export const tools = [
       mute: bool('Mute'),
       solo: bool('Solo'),
       color: maybe(COLOR),
+      toMaster: bool('Route this insert to the master (default true)'),
     }, ['track']),
     annotations: { ...WRITE, idempotentHint: true, title: 'Update mixer track' },
     run(a, app) {
@@ -45,6 +46,7 @@ export const tools = [
         if (a.mute !== undefined) m.mute = a.mute;
         if (a.solo !== undefined) m.solo = a.solo;
         if (a.color !== undefined) m.color = a.color;
+        if (a.toMaster !== undefined && a.track > 0) { if (a.toMaster) delete m.master; else m.master = false; }
         store.emit('mixer');
         store.emit('mixerSelection');
       });

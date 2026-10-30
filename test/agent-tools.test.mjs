@@ -181,6 +181,12 @@ test('mixer: levels, effects, sends, reset', async () => {
   const app = makeApp();
   await call(app, 'update_mixer_track', { track: 3, name: 'Drums', vol: 0.6, pan: 0.25, mute: true });
   assert.deepEqual([app.store.project.mixer[3].name, app.store.project.mixer[3].vol, app.store.project.mixer[3].mute], ['Drums', 0.6, true]);
+  let info = await call(app, 'update_mixer_track', { track: 3, toMaster: false });
+  assert.equal(app.store.project.mixer[3].master, false);
+  assert.equal(info.toMaster, false);
+  info = await call(app, 'update_mixer_track', { track: 3, toMaster: true });
+  assert.equal(info.toMaster, true);
+  assert.equal(app.store.project.mixer[3].master, undefined);
 
   let t = await call(app, 'set_effect', { track: 3, type: 'reverb', params: { mix: 0.5 } });
   assert.deepEqual(t.effects.map((e) => [e.slot, e.type, e.params.mix]), [[0, 'reverb', 0.5]]);

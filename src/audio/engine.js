@@ -120,6 +120,7 @@ export class Engine {
   _buildTrack(i) {
     const t = this._newStrip(i);
     t.gate.connect(this.tracks[0].input);
+    t.toMaster = true;
     this.tracks[i] = t;
     this._rebuildFxChain(i);
     this._applyStrip(i);
@@ -129,7 +130,7 @@ export class Engine {
   /** A strip whose settings are all at their defaults does nothing, so it needs no nodes until something uses it. */
   _stripIdle(i) {
     const m = this.store.project.mixer[i];
-    return !this.tracks[i] && m.vol === 0.8 && m.pan === 0 && !m.mute && !m.solo && !m.fx.some(Boolean) && !Object.keys(m.sends || {}).length;
+    return !this.tracks[i] && m.vol === 0.8 && m.pan === 0 && !m.mute && !m.solo && m.master !== false && !m.fx.some(Boolean) && !Object.keys(m.sends || {}).length;
   }
 
   _rebuildFxChain(i) {
@@ -203,6 +204,13 @@ export class Engine {
     const now = this.ctx.currentTime;
     const want = new Set();
     this.store.project.mixer.forEach((m, i) => {
+      // "route to master" (FL's default) can be switched off, e.g. for an insert that only feeds a bus
+      const t = i > 0 ? this.tracks[i] : null;
+      if (t && t.toMaster !== (m.master !== false)) {
+        if (t.toMaster) t.gate.disconnect(this.tracks[0].input);
+        else t.gate.connect(this.tracks[0].input);
+        t.toMaster = m.master !== false;
+      }
       for (const [dest, level] of Object.entries(m.sends || {})) {
         const key = `${i}:${dest}`;
         want.add(key);
@@ -331,25 +339,38 @@ export class Engine {
    * Trigger a note on a channel. `dur` in seconds (Infinity = held, use voice.release).
    * Returns the voice (or null).
    */
-  playNote(ch, pitch, vel, when, dur) {
+  /**
+   * `note` (optional) carries per-note properties: `pan` (-1..1) and `fine` (cents).
+   */
+  playNote(ch, pitch, vel, when, dur, note = null) {
     const node = this._channelNode(ch);
-    const semis = this.store.project.masterPitch || 0;
+    const fine = note?.fine ? note.fine / 100 : 0;
+    const semis = (this.store.project.masterPitch || 0) + fine;
     const t = Math.max(when, this.ctx.currentTime);
+    let dest = node.gain;
+    if (note?.pan) {
+      const p = this.ctx.createStereoPanner();
+      p.pan.value = Math.max(-1, Math.min(1, note.pan));
+      p.connect(node.gain);
+      dest = p;
+    }
     let v = null;
-    if (ch.type === 'drum') v = playDrum(this.ctx, node.gain, ch.voice, t, vel, pitch - ROOT_NOTE + semis, ch.params);
-    else if (ch.type === 'synth') v = playSynth(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
-    else if (ch.type === 'fm') v = playFm(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
-    else if (ch.type === 'organ') v = playOrgan(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
-    else if (ch.type === 'pluck') v = playPluck(this.ctx, node.gain, pitch, t, dur, vel, semis, ch.params);
-    else if (ch.type === 'sfx') v = playSfx(this.ctx, node.gain, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
+    if (ch.type === 'drum') v = playDrum(this.ctx, dest, ch.voice, t, vel, pitch - ROOT_NOTE + semis, ch.params);
+    else if (ch.type === 'synth') v = playSynth(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'fm') v = playFm(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'organ') v = playOrgan(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'pluck') v = playPluck(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'sfx') v = playSfx(this.ctx, dest, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'sampler') {
       const s = this.store.samples.get(ch.sampleId);
-      if (s?.buffer) v = playSample(this.ctx, node.gain, s.buffer, pitch, t, dur, vel, semis, ch.params);
+      if (s?.buffer) v = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params);
     } else if (ch.type === 'sf' && sharedSoundfont) {
       const preset = this._preset(ch);
       if (preset) {
-        const key = (ch.fixedKey != null ? ch.fixedKey + (pitch - ROOT_NOTE) : pitch) + semis;
-        v = playSoundfont(this.ctx, node.gain, sharedSoundfont, preset, key, vel, t, dur, ch.params, this.exclusive, ch.id);
+        // regions are chosen by whole keys, so fine tuning goes in as cents
+        const key = (ch.fixedKey != null ? ch.fixedKey + (pitch - ROOT_NOTE) : pitch) + (semis - fine);
+        const params = fine ? { ...ch.params, tune: (ch.params.tune || 0) + fine } : ch.params;
+        v = playSoundfont(this.ctx, dest, sharedSoundfont, preset, key, vel, t, dur, params, this.exclusive, ch.id);
       }
     }
     if (v) {

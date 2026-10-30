@@ -122,6 +122,36 @@
   autoClip.offset = 8;
   ok('automation clip offset reads later in the curve', Math.abs(curveAt(auto.points, 0 + autoClip.offset) - 0.5) < 1e-6);
 
+  // per-note pan and an insert taken off the master, rendered offline
+  {
+    s.resetToDefault();
+    const ch = s._addChannel({ name: 'Sine', type: 'synth', mixer: 5, preset: { wave1: 'sine', wave2: 'sine' } });
+    const pat = s.currentPattern;
+    pat.notes[ch.id] = [{ p: 69, s: 0, l: 8, v: 0.9, pan: -1 }];
+    s.project.mode = 'pattern';
+    const lr = async () => {
+      const out = await renderSteps(s, 8, { tail: 0.2 });
+      const sum = (c) => { let x = 0; const dd = out.getChannelData(c); for (let i = 0; i < dd.length; i += 7) x += Math.abs(dd[i]); return x; };
+      return [sum(0), sum(1)];
+    };
+    const [l, r] = await lr();
+    ok('a note panned hard left plays on the left only', l > 0.5 && r < l * 0.02);
+    s.project.mixer[5].master = false;
+    const [l2, r2] = await lr();
+    ok('an insert off the master is silent', l2 + r2 < 1e-3);
+    s.project.mixer[5].sends[6] = 0.8;
+    const [l3] = await lr();
+    ok('…but reaches the master through a send', l3 > l * 0.5);
+  }
+
+  // FL Studio project import through the real action
+  {
+    const { parseFlp } = await import('./src/flp.js');
+    let threw = false;
+    try { parseFlp(new Uint8Array(30)); } catch { threw = true; }
+    ok('a non-FLP file is refused', threw);
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

@@ -7,6 +7,7 @@ import { getSoundfont } from './audio/engine.js';
 import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
+import { parseFlp, importFlp, flpSamplePaths } from './flp.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 import { ACTIONS, resolveCombo } from './ui/tiling.js';
 
@@ -106,6 +107,7 @@ export function createActions(app) {
       if (!(await confirmDiscard())) return;
       const res = await window.studioAPI.openProject();
       if (!res) return;
+      if (res.kind === 'flp') { await a.importFlpData(res.data, res.path); return; }
       try {
         transport.stop();
         store.load(res.text, res.path);
@@ -113,6 +115,35 @@ export function createActions(app) {
       } catch (err) {
         messageDialog('Could not open project', err.message);
       }
+    },
+
+    /** Open an FL Studio project: its patterns, playlist, channels and mixer, with stand-ins for FL-only plugins. */
+    async importFlpData(data, path = '') {
+      let flp;
+      try {
+        flp = parseFlp(data);
+      } catch (err) {
+        messageDialog('Could not open FL Studio project', err.message);
+        return null;
+      }
+      const refs = flpSamplePaths(flp);
+      const found = refs.length && window.studioAPI.flpSamples ? await window.studioAPI.flpSamples(refs) : [];
+      const samples = new Map(found.map((f) => [f.ref, { name: f.name, data: f.data }]));
+      transport.stop();
+      const fileName = path.split(/[\\/]/).pop().replace(/\.flp$/i, '');
+      const report = importFlp(store, flp, { name: fileName, samples });
+      store.filePath = null; // saving writes an .osp beside it, never over the .flp
+      store.finishLoad();
+      store.dirty = true;
+      app.autosave?.discard();
+      const notes = [];
+      notes.push(`FL Studio ${flp.version || '(unknown version)'} project: ${report.channels} channels, ${report.patterns} patterns, ${report.clips} playlist clips, ${flp.bpm} BPM.`);
+      if (report.substituted.length) notes.push(`\nStand-ins for FL Studio plugins and missing samples:\n• ${report.substituted.slice(0, 14).join('\n• ')}${report.substituted.length > 14 ? `\n… and ${report.substituted.length - 14} more` : ''}`);
+      if (report.skipped.length) notes.push(`\nEffects with no equivalent (left out): ${report.skipped.slice(0, 10).join(', ')}${report.skipped.length > 10 ? '…' : ''}`);
+      if (report.missingSamples.length) notes.push(`\n${report.missingSamples.length} sample file(s) were not found next to the project. Use FL Studio's "Export project data files" (or zip the project with its samples) to bring them along.`);
+      notes.push('\nPlugin settings, automation clips and mixer effect settings are not imported. Save to keep it as an OpenStudio project.');
+      if (!window.studioAPI.testRun) messageDialog('Imported FL Studio project', notes.join('\n'));
+      return report;
     },
 
     async saveProject(forceDialog) {

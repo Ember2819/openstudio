@@ -188,6 +188,9 @@
 .mx-send-x .ico { width: 11px; height: 11px; }
 .mx-send-add { align-self: flex-start; height: 22px; font-size: 11px; }
 .mx-send-add .ico { width: 11px; height: 11px; }
+.mx-route { height: 20px; min-width: 38px; padding: 0 8px; font-size: 11px; border-radius: 3px; border: 1px solid var(--line); background: transparent; color: var(--text-dim); }
+.mx-route.on { color: var(--text-bright); border-color: var(--accent); }
+.mx-route:hover { background: var(--hover); }
 .mx-send-note { font-size: 11px; color: var(--text-dim); }
 
 /* ============================================================ Channel settings */

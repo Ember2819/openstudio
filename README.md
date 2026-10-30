@@ -32,6 +32,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
+- **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL plugins.
 - Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live recording.
 
 ## Getting started
@@ -109,7 +110,7 @@ For a tour of the code read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 ## Limitations
 
 Plugin (VST/CLAP) hosting, time signatures other than 4/4, time-stretching audio, audio recording, tempo
-automation, importing other DAWs' project files, and most of the commercial DAWs' bundled instruments and effects
+automation, plugin settings and automation clips in imported FL Studio projects, and most of the commercial DAWs' bundled instruments and effects
 are not implemented. OpenStudio is an independent project and is not affiliated with, endorsed by, or derived
 from any commercial DAW; product names mentioned in this repository belong to their respective owners.
 
