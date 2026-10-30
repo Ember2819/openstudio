@@ -10,6 +10,26 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 ### Changed
 - Releases now build automatically after a version-bump change reaches `main`, and the release workflow rejects duplicate or
   non-increasing package versions.
+### Added
+- Agent quickstarts for **Codex**, **Google Antigravity** and **Pi** in Settings → Agents, next to Claude Code and OpenCode: copy
+  the prompt, paste it into the agent, and it registers OpenStudio's MCP server in its own config (`codex mcp add`,
+  Antigravity's `mcp_config.json` with the `serverUrl` key it requires, `pi mcp add`). Setup for each is in
+  [docs/AGENTS.md](docs/AGENTS.md).
+
+### Fixed
+- **FM synth:** presets with a stacked second modulator (FM Lead, FM Slap Bass, FM Pad, Metallic Pad) played out of tune and
+  inharmonic — FM Lead's A4 came out near 63 Hz. When one modulator's ratio is a multiple of the next, the stacked modulator carries
+  a DC offset that shifts the carrier's pitch; it is now filtered out before it reaches the carrier.
+- **Plucked strings** sounded like a buzzy wire rather than a guitar or bass: the pluck was white noise (every harmonic as loud as
+  the fundamental) and the highs barely decayed. The string is now plucked with a triangle shape at the pick position plus a little
+  noise, low-passed relative to the pitch, and a loss filter makes the highs die away faster than the fundamental. The upright bass
+  now has its energy at the fundamental instead of 1–8 kHz.
+- **Subtractive synth:** the filter envelope started wide open and closed during the attack, so slow pads and brass got darker as they
+  faded in. It now opens over the attack and closes over the decay.
+- **Ride, crash and tambourine** are rebuilt from 808-style metallic oscillators: the ride was a buzzy five-note chord, the crash plain
+  hiss that died in under a second, and the tambourine filtered noise with no jingle.
+- Choir Pad uses the vocal waveform (it was triangle waves, which sound like a flute), and the synth E Piano has a tine and a filter
+  bark instead of a bare sine.
 
 ## [0.4.0]
 

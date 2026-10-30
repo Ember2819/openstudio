@@ -186,7 +186,7 @@ export const SYNTH_PRESETS = {
     { name: 'Warm Pad', params: { wave1: 'sawtooth', wave2: 'triangle', mix: 0.5, detune: 9, octave2: 0, cutoff: 1800, res: 0.8, envAmt: 0.25, attack: 0.5, decay: 0.8, sustain: 0.75, release: 1.2 } },
     { name: 'Glass Pad', params: { wave1: 'triangle', wave2: 'sine', mix: 0.55, detune: 7, octave2: 1, cutoff: 7000, res: 0.6, envAmt: 0.1, attack: 0.7, decay: 1, sustain: 0.8, release: 1.5 } },
     { name: 'Dark Pad', params: { wave1: 'sawtooth', wave2: 'square', mix: 0.35, detune: 5, octave2: -1, cutoff: 850, res: 1.2, envAmt: 0.3, attack: 1.2, decay: 1.5, sustain: 0.7, release: 2.5 } },
-    { name: 'Choir Pad', params: { wave1: 'triangle', wave2: 'triangle', mix: 0.5, detune: 12, octave2: 0, unison: 3, spread: 22, cutoff: 3200, res: 0.7, envAmt: 0.15, attack: 0.6, decay: 1, sustain: 0.85, release: 2 } },
+    { name: 'Choir Pad', params: { wave1: 'vocal', wave2: 'hollow', mix: 0.3, detune: 7, octave2: 0, unison: 5, spread: 14, noise: 0.03, cutoff: 3600, res: 0.6, keytrack: 0.4, envAmt: 0.15, attack: 0.6, decay: 1, sustain: 0.85, release: 2, vibrato: 0.12, lfoRate: 5 } },
     { name: 'String Pad', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.6, detune: 8, octave2: 0, unison: 5, spread: 22, cutoff: 2800, res: 0.7, keytrack: 0.4, envAmt: 0.2, attack: 0.55, decay: 1, sustain: 0.85, release: 1.2, vibrato: 0.12, lfoRate: 5.2 } },
     { name: 'Vocal Pad', params: { wave1: 'vocal', wave2: 'vocal', mix: 0.5, detune: 9, octave2: 0, unison: 3, spread: 18, noise: 0.05, cutoff: 4500, res: 0.6, envAmt: 0.1, attack: 0.8, decay: 1, sustain: 0.85, release: 1.6, vibrato: 0.15, lfoRate: 4.8 } },
     { name: 'Analog Pad', params: { wave1: 'sawtooth', wave2: 'pulse25', mix: 0.6, detune: 7, octave2: 0, unison: 2, spread: 14, cutoff: 1500, res: 1.5, keytrack: 0.3, envAmt: 0.2, attack: 0.9, decay: 1.2, sustain: 0.8, release: 2, wobble: 0.08, lfoRate: 0.2 } },
@@ -194,7 +194,7 @@ export const SYNTH_PRESETS = {
     { name: 'Evolving Drone', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.7, detune: 6, octave2: -1, unison: 3, spread: 8, sub: 0.5, cutoff: 380, res: 3, slope: '24 dB', envAmt: 0.1, attack: 2, decay: 2, sustain: 1, release: 3, wobble: 0.15, lfoRate: 0.1 } },
   ],
   Keys: [
-    { name: 'E Piano', params: { wave1: 'sine', wave2: 'triangle', mix: 0.3, detune: 2, octave2: 0, cutoff: 2500, res: 1.5, envAmt: 0.4, attack: 0.002, decay: 0.5, sustain: 0.15, release: 0.25 } },
+    { name: 'E Piano', params: { wave1: 'sine', wave2: 'glass', mix: 0.3, detune: 2, octave2: 1, cutoff: 1400, res: 1.2, keytrack: 0.5, envAmt: 0.6, attack: 0.002, decay: 0.7, sustain: 0.2, release: 0.3 } },
     { name: 'Clav', params: { wave1: 'square', wave2: 'sawtooth', mix: 0.4, detune: 4, octave2: 0, cutoff: 1800, res: 5, envAmt: 0.8, attack: 0.001, decay: 0.2, sustain: 0.2, release: 0.1 } },
     { name: 'Wurli', params: { wave1: 'hollow', wave2: 'triangle', mix: 0.35, detune: 3, octave2: 1, cutoff: 3200, res: 1.2, keytrack: 0.5, envAmt: 0.45, attack: 0.002, decay: 0.6, sustain: 0.1, release: 0.2 } },
     { name: 'Synth Keys', params: { wave1: 'pulse25', wave2: 'sawtooth', mix: 0.3, detune: 7, octave2: 0, unison: 2, spread: 10, cutoff: 3600, res: 1.5, keytrack: 0.5, envAmt: 0.5, attack: 0.004, decay: 0.4, sustain: 0.35, release: 0.25 } },
