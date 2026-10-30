@@ -1,7 +1,7 @@
 # Working with AI agents (MCP)
 
 OpenStudio runs a [Model Context Protocol](https://modelcontextprotocol.io) server, so any MCP-capable agent
-(Claude Code, Claude Desktop, Cursor, Codex, your own) can work on a project the same way you do: write notes,
+(Claude Code, Claude Desktop, Codex, OpenCode, Antigravity, Pi, Cursor, your own) can work on a project the same way you do: write notes,
 build the arrangement, mix, add effects, automate, render and export. There is nothing agent-specific to learn —
 it is a plain MCP server exposing tools.
 
@@ -22,8 +22,25 @@ claude mcp add --transport http openstudio http://127.0.0.1:6736/mcp
 { "$schema": "https://opencode.ai/config.json", "mcp": { "openstudio": { "type": "remote", "url": "http://127.0.0.1:6736/mcp", "enabled": true } } }
 ```
 
-**Easiest:** Settings → *Agents* has a **Copy quickstart** button for Claude Code and for OpenCode. Paste the copied
-prompt into the agent and it registers the server in its own config for you.
+**Codex** (CLI, IDE extension and app share `~/.codex/config.toml`), then start a new session
+```bash
+codex mcp add openstudio --url http://127.0.0.1:6736/mcp
+```
+
+**Pi** (writes `~/.pi/agent/mcp.json`; also read by the pi-mcp-adapter extension), then restart Pi
+```bash
+pi mcp add openstudio --url http://127.0.0.1:6736/mcp
+```
+
+**Google Antigravity** — add to `~/.gemini/config/mcp_config.json` (older versions: `~/.gemini/antigravity/mcp_config.json`;
+in the IDE, *…* → *MCP Servers* → *Manage MCP Servers* → *View raw config* opens the right file). Antigravity only accepts
+`serverUrl` for remote servers, not `url`:
+```json
+{ "mcpServers": { "openstudio": { "serverUrl": "http://127.0.0.1:6736/mcp" } } }
+```
+
+**Easiest:** Settings → *Agents* has a **Copy quickstart** button for Claude Code, OpenCode, Codex, Antigravity and Pi.
+Paste the copied prompt into the agent and it registers the server in its own config for you.
 
 **Clients that take a JSON config** (Cursor, VS Code, …)
 ```json
