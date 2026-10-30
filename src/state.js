@@ -375,6 +375,10 @@ export class Store extends Emitter {
   // ---------- notes ----------
   addNote(pat, chId, note) {
     const n = { p: note.p, s: note.s, l: note.l, v: note.v ?? 0.78 };
+    // per-note extras survive copy / paste / duplicate
+    if (note.pan) n.pan = note.pan;
+    if (note.fine) n.fine = note.fine;
+    if (note.m) n.m = true;
     this.notesOf(pat, chId).push(n);
     this.normalizePattern(pat);
     return n;

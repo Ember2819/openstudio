@@ -73,6 +73,32 @@ test('set_steps takes a drum grid', async () => {
   assert.equal(app.store.currentPattern.bars, 3);
 });
 
+test('transform_notes: piano-roll tools (arpeggiate, strum, chop, scale, limit) and per-note pan / fine', async () => {
+  const app = makeApp();
+  const ch = app.store.project.channels[0].id;
+  await call(app, 'set_notes', { channel: ch, notes: [
+    { pitch: 'C5', start: 0, length: 8, pan: -0.5 }, { pitch: 'E5', start: 0, length: 8, fine: 20 }, { pitch: 'G5', start: 0, length: 8 },
+  ] });
+  const notesOf = () => app.store.currentPattern.notes[ch];
+  assert.equal(notesOf().find((n) => n.p === 60).pan, -0.5);
+  assert.equal(notesOf().find((n) => n.p === 64).fine, 20);
+  await call(app, 'transform_notes', { channel: ch, op: 'arpeggiate', arp: { rate: 2, pattern: 'up', gate: 0.5 } });
+  assert.deepEqual(notesOf().map((n) => [n.p, n.s, n.l]).sort((x, y) => x[1] - y[1]), [[60, 0, 1], [64, 2, 1], [67, 4, 1], [60, 6, 1]]);
+  app.store.undo();
+  await call(app, 'transform_notes', { channel: ch, op: 'strum', strum: { spread: 1 } });
+  assert.deepEqual(notesOf().map((n) => n.s).sort(), [0, 0.5, 1]);
+  await call(app, 'transform_notes', { channel: ch, op: 'chop', grid: 4 });
+  assert.ok(notesOf().length > 3);
+  await call(app, 'set_notes', { channel: ch, notes: [{ pitch: 61, start: 0, length: 1 }, { pitch: 30, start: 1, length: 1 }] });
+  await call(app, 'transform_notes', { channel: ch, op: 'snap_to_scale', scale: { root: 'C', name: 'major' } });
+  assert.deepEqual(notesOf().map((n) => n.p).sort(), [29, 60]);
+  await call(app, 'transform_notes', { channel: ch, op: 'limit', range: { pitchMin: 'C4', pitchMax: 'C6' } });
+  assert.deepEqual(notesOf().map((n) => n.p).sort(), [53, 60]);
+  assert.match(await callFails(app, 'transform_notes', { channel: ch, op: 'snap_to_scale' }), /needs scale/);
+  const pat = await call(app, 'get_pattern', {});
+  assert.equal(pat.id, app.store.currentPattern.id);
+});
+
 test('transform_notes: transpose, quantize, legato, velocity, duplicate, bounds', async () => {
   const app = makeApp();
   const ch = (await call(app, 'add_channel', { type: 'synth' })).id;

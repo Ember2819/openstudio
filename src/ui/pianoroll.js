@@ -8,6 +8,9 @@ import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
 import { T, appearance } from '../theme.js';
 import { barSteps, beatSteps } from '../state.js';
 import { kitKeyNames, isKitChannel } from '../audio/catalog.js';
+import { formDialog, messageDialog } from './dialog.js';
+import { hint } from './knob.js';
+import { arpeggiate, strum, chop, flam, snapToScale, velocityRamp, articulate, limitRange } from '../notetools.js';
 
 const KEYS_W = 84;
 const RULER_H = 22;
@@ -30,6 +33,13 @@ const SCALES = {
 };
 const ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 // chord stamps (intervals above the clicked key), like FL Studio's stamp tool
+// event lanes under the grid: what each note's stem shows and edits
+const LANES = {
+  v: { label: 'Velocity', min: 0.02, max: 1, get: (n) => n.v, set: (n, x) => { n.v = x; }, fmt: (x) => `${Math.round(x * 100)}%` },
+  pan: { label: 'Pan', min: -1, max: 1, center: true, get: (n) => n.pan || 0, set: (n, x) => { if (Math.abs(x) < 0.03) delete n.pan; else n.pan = Math.round(x * 100) / 100; }, fmt: (x) => (Math.abs(x) < 0.03 ? 'C' : `${Math.round(Math.abs(x) * 100)}% ${x < 0 ? 'L' : 'R'}`) },
+  fine: { label: 'Fine pitch', min: -120, max: 120, center: true, get: (n) => n.fine || 0, set: (n, x) => { const c = Math.round(x); if (Math.abs(c) < 3) delete n.fine; else n.fine = c; }, fmt: (x) => `${x > 0 ? '+' : ''}${Math.round(x)} ct` },
+};
+
 const CHORDS = {
   'Major': [0, 4, 7], 'Minor': [0, 3, 7], 'Power': [0, 7, 12], 'Sus2': [0, 2, 7], 'Sus4': [0, 5, 7],
   'Diminished': [0, 3, 6], 'Augmented': [0, 4, 8], 'Major 7': [0, 4, 7, 11], 'Minor 7': [0, 3, 7, 10],
@@ -47,7 +57,7 @@ export function createPianoRoll(app) {
     visible: false,
   });
 
-  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */, chord: null };
+  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */, chord: null, lane: 'v' };
 
   // ---------------------------------------------------------------- layout
   const toolBtns = TOOLS.map(([id, ico, tip]) => {
@@ -99,9 +109,24 @@ export function createPianoRoll(app) {
       { label: 'Transpose octave down', shortcut: 'Ctrl+↓', action: () => transpose(-12) },
       { label: 'Flip horizontally', action: () => flip() },
       { separator: true },
+      { label: 'Arpeggiate…', shortcut: 'Alt+A', action: () => arpDialog() },
+      { label: 'Strum…', shortcut: 'Alt+S', action: () => strumDialog() },
+      { label: 'Chop…', shortcut: 'Alt+U', action: () => chopDialog() },
+      { label: 'Flam', action: () => transform((list) => flam(list, { offset: Math.min(0.5, (snap() || 1) / 4) })) },
+      { label: 'Articulate', submenu: [
+        { label: 'Staccato (50%)', action: () => transform((list) => articulate(list, 0.5)) },
+        { label: 'Short (25%)', action: () => transform((list) => articulate(list, 0.25)) },
+        { label: 'Tenuto (90%)', action: () => transform((list) => articulate(list, 0.9)) },
+      ] },
+      { label: 'Snap pitches to scale', disabled: !S.scale, action: () => transform((list) => snapToScale(list, S.scale.root, SCALES[S.scale.name])) },
+      { label: 'Limit to range…', action: () => limitDialog() },
+      { separator: true },
       { label: 'Randomize velocity', shortcut: 'Alt+R', action: () => randomize() },
       { label: 'Humanize timing', action: () => humanize() },
       { label: 'Scale velocity to 100%', action: () => edit((list) => { const max = Math.max(...list.map((n) => n.v)); for (const n of list) n.v = clamp(n.v / max, 0.02, 1); }) },
+      { label: 'Fade in (velocity)', action: () => transform((list) => velocityRamp(list, 0.15, Math.max(...list.map((n) => n.v)))) },
+      { label: 'Fade out (velocity)', action: () => transform((list) => velocityRamp(list, Math.max(...list.map((n) => n.v)), 0.15)) },
+      { label: 'Reset pan and fine pitch', action: () => edit((list) => { for (const n of list) { delete n.pan; delete n.fine; } }) },
       { separator: true },
       { label: 'Select all', shortcut: 'Ctrl+A', action: () => { S.selection = new Set(notes()); invalidate(); } },
       { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { S.selection.clear(); invalidate(); } },
@@ -135,7 +160,14 @@ export function createPianoRoll(app) {
   scrollingToolbar(toolbar);
   const playhead = h('div', { class: 'pr-playhead' });
   const overlay = h('div', { class: 'pr-overlay' }, playhead);
-  const velLabel = h('div', { class: 'pr-vel-label' }, 'Velocity');
+  const velLabel = h('button', { class: 'pr-vel-label', 'data-hint': 'Note property shown in the event lane — click to switch (velocity, pan, fine pitch)' }, LANES.v.label, h('span', { class: 'caret' }, ' ▾'));
+  velLabel.addEventListener('click', () => {
+    showMenuBelow(velLabel, Object.entries(LANES).map(([id, lane]) => ({ label: lane.label, checked: S.lane === id, action: () => {
+      S.lane = id;
+      velLabel.firstChild.textContent = lane.label;
+      invalidate();
+    } })));
+  });
 
   const main = h('div', { class: 'pr-main' },
     h('div', { class: 'pr-corner' }), cRuler,
@@ -446,14 +478,21 @@ export function createPianoRoll(app) {
     if (endX < gw) { ctx.fillStyle = T.gridShade; ctx.fillRect(Math.max(0, endX), 0, gw, VEL_H); }
     const cur = chan();
     if (!cur) return;
+    const lane = LANES[S.lane];
+    const yOf = (val) => VEL_H - 8 - ((val - lane.min) / (lane.max - lane.min)) * (VEL_H - 16);
+    const base = lane.center ? yOf((lane.min + lane.max) / 2) : VEL_H - 4;
+    if (lane.center) {
+      ctx.strokeStyle = T.gridLineBar;
+      ctx.beginPath(); ctx.moveTo(0, Math.round(base) + 0.5); ctx.lineTo(gw, Math.round(base) + 0.5); ctx.stroke();
+    }
     for (const n of notes()) {
       const x = Math.round(n.s * px - sx) + 0.5;
       if (x < -4 || x > gw + 4) continue;
-      const top = VEL_H - 8 - n.v * (VEL_H - 16);
+      const top = yOf(lane.get(n));
       const sel = S.selection.has(n);
       ctx.strokeStyle = sel ? T.noteSelOutline : shade(cur.color, 0.1);
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x, VEL_H - 4); ctx.lineTo(x, top); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, base); ctx.lineTo(x, top); ctx.stroke();
       ctx.fillStyle = sel ? T.noteSelOutline : shade(cur.color, 0.35);
       ctx.beginPath(); ctx.arc(x, top, 4, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 1; ctx.stroke();
@@ -715,7 +754,8 @@ export function createPianoRoll(app) {
     const r = cVel.getBoundingClientRect();
     const x = e.clientX - r.left + scroller.scrollLeft;
     const y = e.clientY - r.top;
-    const v = clamp(1 - (y - 8) / (VEL_H - 16), 0.02, 1);
+    const lane = LANES[S.lane];
+    const v = clamp(lane.min + (1 - (y - 8) / (VEL_H - 16)) * (lane.max - lane.min), lane.min, lane.max);
     let best = null, bd = 9;
     for (const n of notes()) {
       const d = Math.abs(n.s * S.px - x);
@@ -725,8 +765,9 @@ export function createPianoRoll(app) {
     const n = best || velDrag?.note;
     if (!n) return;
     velDrag = { note: n };
-    if (targets.length > 1) { const delta = v - n.v; for (const t of targets) t.v = clamp(t.v + delta, 0.02, 1); }
-    else n.v = v;
+    if (targets.length > 1) { const delta = v - lane.get(n); for (const t of targets) lane.set(t, clamp(lane.get(t) + delta, lane.min, lane.max)); }
+    else lane.set(n, v);
+    hint.set(`${lane.label}: ${lane.fmt(lane.get(n))}`);
     emitNotes();
     invalidate();
   };
@@ -739,8 +780,8 @@ export function createPianoRoll(app) {
     setVelFromPointer(e);
   });
   cVel.addEventListener('pointermove', (e) => { if (velDrag) setVelFromPointer(e); });
-  cVel.addEventListener('pointerup', () => { velDrag = null; });
-  cVel.addEventListener('pointercancel', () => { velDrag = null; });
+  cVel.addEventListener('pointerup', () => { velDrag = null; hint.clear(); });
+  cVel.addEventListener('pointercancel', () => { velDrag = null; hint.clear(); });
 
   // ------------------------------------------------------------ note tools
   /** Run `fn(list)` on the selected notes (or all notes) as one undo step. */
@@ -758,6 +799,63 @@ export function createPianoRoll(app) {
     if (!ch) return;
     pat().notes[ch.id] = notes().filter((n) => !kill.has(n));
     for (const n of kill) S.selection.delete(n);
+  }
+  /** Replace the selected notes (or all) with `fn(list)` as one undo step; the new notes end up selected. */
+  function transform(fn) {
+    const target = S.selection.size ? [...S.selection] : notes();
+    if (!target.length || !chan()) return;
+    const made = fn(target);
+    if (!made) return;
+    store.checkpoint();
+    removeNotes(target);
+    const list = notes();
+    S.selection.clear();
+    for (const n of made) { list.push(n); S.selection.add(n); }
+    store.normalizePattern(pat());
+    updateSpacer(); emitNotes(); invalidate();
+  }
+  const RATES = [[0.5, '1/32'], [1, '1/16 (step)'], [2, '1/8'], [4 / 3, '1/8 triplet'], [4, '1/4 (beat)'], [8, '1/2']];
+  const hasNotes = () => (S.selection.size || notes().length) && chan();
+  const arpState = { rate: 1, pattern: 'up', gate: 0.9, octaves: 1 };
+  async function arpDialog() {
+    if (!hasNotes()) return;
+    const v = await formDialog('Arpeggiate', [
+      { key: 'pattern', label: 'Direction', value: arpState.pattern, options: [['up', 'Up'], ['down', 'Down'], ['updown', 'Up and down'], ['downup', 'Down and up'], ['random', 'Random']] },
+      { key: 'rate', label: 'Rate', value: arpState.rate, options: RATES },
+      { key: 'gate', label: 'Gate (note length)', value: arpState.gate, options: [[0.25, '25%'], [0.5, '50%'], [0.75, '75%'], [0.9, '90%'], [1, '100%']] },
+      { key: 'octaves', label: 'Octaves', value: arpState.octaves, options: [[1, '1'], [2, '2'], [3, '3']] },
+    ], 'Arpeggiate', 'Each chord (notes that start together) becomes a run of its notes until the chord ends.');
+    if (!v) return;
+    Object.assign(arpState, v);
+    transform((list) => arpeggiate(list, { ...v, seed: Math.floor(Math.random() * 1e9) }));
+  }
+  const strumState = { spread: 0.5, direction: 'up', taper: 0.15 };
+  async function strumDialog() {
+    if (!hasNotes()) return;
+    const v = await formDialog('Strum', [
+      { key: 'direction', label: 'Direction', value: strumState.direction, options: [['up', 'Up (low note first)'], ['down', 'Down (high note first)']] },
+      { key: 'spread', label: 'Spread (steps)', value: strumState.spread, min: 0, max: 16, step: 0.05 },
+      { key: 'taper', label: 'Velocity taper', value: strumState.taper, options: [[0, 'None'], [0.15, 'Slight'], [0.35, 'Strong']] },
+    ], 'Strum');
+    if (!v) return;
+    Object.assign(strumState, v);
+    transform((list) => strum(list, v));
+  }
+  async function chopDialog() {
+    if (!hasNotes()) return;
+    const v = await formDialog('Chop', [{ key: 'size', label: 'Piece length', value: snap() && snap() <= 8 ? snap() : 1, options: RATES }], 'Chop');
+    if (v) transform((list) => chop(list, v.size));
+  }
+  async function limitDialog() {
+    if (!hasNotes()) return;
+    const keys = Array.from({ length: 97 }, (_, i) => [i + 12, noteName(i + 12)]);
+    const v = await formDialog('Limit to range', [
+      { key: 'lo', label: 'Lowest key', value: 48, options: keys },
+      { key: 'hi', label: 'Highest key', value: 84, options: keys },
+    ], 'Limit', 'Notes outside the range move by octaves until they fit.');
+    if (!v) return;
+    if (v.hi - v.lo < 11) { messageDialog('Limit to range', 'The range must span at least an octave.'); return; }
+    transform((list) => limitRange(list, v.lo, v.hi));
   }
   const quantize = (startsOnly = false) => edit((list) => {
     const q = snap() || 1;
@@ -791,7 +889,7 @@ export function createPianoRoll(app) {
     const q = snap() || 1;
     const span = Math.max(q, Math.ceil((max - min) / q - 1e-6) * q);
     S.selection.clear();
-    for (const n of sel) S.selection.add(store.addNote(pat(), chan().id, { p: n.p, s: n.s + span, l: n.l, v: n.v }));
+    for (const n of sel) S.selection.add(store.addNote(pat(), chan().id, { ...n, s: n.s + span }));
     updateSpacer(); emitNotes(); invalidate();
   }
 
@@ -832,7 +930,7 @@ export function createPianoRoll(app) {
       const at = transport.playing ? transport.patternPosition() : scroller.scrollLeft / S.px;
       const start = snapFloor(at, snap() || 1);
       S.selection.clear();
-      for (const c of S.clipboard) S.selection.add(store.addNote(pat(), chan().id, { p: c.p, s: c.s + start, l: c.l, v: c.v }));
+      for (const c of S.clipboard) S.selection.add(store.addNote(pat(), chan().id, { ...c, s: c.s + start }));
       updateSpacer(); emitNotes(); invalidate();
     } else if (ctrl && key === 'b') {
       handled();
@@ -846,6 +944,15 @@ export function createPianoRoll(app) {
     } else if (e.altKey && key === 'r') {
       handled();
       randomize();
+    } else if (e.altKey && !ctrl && key === 'a') {
+      handled();
+      arpDialog();
+    } else if (e.altKey && !ctrl && key === 's') {
+      handled();
+      strumDialog();
+    } else if (e.altKey && !ctrl && key === 'u') {
+      handled();
+      chopDialog();
     } else if (e.key === 'Escape') {
       S.selection.clear(); invalidate();
     } else if (e.key.startsWith('Arrow') && sel.length) {

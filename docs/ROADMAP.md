@@ -4,7 +4,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 
 ## Near term
 - Audio recording (input device → audio clip).
-- Per-note properties in the piano roll (pan, cutoff, slide) and chord/arpeggio helpers in the UI (agents have `compose`).
+- Per-note cutoff and slide (portamento) notes in the piano roll.
 - Sampler: root key, loop points, slicing; drag-to-load into a channel.
 - Recent files.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.

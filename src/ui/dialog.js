@@ -40,6 +40,38 @@ export function promptDialog(title, value = '', label = '') {
   return p;
 }
 
+/**
+ * A small form. fields: [{ key, label, value, options?: [[value, label], …], min?, max?, step? }] — a select when
+ * `options` is given, else a number input. Resolves to { key: value } (numbers stay numbers), or null on cancel.
+ */
+export function formDialog(title, fields, okLabel = 'Apply', note = '') {
+  const inputs = new Map();
+  const rows = fields.map((f) => {
+    const el = f.options
+      ? h('select', {}, f.options.map(([v, label]) => h('option', { value: String(v), selected: v === f.value }, label)))
+      : h('input', { type: 'number', value: String(f.value), min: f.min, max: f.max, step: f.step ?? 'any' });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); modal.last.box.querySelector('.btn.primary').click(); }
+      e.stopPropagation();
+    });
+    inputs.set(f.key, el);
+    return h('label', { class: 'form-row' }, h('span', {}, f.label), el);
+  });
+  const read = () => Object.fromEntries(fields.map((f) => {
+    const raw = inputs.get(f.key).value;
+    if (f.options) return [f.key, typeof f.value === 'number' ? Number(raw) : raw];
+    let v = Number(raw);
+    if (!Number.isFinite(v)) v = f.value;
+    if (f.min != null) v = Math.max(f.min, v);
+    if (f.max != null) v = Math.min(f.max, v);
+    return [f.key, v];
+  }));
+  return modal(title, [note ? h('div', { class: 'form-note' }, note) : null, h('div', { class: 'form-grid' }, rows)], [
+    { label: 'Cancel', value: () => null },
+    { label: okLabel, primary: true, value: read },
+  ]);
+}
+
 export function confirmDialog(title, message, okLabel = 'OK') {
   return modal(title, [h('div', { style: { maxWidth: '440px', lineHeight: '1.5', whiteSpace: 'pre-wrap' } }, message)], [
     { label: 'Cancel', value: () => false },

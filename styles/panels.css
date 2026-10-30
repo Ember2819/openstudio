@@ -76,7 +76,9 @@
 .pr-grid, .pl-grid { position: absolute; left: 0; top: 0; }
 .pr-scroller { position: absolute; inset: 0; overflow: scroll; }
 .pr-spacer { pointer-events: none; }
-.pr-vel-label { background: var(--grid-vel-label); border-top: 1px solid var(--grid-edge); border-right: 1px solid var(--grid-edge); color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; padding: 8px 10px; }
+.pr-vel-label { background: var(--grid-vel-label); border: 0; border-top: 1px solid var(--grid-edge); border-right: 1px solid var(--grid-edge); border-radius: 0; color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; padding: 8px 10px; text-align: left; align-self: stretch; display: flex; align-items: flex-start; gap: 3px; height: auto; cursor: pointer; }
+.pr-vel-label:hover { color: var(--text-bright); }
+.pr-vel-label .caret { font-size: 9px; }
 .pr-vel { border-top: 1px solid var(--grid-edge); cursor: ns-resize; }
 .pr-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .pr-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; margin-left: -1px; display: none; background: var(--playhead); }

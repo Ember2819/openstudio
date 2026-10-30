@@ -1,6 +1,8 @@
 import { COLOR, PITCH, arr, bool, choice, int, num, obj, ref, str } from '../schema.js';
 import { channelOf, clamp01, edit, fail, noteIn, noteOut, parsePitch, patternOf, round, MAX_PITCH } from '../helpers.js';
 import { patternInfo } from '../describe.js';
+import { arpeggiate, strum, chop, flam, snapToScale, velocityRamp, articulate, limitRange } from '../../notetools.js';
+import { SCALES } from '../music/theory.js';
 
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
@@ -10,6 +12,8 @@ const NOTE = obj({
   length: num('Length in steps (1 = a 16th note)', { minimum: 0.0625 }),
   velocity: num('0-1 (default 0.78)', { minimum: 0, maximum: 1 }),
   muted: bool('Note is muted'),
+  pan: num('Per-note pan -1 (left) .. 1 (right), default 0', { minimum: -1, maximum: 1 }),
+  fine: num('Per-note fine pitch in cents, -120..120, default 0', { minimum: -120, maximum: 120 }),
 }, ['pitch', 'start', 'length']);
 
 const FILTER = obj({
@@ -39,6 +43,35 @@ function parts(store, a, what) {
 const emitNotes = (store, pat) => { store.normalizePattern(pat); store.emit('notes'); store.emit('patterns'); };
 
 const PARTS = arr(obj({ channel: ref('Channel'), notes: arr(NOTE, 'Notes') }, ['channel', 'notes']), 'Notes for several channels at once (instead of channel + notes)');
+
+/** The piano-roll tools that replace notes (src/notetools.js). */
+function replaceOp(a, sel) {
+  switch (a.op) {
+    case 'arpeggiate': return arpeggiate(sel, { ...a.arp, seed: 1 });
+    case 'strum': return strum(sel, a.strum ?? {});
+    case 'chop': return chop(sel, a.grid ?? 1);
+    case 'flam': return flam(sel, { offset: a.steps ?? 0.25 });
+    case 'snap_to_scale': {
+      if (!a.scale) fail('snap_to_scale needs scale { root, name }');
+      const intervals = SCALES[a.scale.name] ?? fail(`Unknown scale "${a.scale.name}" — one of ${Object.keys(SCALES).join(', ')}`);
+      const root = typeof a.scale.root === 'string' && /^[A-Ga-g][#b♯♭]?$/.test(a.scale.root.trim()) ? `${a.scale.root.trim()}5` : a.scale.root;
+      return snapToScale(sel, parsePitch(root) % 12, intervals);
+    }
+    case 'articulate': return articulate(sel, a.ratio ?? 0.5);
+    case 'limit': {
+      if (!a.range) fail('limit needs range { pitchMin, pitchMax }');
+      const lo = parsePitch(a.range.pitchMin);
+      const hi = parsePitch(a.range.pitchMax);
+      if (hi - lo < 11) fail('limit: the range must span at least an octave');
+      return limitRange(sel, lo, hi);
+    }
+    case 'velocity_ramp': {
+      const v = a.velocity ?? {};
+      return velocityRamp(sel, v.from ?? 0.2, v.to ?? 1);
+    }
+    default: return sel;
+  }
+}
 
 export const tools = [
   {
@@ -187,18 +220,33 @@ export const tools = [
   {
     name: 'transform_notes',
     title: 'Transform notes',
-    description: 'Piano-roll style bulk edit of a channel\'s notes (optionally only those matching `filter`). op: "transpose" (semitones), "shift" (steps, may be negative), "quantize" (snap starts and lengths to `grid` steps; startsOnly keeps lengths), "legato" (each note lasts until the next start), "velocity" (set / scale / add), "humanize" (random timing and velocity jitter), "duplicate" (copy the notes right after themselves, or `steps` later), "reverse" (mirror in time), "mute" / "unmute".',
+    description: 'Piano-roll style bulk edit of a channel\'s notes (optionally only those matching `filter`). op: "transpose" (semitones), "shift" (steps, may be negative), "quantize" (snap starts and lengths to `grid` steps; startsOnly keeps lengths), "legato" (each note lasts until the next start), "velocity" (set / scale / add), "humanize" (random timing and velocity jitter), "duplicate" (copy the notes right after themselves, or `steps` later), "reverse" (mirror in time), "mute" / "unmute"; and the piano-roll tools: "arpeggiate" (chords → runs; arp options), "strum" (spread chord notes; strum options), "chop" (cut into `grid`-step pieces), "flam" (grace note before each note), "snap_to_scale" (move off-scale pitches to the nearest note of `scale`), "articulate" (length = `ratio` of the gap to the next note), "limit" (fold into pitchMin..pitchMax of `range` by octaves), "velocity_ramp" (fade velocities from `velocity.from` to `velocity.to`).',
     inputSchema: obj({
       pattern: ref('Pattern'),
       channel: ref('Channel'),
-      op: choice(['transpose', 'shift', 'quantize', 'legato', 'velocity', 'humanize', 'duplicate', 'reverse', 'mute', 'unmute'], 'The operation'),
+      op: choice(['transpose', 'shift', 'quantize', 'legato', 'velocity', 'humanize', 'duplicate', 'reverse', 'mute', 'unmute',
+        'arpeggiate', 'strum', 'chop', 'flam', 'snap_to_scale', 'articulate', 'limit', 'velocity_ramp'], 'The operation'),
       filter: FILTER,
       semitones: int('transpose: amount (12 = an octave)'),
       steps: num('shift: amount; duplicate: offset (default: the notes\' own span, rounded up to a whole step)'),
       grid: num('quantize: grid size in steps (1 = 16th, 2 = 8th, 4 = quarter; default 1)', { minimum: 0.0625 }),
       startsOnly: bool('quantize: only move starts'),
-      velocity: obj({ set: num('Set every velocity', { minimum: 0, maximum: 1 }), scale: num('Multiply velocities', { minimum: 0 }), add: num('Add to velocities', { minimum: -1, maximum: 1 }) }, [], 'velocity op: exactly one of set / scale / add'),
+      velocity: obj({ set: num('Set every velocity', { minimum: 0, maximum: 1 }), scale: num('Multiply velocities', { minimum: 0 }), add: num('Add to velocities', { minimum: -1, maximum: 1 }), from: num('velocity_ramp: first velocity', { minimum: 0, maximum: 1 }), to: num('velocity_ramp: last velocity', { minimum: 0, maximum: 1 }) }, [], 'velocity op: exactly one of set / scale / add; velocity_ramp: from / to'),
       humanize: obj({ timing: num('Max start offset in steps (default 0.06)', { minimum: 0 }), velocity: num('Max velocity change (default 0.1)', { minimum: 0, maximum: 1 }) }),
+      arp: obj({
+        rate: num('Steps between arp notes (1 = 16ths, 2 = 8ths, 4/3 = 8th triplets; default 1)', { minimum: 0.125 }),
+        pattern: choice(['up', 'down', 'updown', 'downup', 'random'], 'Direction (default up)'),
+        gate: num('Note length as a fraction of rate (default 0.9)', { minimum: 0.05, maximum: 1 }),
+        octaves: int('Octaves to span (default 1)', { minimum: 1, maximum: 4 }),
+      }),
+      strum: obj({
+        spread: num('Steps from the first to the last chord note (default 0.5)', { minimum: 0 }),
+        direction: choice(['up', 'down'], 'up = lowest note first (default)'),
+        taper: num('Velocity drop across the strum, 0-1 (default 0)', { minimum: 0, maximum: 1 }),
+      }),
+      scale: obj({ root: PITCH, name: str(`Scale name: ${Object.keys(SCALES).join(', ')}`) }, ['root', 'name'], 'snap_to_scale: the scale (root as a note name like "C" or "F#5", any octave)'),
+      ratio: num('articulate: length as a fraction of the gap to the next note (0.5 = staccato)', { minimum: 0.05, maximum: 1 }),
+      range: obj({ pitchMin: PITCH, pitchMax: PITCH }, ['pitchMin', 'pitchMax'], 'limit: the pitch range (at least an octave)'),
     }, ['channel', 'op']),
     annotations: { ...WRITE, destructiveHint: true, title: 'Transform notes' },
     run(a, app) {
@@ -272,6 +320,16 @@ export const tools = [
           case 'mute': case 'unmute':
             for (const n of sel) { if (a.op === 'mute') n.m = true; else delete n.m; }
             break;
+          case 'arpeggiate': case 'strum': case 'chop': case 'flam': case 'snap_to_scale': case 'articulate': case 'limit': case 'velocity_ramp': {
+            const made = replaceOp(a, sel);
+            const drop = new Set(sel);
+            const kept = list.filter((n) => !drop.has(n));
+            list.length = 0;
+            list.push(...kept, ...made);
+            sel.length = 0;
+            sel.push(...made);
+            break;
+          }
           default:
             fail(`Unknown op ${a.op}`);
         }

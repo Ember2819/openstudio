@@ -5,6 +5,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Fixed
+- Duplicating, copying and pasting notes keeps their mute state (and the new per-note pan and fine pitch).
+
 ### Added
 - **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
   velocity, per-note pan and fine pitch), the playlist arrangement with track names, colours and muted tracks, tempo, and
@@ -21,6 +24,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   toolbar, or `set_project` `timeSig`. Bars, beats, grid lines, rulers, snapping, the bar:beat clock, the metronome,
   channel-rack pad groups and pattern lengths follow it; MIDI files carry it both ways, as do FL Studio projects.
   Changing it keeps every note where it is.
+- **Piano-roll tools** (Tools menu): Arpeggiate (Alt+A: up, down, up-down, random; rate, gate, octaves), Strum (Alt+S),
+  Chop (Alt+U), Flam, Articulate (staccato / short / tenuto), Snap pitches to scale, Limit to range, velocity fade
+  in / out. Agents get the same through `transform_notes`.
+- The piano roll's event lane switches between **Velocity, Pan and Fine pitch** (click its label).
 - Exported MIDI files include tempo automation as tempo changes.
 - Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
 
