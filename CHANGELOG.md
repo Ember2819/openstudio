@@ -5,6 +5,12 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Changed
+- Releases now build automatically after a version-bump change reaches `main`, and the release workflow rejects duplicate or
+  non-increasing package versions.
+
 ## [0.4.0]
 
 ### Added
