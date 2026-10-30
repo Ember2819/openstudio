@@ -60,7 +60,7 @@ export function parseFlp(input) {
     if (!out.patterns.has(i)) out.patterns.set(i, { index: i, name: '', color: null, notes: [], length: 0 });
     return out.patterns.get(i);
   };
-  const newInsert = () => { insert = { index: out.inserts.length, name: '', color: null, flags: null, routes: [], fx: [] }; };
+  const newInsert = () => { insert = { index: out.inserts.length, name: '', color: null, flags: null, routes: null, fx: [] }; };
   const ensureArrangement = () => {
     if (!arrangement) { arrangement = { name: 'Arrangement', items: [], tracks: [] }; out.arrangements.push(arrangement); }
     return arrangement;
@@ -361,10 +361,12 @@ export function importFlp(store, flp, { name = '', samples = new Map() } = {}) {
     if (i > 0) {
       // a route with its send level at zero is just FL's default template wiring (old "Send 1-4" tracks)
       const level = (r) => src.sendLevels?.[r] ?? 12800;
-      const routes = src.routes.filter((r) => r > 0 && r < MIXER_TRACKS && r !== i && level(r) > 0);
-      for (const r of routes) if (!store.wouldCycle(i, r)) m.sends[r] = clamp01(level(r) / 16000, 1);
-      // FL routes an insert to the master only when asked to: an insert that goes elsewhere (or nowhere) is off the master
-      if (!src.routes.includes(0) && (routes.length || src.flags != null)) m.master = false;
+      if (src.routes) {
+        const routes = src.routes.filter((r) => r > 0 && r < MIXER_TRACKS && r !== i && level(r) > 0);
+        for (const r of routes) if (!store.wouldCycle(i, r)) m.sends[r] = clamp01(level(r) / 16000, 1);
+        // FL feeds the master only when routed to it: an insert that goes elsewhere (or nowhere) is off the master
+        if (!src.routes.includes(0)) m.master = false;
+      }
     }
   }
 

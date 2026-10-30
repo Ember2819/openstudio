@@ -177,6 +177,14 @@ test('importFlp loads samples it is given', () => {
   assert.equal(store.samples.get(kick.sampleId).data, data);
 });
 
+test('inserts without routing data stay on the master (older FL versions)', () => {
+  const flp = parseFlp(buildFlp());
+  for (const ins of flp.inserts) ins.routes = null;
+  const store = new Store();
+  importFlp(store, flp);
+  assert.ok(store.project.mixer.slice(1, 4).every((m) => m.master !== false));
+});
+
 test('parseFlp rejects other files', () => {
   assert.throws(() => parseFlp(new Uint8Array([1, 2, 3])), /Not an FL Studio project/);
   assert.throws(() => parseFlp(Buffer.from('MThd\0\0\0\x06\0\0\0\x01\0\x60xxxxxxxxxx')), /Not an FL Studio project/);

@@ -119,8 +119,8 @@ export class Engine {
 
   _buildTrack(i) {
     const t = this._newStrip(i);
-    t.gate.connect(this.tracks[0].input);
-    t.toMaster = true;
+    t.toMaster = this.store.project.mixer[i]?.master !== false;
+    if (t.toMaster) t.gate.connect(this.tracks[0].input);
     this.tracks[i] = t;
     this._rebuildFxChain(i);
     this._applyStrip(i);
