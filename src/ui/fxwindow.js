@@ -328,7 +328,8 @@ export function createEffectWindow(app) {
     for (const [key, knob] of knobs) if (slot.params[key] !== undefined) knob.setValue(slot.params[key]);
     graph.dirty = true;
   };
-  store.on('project', resync);
+  // undo / redo keep the window on its slot; opening or creating a project closes it
+  store.on('project', (e) => { if (e?.history) resync(); else if (cur) { cur = null; win.hide(); } });
   store.on('mixer', resync);
   appearance.on('change', () => { graph.dirty = true; });
 
