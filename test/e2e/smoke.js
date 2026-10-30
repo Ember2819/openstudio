@@ -41,9 +41,60 @@
 
   // mixer effects + sends
   const m = s.project.mixer[2];
-  ['reverb', 'delay', 'chorus', 'phaser', 'limiter', 'flanger', 'tremolo', 'bitcrusher'].forEach((type, i) => { m.fx[i] = { type, params: {}, on: true }; });
+  ['reverb', 'delay', 'chorus', 'phaser', 'limiter', 'flanger', 'tremolo', 'bitcrusher', 'peq', 'gate'].forEach((type, i) => { m.fx[i] = { type, params: {}, on: true }; });
   a.engine.syncFx(2);
-  ok('effect chain builds', a.engine.tracks[2].fxNodes.length === 8);
+  ok('effect chain builds', a.engine.tracks[2].fxNodes.length === 10);
+  m.fx.fill(null);
+  ['multiband', 'analyzer', 'eq', 'compressor', 'distortion', 'filter', 'stereo'].forEach((type, i) => { m.fx[i] = { type, params: {}, on: true }; });
+  a.engine.syncFx(2);
+  ok('second effect chain builds', a.engine.tracks[2].fxNodes.length === 7);
+
+  // effects measured offline: a 440 Hz tone through one effect
+  {
+    const { createEffect } = await import('./src/audio/effects.js');
+    const run = async (type, params, amp = 0.5, secs = 1.2, stereoIn = false) => {
+      const ctx = new OfflineAudioContext(2, Math.round(44100 * secs), 44100);
+      const fx = createEffect(ctx, type, params);
+      const osc = ctx.createOscillator();
+      osc.frequency.value = 440;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(amp, 0);
+      g.gain.setValueAtTime(0, 0.1); // a short burst, then silence (for echoes)
+      if (!stereoIn) g.gain.setValueAtTime(amp, 0.1);
+      osc.connect(g).connect(fx.input);
+      fx.output.connect(ctx.destination);
+      osc.start();
+      const out = await ctx.startRendering();
+      const rms = (c, from = 0, to = out.length) => { const d = out.getChannelData(c); let x = 0; for (let i = from; i < to; i++) x += d[i] * d[i]; return Math.sqrt(x / Math.max(1, to - from)); };
+      return { out, rms };
+    };
+    const quiet = await run('gate', { threshold: -30 }, 0.01);
+    const loud = await run('gate', { threshold: -30 }, 0.5);
+    ok('gate: a signal below the threshold is shut', quiet.rms(0, 22050) < 0.01 * 0.707 * 0.1);
+    ok('gate: a signal above the threshold passes', loud.rms(0, 22050) > 0.5 * 0.707 * 0.8);
+    const pp = await run('delay', { mode: 'ping-pong', time: 300, feedback: 0.5, mix: 1, tone: 14000 }, 0.5, 1.2, true);
+    const at = (sec) => Math.round(sec * 44100);
+    const l1 = pp.rms(0, at(0.3), at(0.4)), r1 = pp.rms(1, at(0.3), at(0.4));
+    const l2 = pp.rms(0, at(0.6), at(0.7)), r2 = pp.rms(1, at(0.6), at(0.7));
+    ok('ping-pong delay: the first echo is on the left, the second on the right', l1 > r1 * 4 && r2 > l2 * 4);
+    const st = await run('delay', { time: 300, feedback: 0.4, mix: 1 }, 0.5, 1.2, true);
+    ok('mono-mode delay keeps echoes on both sides', Math.abs(st.rms(0, at(0.3), at(0.4)) - st.rms(1, at(0.3), at(0.4))) < 0.01);
+    const mb = await run('multiband', {}, 0.1);
+    ok(`multiband passes a quiet signal near unity (${(mb.rms(0, 22050) / (0.1 * 0.707)).toFixed(2)})`, Math.abs(mb.rms(0, 22050) / (0.1 * 0.707) - 1) < 0.2);
+    const mbLoud = await run('multiband', { threshold: -30, ratio: 8 }, 0.8);
+    ok('multiband compresses a loud signal', mbLoud.rms(0, 22050) < 0.8 * 0.707 * 0.6);
+    const comp = await run('compressor', { threshold: -20, ratio: 4, gain: 0 }, 0.01);
+    ok(`compressor below its threshold is unity gain (${(comp.rms(0, 22050) / (0.01 * 0.707)).toFixed(2)})`, Math.abs(comp.rms(0, 22050) / (0.01 * 0.707) - 1) < 0.08);
+    const lim = await run('limiter', { ceiling: -6, gain: 12 }, 0.5);
+    let lp = 0;
+    { const d = lim.out.getChannelData(0); for (let i = 22050; i < 44100; i++) lp = Math.max(lp, Math.abs(d[i])); }
+    ok(`limiter holds its ceiling (${(20 * Math.log10(lp)).toFixed(2)} dB)`, 20 * Math.log10(lp) < -5.9);
+    const ctx = new AudioContext();
+    const peq = createEffect(ctx, 'peq', { g4: 6, f4: 1000, q4: 1 });
+    const resp = peq.response(new Float32Array([100, 1000, 10000]));
+    ok('parametric EQ response peaks at its band', resp[1] > 5.5 && Math.abs(resp[0]) < 1.5 && Math.abs(resp[2]) < 1.5);
+    ctx.close();
+  }
   m.fx.fill(null);
   a.engine.syncFx(2);
   s.project.mixer[1].sends[2] = 0.7;

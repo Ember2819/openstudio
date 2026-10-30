@@ -164,7 +164,8 @@ export function createMixer(app) {
   }
 
   // ------------------------------------------------------------------ FX rack
-  let openSlot = -1;
+  // the effect being edited lives in its own window (src/ui/fxwindow.js)
+  const openFx = () => app.effectWindow?.current();
   function renderFx() {
     const i = store.project.selected.mixer;
     const track = mixer()[i];
@@ -180,7 +181,8 @@ export function createMixer(app) {
         engine.syncFx(i);
         renderFx();
       });
-      const row = h('div', { class: `mx-slot${slot ? ' filled' : ''}${openSlot === k && slot ? ' open' : ''}`, 'data-hint': slot ? 'Click to edit · right-click to remove' : 'Click to add an effect' },
+      const editing = slot && openFx()?.track === i && openFx()?.slot === k && app.effectWindow.win.visible;
+      const row = h('div', { class: `mx-slot${slot ? ' filled' : ''}${editing ? ' open' : ''}`, 'data-hint': slot ? 'Click to open its editor · right-click for more' : 'Click to add an effect' },
         led, h('span', { class: 'mx-slot-name' }, slot ? EFFECT_DEFS[slot.type].name : '(none)'));
       row.addEventListener('click', () => {
         if (!slot) {
@@ -189,26 +191,28 @@ export function createMixer(app) {
             action: () => {
               store.checkpoint();
               track.fx[k] = { type, params: defaultEffectParams(type), on: true };
-              openSlot = k;
               engine.syncFx(i);
               renderFx();
               refreshActive();
+              app.actions.openEffect(i, k);
+              renderFx();
             },
           })), row.getBoundingClientRect().left, row.getBoundingClientRect().bottom);
-        } else { openSlot = openSlot === k ? -1 : k; renderFx(); }
+        } else if (editing) { app.effectWindow.win.hide(); renderFx(); } else { app.actions.openEffect(i, k); renderFx(); }
       });
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showMenu([
           ...(slot ? [
-            { label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; if (openSlot === k) openSlot = -1; engine.syncFx(i); renderFx(); } },
+            { label: 'Open editor', action: () => { app.actions.openEffect(i, k); renderFx(); } },
+            { label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; engine.syncFx(i); store.emit('mixer'); renderFx(); } },
             { label: 'Move up', disabled: k === 0, action: () => moveSlot(k, -1) },
             { label: 'Move down', disabled: k === track.fx.length - 1, action: () => moveSlot(k, 1) },
             { separator: true },
           ] : []),
           ...Object.entries(EFFECT_DEFS).map(([type, def]) => ({
             label: `${slot ? 'Replace with' : 'Add'} ${def.name}`,
-            action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); renderFx(); },
+            action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); store.emit('mixer'); renderFx(); },
           })),
         ], e.clientX, e.clientY);
       });
@@ -217,28 +221,6 @@ export function createMixer(app) {
     fxPanel.append(list);
 
     fxPanel.append(sendsBlock(i, track));
-
-    const slot = track.fx[openSlot];
-    if (slot) {
-      const def = EFFECT_DEFS[slot.type];
-      const knobs = h('div', { class: 'mx-fx-params' });
-      for (const meta of def.params) {
-        if (meta.type === 'select') {
-          const sel = h('button', { class: 'dd', 'data-hint': meta.label }, h('span', {}, slot.params[meta.key]), h('span', { class: 'caret' }, '▼'));
-          sel.addEventListener('click', () => showMenu(meta.options.map((o) => ({ label: o, checked: slot.params[meta.key] === o, action: () => { store.checkpoint(); slot.params[meta.key] = o; engine.setEffectParam(i, openSlot, meta.key, o); renderFx(); } })), sel.getBoundingClientRect().left, sel.getBoundingClientRect().bottom));
-          knobs.append(h('div', { class: 'mx-fx-param' }, sel, h('span', {}, meta.label)));
-          continue;
-        }
-        const k = createKnob({
-          value: slot.params[meta.key], min: meta.min, max: meta.max, def: meta.def, size: 34, log: meta.log, step: meta.step || 0, label: meta.label, fmt: meta.fmt,
-          onStart: () => store.checkpoint(),
-          target: { kind: 'fx', track: i, slot: openSlot, key: meta.key },
-          onChange: (v) => { slot.params[meta.key] = v; engine.setEffectParam(i, openSlot, meta.key, v); store.dirty = true; },
-        });
-        knobs.append(h('div', { class: 'mx-fx-param' }, k, h('span', {}, meta.label)));
-      }
-      fxPanel.append(h('div', { class: 'mx-fx-edit' }, h('div', { class: 'mx-fx-edit-title' }, def.name), knobs));
-    }
   }
 
   /** Swap an effect slot with its neighbour (automation targets follow the effect). */
@@ -256,7 +238,9 @@ export function createMixer(app) {
     }
     // the engine keys live effects by slot, so rebuild them in their new positions
     engine.resetFx(i);
-    if (openSlot === k) openSlot = j; else if (openSlot === j) openSlot = k;
+    const ed = openFx();
+    if (ed?.track === i && (ed.slot === k || ed.slot === j)) app.actions.openEffect(i, ed.slot === k ? j : k);
+    store.emit('mixer');
     renderFx();
   }
 
@@ -299,7 +283,7 @@ export function createMixer(app) {
 
   // ------------------------------------------------------------------ wiring
   const refreshActive = () => strips.forEach((s) => { s.active = isRouted(s.i); s.el.classList.toggle('routed', s.active); });
-  store.on('project', () => { openSlot = -1; build(); });
+  store.on('project', () => { build(); });
   store.on('channels', refreshActive);
   store.on('mixer', () => { strips.forEach((s) => s.refresh()); });
   store.on('mixerSelection', () => select(store.project.selected.mixer, true));

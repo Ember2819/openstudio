@@ -218,3 +218,18 @@
 .ae-title { font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ae-lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
 .ae-len { min-width: 54px; text-align: center; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- effect window ---------- */
+.fxw-root { height: 100%; display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.fxw-head { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.fxw-name { font-weight: 600; color: var(--text-bright); font-size: 12.5px; }
+.fxw-track { font-size: 11px; color: var(--text-dim); }
+.fxw-btn { height: 22px; font-size: 11px; padding: 0 10px; }
+.fxw-graph-wrap { flex: 1 1 auto; min-height: 140px; margin: 8px 10px 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.fxw-graph-wrap.tall { margin-bottom: 4px; }
+.fxw-graph { width: 100%; height: 100%; display: block; }
+.fxw-bands { flex: none; display: grid; grid-template-columns: repeat(8, minmax(60px, 1fr)); gap: 4px; padding: 8px 10px 10px; }
+.fxw-band { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border-radius: 4px; background: var(--inset); }
+.fxw-band-name { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text); white-space: nowrap; }
+.fxw-band-name i { width: 8px; height: 8px; border-radius: 50%; }
+.fxw-knobs { flex: none; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); padding: 14px 12px; }

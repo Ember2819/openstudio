@@ -20,7 +20,9 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO),
   an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps, textures);
   26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio files.
-- Mixer effects: reverb, delay, chorus, phaser, distortion, filter, EQ, compressor, limiter, stereo width.
+- Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
+  delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
+  multiband compressor, gate, limiter, stereo width.
 
 **Workflow**
 - **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo and mixer routing.

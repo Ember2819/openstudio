@@ -27,6 +27,7 @@ export const PROFILES = {
   playlist: { name: 'Playlist', orient: 'wide', fill: true, min: [560, 260], ideal: (win, W, H) => ({ w: W, h: H }) },
   mixer: { name: 'Mixer', orient: 'wide', min: [520, 330], ideal: (win, W) => ({ w: Math.min(W, 1180), h: 500 }) },
   automation: { name: 'Automation', orient: 'wide', min: [420, 220], ideal: () => ({ w: 780, h: 340 }) },
+  effect: { name: 'Effect', orient: 'square', min: [380, 220], ideal: (win) => ({ w: 660, h: win.body.querySelector('.fxw-graph-wrap') ? 470 : 260 }) },
   settings: {
     name: 'Channel settings', orient: 'square', min: [420, 220],
     ideal: (win) => {
@@ -37,9 +38,9 @@ export const PROFILES = {
   },
 };
 /** Canonical order for auto-arrange: the pattern tools, the song, then mixing. */
-const ORDER = ['rack', 'piano', 'playlist', 'mixer', 'automation', 'settings'];
+const ORDER = ['rack', 'piano', 'playlist', 'mixer', 'effect', 'automation', 'settings'];
 /** Where a newly opened window belongs: next to (or stacked with) the window it works with. */
-const AFFINITY = { piano: 'rack', rack: 'piano', settings: 'rack', automation: 'playlist', mixer: 'playlist' };
+const AFFINITY = { piano: 'rack', rack: 'piano', settings: 'rack', automation: 'playlist', mixer: 'playlist', effect: 'mixer' };
 
 /** Generic ideals for a user-chosen orientation. */
 const ORIENT_IDEAL = {

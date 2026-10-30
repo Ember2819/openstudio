@@ -8,6 +8,7 @@ import { createChannelRack } from './ui/channelrack.js';
 import { createPianoRoll } from './ui/pianoroll.js';
 import { createPlaylist } from './ui/playlist.js';
 import { createMixer } from './ui/mixer.js';
+import { createEffectWindow } from './ui/fxwindow.js';
 import { createBrowser } from './ui/browser.js';
 import { createUpdater } from './ui/updater.js';
 import { createSettings } from './ui/settings.js';
@@ -57,6 +58,8 @@ app.actions.openAutomation = autoEditor.open;
 setAutomationHandler((target) => app.actions.createAutomation(target));
 const piano = createPianoRoll(app);
 const mixer = createMixer(app);
+app.effectWindow = createEffectWindow(app);
+app.actions.openEffect = (track, slot) => app.effectWindow.open(track, slot);
 installShortcuts(app);
 installAudioRecording(app);
 app.tiler = new Tiler(app);
@@ -77,7 +80,7 @@ loadSoundfont().then(() => {
   messageDialog('Instrument bank not found', 'OpenStudio could not load its sound library, so instruments will be silent.\n\nRun "npm run assets" in the project folder to download it, then restart the app.');
 });
 
-const panels = [rack, playlist, piano, mixer, settings];
+const panels = [rack, playlist, piano, mixer, settings, app.effectWindow];
 
 let lastDirty = app.store.dirty;
 function frame() {

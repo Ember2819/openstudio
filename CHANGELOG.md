@@ -6,6 +6,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 ## [Unreleased]
 
 ### Fixed
+- The Compressor added up to ~10 dB of hidden gain (Web Audio's automatic makeup) on top of its Makeup knob; it is now
+  unity below the threshold and Makeup is the real makeup. Projects that relied on it will play quieter — raise
+  Makeup. The Limiter now holds its ceiling exactly instead of overshooting by up to 1 dB.
 - Duplicating, copying and pasting notes keeps their mute state (and the new per-note pan and fine pitch).
 
 ### Added
@@ -32,6 +35,11 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   press Play, and the take lands in the playlist as an audio clip where you started, on a free track named "Audio".
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both.
+- **Effect windows**: clicking an effect in the mixer opens its editor in its own window (like FL Studio's plugin
+  windows), with a power switch and Reset.
+- **New effects**: a 7-band **Parametric EQ** with a response graph you drag directly (wheel = Q, double-click = reset)
+  over a live spectrum; a **Spectrum analyser**; a **Gate**; a 3-band **Multiband compressor**; and a **ping-pong**
+  mode for the Delay.
 - Exported MIDI files include tempo automation as tempo changes.
 - Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
 

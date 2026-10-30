@@ -19,6 +19,7 @@ export const EFFECT_DEFS = {
       { key: 'feedback', label: 'Feedback', min: 0, max: 0.95, def: 0.4, fmt: pct },
       { key: 'tone', label: 'Tone', min: 400, max: 14000, def: 5000, log: true, fmt: (v) => `${Math.round(v)} Hz` },
       { key: 'mix', label: 'Mix', min: 0, max: 1, def: 0.3, fmt: pct },
+      { key: 'mode', label: 'Mode', type: 'select', options: ['mono', 'ping-pong'], def: 'mono' },
     ],
     create: (ctx, p) => createDelay(ctx, p),
   },
@@ -125,7 +126,92 @@ export const EFFECT_DEFS = {
   },
 };
 
+// ---------------------------------------------------------------- 7-band parametric EQ (FL's Parametric EQ 2 layout)
+export const PEQ_BANDS = [
+  { type: 'highpass', f: 20, q: 0.71, label: 'Low cut' },
+  { type: 'lowshelf', f: 90, q: 0.71, label: 'Low shelf' },
+  { type: 'peaking', f: 250, q: 1, label: 'Low mid' },
+  { type: 'peaking', f: 1000, q: 1, label: 'Mid' },
+  { type: 'peaking', f: 3500, q: 1, label: 'High mid' },
+  { type: 'highshelf', f: 8000, q: 0.71, label: 'High shelf' },
+  { type: 'lowpass', f: 20000, q: 0.71, label: 'High cut' },
+];
+const hzFmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : `${Math.round(v)} Hz`);
+const dbFmt = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
+EFFECT_DEFS.peq = {
+  name: 'Parametric EQ',
+  view: 'eq',
+  params: [
+    ...PEQ_BANDS.flatMap((b, i) => [
+      { key: `f${i + 1}`, label: `${b.label} freq`, min: 20, max: 20000, def: b.f, log: true, fmt: hzFmt, band: i },
+      ...(b.type === 'highpass' || b.type === 'lowpass' ? [] : [{ key: `g${i + 1}`, label: `${b.label} gain`, min: -18, max: 18, def: 0, fmt: dbFmt, band: i }]),
+      { key: `q${i + 1}`, label: `${b.label} ${b.type.endsWith('shelf') ? 'slope' : 'Q'}`, min: 0.1, max: 18, def: b.q, log: true, fmt: (v) => v.toFixed(2), band: i },
+    ]),
+    { key: 'out', label: 'Output', min: -18, max: 18, def: 0, fmt: dbFmt },
+  ],
+  create: (ctx, p) => createPeq(ctx, p),
+};
+EFFECT_DEFS.analyzer = {
+  name: 'Spectrum analyser',
+  view: 'spectrum',
+  params: [{ key: 'slope', label: 'Tilt', min: 0, max: 6, def: 3, step: 1.5, fmt: (v) => `${v.toFixed(1)} dB/oct` }],
+  create: (ctx, p) => createAnalyzer(ctx, p),
+};
+EFFECT_DEFS.gate = {
+  name: 'Gate',
+  params: [
+    { key: 'threshold', label: 'Threshold', min: -80, max: 0, def: -40, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'range', label: 'Range', min: 0, max: 80, def: 60, fmt: (v) => `−${v.toFixed(0)} dB` },
+    { key: 'release', label: 'Release', min: 0.005, max: 1, def: 0.08, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+  ],
+  create: (ctx, p) => createGate(ctx, p),
+};
+EFFECT_DEFS.multiband = {
+  name: 'Multiband compressor',
+  params: [
+    { key: 'lowX', label: 'Low / mid', min: 60, max: 1000, def: 200, log: true, fmt: hzFmt },
+    { key: 'highX', label: 'Mid / high', min: 1000, max: 12000, def: 3000, log: true, fmt: hzFmt },
+    { key: 'threshold', label: 'Threshold', min: -60, max: 0, def: -24, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'ratio', label: 'Ratio', min: 1, max: 20, def: 4, fmt: (v) => `${v.toFixed(1)}:1` },
+    { key: 'attack', label: 'Attack', min: 0.001, max: 0.2, def: 0.005, log: true, fmt: (v) => `${(v * 1000).toFixed(1)} ms` },
+    { key: 'release', label: 'Release', min: 0.02, max: 1, def: 0.12, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'low', label: 'Low gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'mid', label: 'Mid gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'high', label: 'High gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createMultiband(ctx, p),
+};
+
 export const defaultEffectParams = (type) => Object.fromEntries(EFFECT_DEFS[type].params.map((m) => [m.key, m.def]));
+
+/**
+ * The makeup gain (dB) that a Web Audio DynamicsCompressorNode adds on its own: the spec makes up 0.6 × the gain it
+ * takes off a full-scale signal. Effects divide it back out so their own "makeup" / "ceiling" mean what they say.
+ * Mirrors the spec's static curve, including the soft-knee solve.
+ */
+export function compressorMakeupDb(threshold, knee, ratio) {
+  const lin = (d) => Math.pow(10, d / 20);
+  const db = (x) => 20 * Math.log10(Math.max(1e-9, x));
+  const thr = lin(threshold);
+  const slope = 1 / ratio;
+  const kneeCurve = (x, k) => (x < thr ? x : thr + (1 - Math.exp(-k * (x - thr))) / k);
+  const slopeAt = (x, k) => {
+    if (x < thr) return 1;
+    const x2 = x * 1.001;
+    return (db(kneeCurve(x2, k)) - db(kneeCurve(x, k))) / (db(x2) - db(x));
+  };
+  const kneeThr = lin(threshold + knee);
+  let minK = 0.1;
+  let maxK = 10000;
+  let k = 5;
+  for (let i = 0; i < 15; i++) {
+    if (slopeAt(kneeThr, k) < slope) maxK = k; else minK = k;
+    k = Math.sqrt(minK * maxK);
+  }
+  const full = 1 >= kneeThr ? db(kneeCurve(kneeThr, k)) + slope * (0 - (threshold + knee)) : db(kneeCurve(1, k));
+  return -0.6 * full;
+}
 
 function mixer(ctx) {
   const input = ctx.createGain();
@@ -184,17 +270,40 @@ function createReverb(ctx, p) {
 
 function createDelay(ctx, p) {
   const m = mixer(ctx);
+  // stereo echo: delay → tone → wet, with the toned echo fed back
+  const toStereo = ctx.createGain();
   const delay = ctx.createDelay(2);
   const fb = ctx.createGain();
   const tone = ctx.createBiquadFilter();
   tone.type = 'lowpass';
-  m.input.connect(delay);
-  delay.connect(tone).connect(m.wet).connect(m.output);
+  m.input.connect(toStereo).connect(delay);
+  delay.connect(tone).connect(m.wet);
   tone.connect(fb).connect(delay);
+  // ping-pong: the (mono) input echoes on the left, then the right, then the left …
+  const toPing = ctx.createGain();
+  toPing.channelCount = 1;
+  toPing.channelCountMode = 'explicit';
+  const dl = ctx.createDelay(2);
+  const dr = ctx.createDelay(2);
+  const toneP = ctx.createBiquadFilter();
+  toneP.type = 'lowpass';
+  const fbP = ctx.createGain();
+  const merge = ctx.createChannelMerger(2);
+  m.input.connect(toPing).connect(dl);
+  dl.connect(dr);
+  dr.connect(toneP).connect(fbP).connect(dl);
+  dl.connect(merge, 0, 0);
+  dr.connect(merge, 0, 1);
+  merge.connect(m.wet);
+  m.wet.connect(m.output);
   const apply = () => {
-    delay.delayTime.value = p.time / 1000;
-    fb.gain.value = p.feedback;
-    tone.frequency.value = p.tone;
+    const t = p.time / 1000;
+    const ping = p.mode === 'ping-pong';
+    delay.delayTime.value = dl.delayTime.value = dr.delayTime.value = t;
+    fb.gain.value = fbP.gain.value = p.feedback;
+    tone.frequency.value = toneP.frequency.value = p.tone;
+    toStereo.gain.value = ping ? 0 : 1;
+    toPing.gain.value = ping ? 1 : 0;
     m.setMix(p.mix);
   };
   apply();
@@ -253,7 +362,7 @@ function createCompressor(ctx, p) {
     c.ratio.value = p.ratio;
     c.attack.value = p.attack;
     c.release.value = p.release;
-    makeup.gain.value = Math.pow(10, p.gain / 20);
+    makeup.gain.value = Math.pow(10, (p.gain - compressorMakeupDb(p.threshold, 6, p.ratio)) / 20);
   };
   apply();
   return { input: c, output: makeup, set(k, v) { p[k] = v; apply(); }, dispose() {} };
@@ -426,15 +535,156 @@ function createLimiter(ctx, p) {
   c.ratio.value = 20;
   c.attack.value = 0.002;
   const post = ctx.createGain();
-  pre.connect(c).connect(post);
+  // a ratio-20 compressor still lets 1/20 of the overshoot through: a soft clip at the ceiling catches the rest
+  const clip = ctx.createWaveShaper();
+  clip.oversample = '4x';
+  pre.connect(c).connect(post).connect(clip);
+  let curveFor = null;
   const apply = () => {
     pre.gain.value = Math.pow(10, p.gain / 20);
     c.threshold.value = p.ceiling;
     c.release.value = p.release;
-    post.gain.value = 1;
+    post.gain.value = Math.pow(10, -compressorMakeupDb(p.ceiling, 0, 20) / 20);
+    if (curveFor !== p.ceiling) {
+      curveFor = p.ceiling;
+      const ceil = Math.pow(10, p.ceiling / 20);
+      const knee = ceil * 0.9;
+      const N = 4096;
+      const curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * 2 - 1;
+        const a = Math.abs(x);
+        const y = a <= knee ? a : knee + (ceil - knee) * Math.tanh((a - knee) / (ceil - knee));
+        curve[i] = Math.sign(x) * y;
+      }
+      clip.curve = curve;
+    }
   };
   apply();
-  return { input: pre, output: post, set(k, v) { p[k] = v; apply(); }, dispose() {} };
+  return { input: pre, output: clip, set(k, v) { p[k] = v; apply(); }, dispose() {} };
+}
+
+function createPeq(ctx, p) {
+  const input = ctx.createGain();
+  const out = ctx.createGain();
+  const filters = PEQ_BANDS.map((b) => { const f = ctx.createBiquadFilter(); f.type = b.type; return f; });
+  let node = input;
+  for (const f of filters) { node.connect(f); node = f; }
+  node.connect(out);
+  // what the EQ window draws: a spectrum of the output
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.8;
+  out.connect(analyser);
+  const apply = () => {
+    filters.forEach((f, i) => {
+      const n = i + 1;
+      f.frequency.value = p[`f${n}`];
+      f.Q.value = p[`q${n}`];
+      if (p[`g${n}`] !== undefined) f.gain.value = p[`g${n}`];
+    });
+    out.gain.value = Math.pow(10, p.out / 20);
+  };
+  apply();
+  return {
+    input, output: out, analyser,
+    /** Summed response (dB) of every band at `freqs` (Float32Array, Hz). */
+    response(freqs, bands = filters.map((_, i) => i)) {
+      const mag = new Float32Array(freqs.length);
+      const phase = new Float32Array(freqs.length);
+      const total = new Float32Array(freqs.length).fill(p.out);
+      for (const i of bands) {
+        filters[i].getFrequencyResponse(freqs, mag, phase);
+        for (let k = 0; k < freqs.length; k++) total[k] += 20 * Math.log10(Math.max(1e-6, mag[k]));
+      }
+      return total;
+    },
+    set(k, v) { p[k] = v; apply(); },
+    dispose() {},
+  };
+}
+
+function createAnalyzer(ctx, p) {
+  const node = ctx.createGain();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.75;
+  node.connect(analyser);
+  return { input: node, output: node, analyser, params: p, set(k, v) { p[k] = v; }, dispose() {} };
+}
+
+/**
+ * Noise gate without a worklet: the level is rectified and smoothed (release), pushed through a steep curve around
+ * the threshold, and that control signal opens the gain.
+ */
+function createGate(ctx, p) {
+  const input = ctx.createGain();
+  const vca = ctx.createGain();
+  vca.gain.value = 0;
+  const rect = ctx.createWaveShaper();
+  const N = 2048;
+  const abs = new Float32Array(N);
+  for (let i = 0; i < N; i++) abs[i] = Math.abs((i / (N - 1)) * 2 - 1);
+  rect.curve = abs;
+  const smooth = ctx.createBiquadFilter();
+  smooth.type = 'lowpass';
+  smooth.Q.value = 0.5;
+  const shape = ctx.createWaveShaper();
+  const floor = ctx.createConstantSource();
+  floor.start();
+  const floorGain = ctx.createGain();
+  floor.connect(floorGain).connect(vca.gain);
+  input.connect(vca);
+  input.connect(rect).connect(smooth).connect(shape).connect(vca.gain);
+  const apply = () => {
+    // the smoothed rectified level averages ~0.64 of the peak for a sine, so open a little below the threshold
+    const thr = Math.pow(10, p.threshold / 20) * 0.64;
+    const floorLin = Math.pow(10, -p.range / 20);
+    const curve = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const x = Math.abs((i / (N - 1)) * 2 - 1);
+      const t = Math.min(1, Math.max(0, (x - thr * 0.7) / (thr * 0.3 + 1e-6))); // 3 dB-ish knee below the threshold
+      curve[i] = (t * t * (3 - 2 * t)) * (1 - floorLin);
+    }
+    shape.curve = curve;
+    floorGain.gain.value = floorLin;
+    smooth.frequency.value = Math.max(1, 1 / (2 * Math.PI * p.release));
+  };
+  apply();
+  return { input, output: vca, set(k, v) { p[k] = v; apply(); }, dispose() { floor.stop(); } };
+}
+
+/** Three bands split by Linkwitz-Riley crossovers, each through its own compressor, then summed. */
+function createMultiband(ctx, p) {
+  const m = mixer(ctx);
+  const lr = (type) => { const a = ctx.createBiquadFilter(); const b = ctx.createBiquadFilter(); a.type = b.type = type; a.Q.value = b.Q.value = Math.SQRT1_2; a.connect(b); return [a, b]; };
+  const [lowA, lowB] = lr('lowpass');
+  const [midHpA, midHpB] = lr('highpass');
+  const [midLpA, midLpB] = lr('lowpass');
+  const [highA, highB] = lr('highpass');
+  const comps = [0, 1, 2].map(() => { const c = ctx.createDynamicsCompressor(); c.knee.value = 6; return c; });
+  const gains = [0, 1, 2].map(() => ctx.createGain());
+  m.input.connect(lowA); lowB.connect(comps[0]);
+  m.input.connect(midHpA); midHpB.connect(midLpA); midLpB.connect(comps[1]);
+  m.input.connect(highA); highB.connect(comps[2]);
+  comps.forEach((c, i) => c.connect(gains[i]).connect(m.wet));
+  m.wet.connect(m.output);
+  const apply = () => {
+    lowA.frequency.value = lowB.frequency.value = midHpA.frequency.value = midHpB.frequency.value = p.lowX;
+    midLpA.frequency.value = midLpB.frequency.value = highA.frequency.value = highB.frequency.value = Math.max(p.highX, p.lowX * 1.5);
+    for (const c of comps) {
+      c.threshold.value = p.threshold;
+      c.ratio.value = p.ratio;
+      c.attack.value = p.attack;
+      c.release.value = p.release;
+    }
+    // no automatic makeup: below the threshold the bands sum back to the input; the band gains are the makeup
+    const auto = compressorMakeupDb(p.threshold, 6, p.ratio);
+    [p.low, p.mid, p.high].forEach((db, i) => { gains[i].gain.value = Math.pow(10, (db - auto) / 20); });
+    m.setMix(p.mix);
+  };
+  apply();
+  return { input: m.input, output: m.output, set(k, v) { p[k] = v; apply(); }, dispose() {} };
 }
 
 export function createEffect(ctx, type, params) {

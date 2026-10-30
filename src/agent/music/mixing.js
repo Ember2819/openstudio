@@ -4,7 +4,13 @@
 // instead of piling up, and never touches effects the user added.
 import { MIX_ROLES } from './styles.js';
 import { roleOf } from './roles.js';
-import { defaultEffectParams } from '../../audio/effects.js';
+import { defaultEffectParams, compressorMakeupDb } from '../../audio/effects.js';
+
+/**
+ * The role plans were tuned when the compressor still added Web Audio's automatic makeup on top of its own; the
+ * effect now removes that, so the plans state it explicitly to keep the same levels.
+ */
+const comp = (c) => ({ ...c, gain: Math.round((c.gain + compressorMakeupDb(c.threshold, 6, c.ratio)) * 10) / 10 });
 
 /** How wet each style likes its mix: reverb amount, hall size (s) and delay amount. */
 const SPACE = {
@@ -82,7 +88,7 @@ export function applyMixPlan(app, { style, bpm }) {
     m.vol = plan.vol;
     m.pan = Math.round((n % 2 === 0 ? 1 : -1) * plan.pan * 100) / 100;
     if (plan.hp > 0) addAuto(m, 'filter', { mode: 'highpass', cutoff: plan.hp, res: 0.7 });
-    if (plan.comp) addAuto(m, 'compressor', plan.comp);
+    if (plan.comp) addAuto(m, 'compressor', comp(plan.comp));
     if (plan.width) addAuto(m, 'stereo', { width: plan.width });
     if (role === 'pad') addAuto(m, 'chorus', { rate: 0.4, depth: 0.45, mix: 0.28 });
     m.sends = Object.fromEntries(Object.entries(m.sends ?? {}).filter(([to]) => Number(to) !== rev && Number(to) !== del));
@@ -95,7 +101,7 @@ export function applyMixPlan(app, { style, bpm }) {
   // gentle bus compression and a safety limiter on the master
   const master = proj.mixer[0];
   clearAuto(master);
-  addAuto(master, 'compressor', { threshold: -14, ratio: 2, attack: 0.03, release: 0.25, gain: 1.5 });
+  addAuto(master, 'compressor', comp({ threshold: -14, ratio: 2, attack: 0.03, release: 0.25, gain: 1.5 }));
   addAuto(master, 'limiter', { ceiling: -1, release: 0.08, gain: 0 });
 
   for (const t of touched) engine.syncFx?.(t);
