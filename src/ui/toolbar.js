@@ -1,6 +1,6 @@
 import { h } from '../util.js';
 import { icon } from './icons.js';
-import { createKnob, hint } from './knob.js';
+import { createKnob, hint, showAutomationMenu } from './knob.js';
 import { showMenuBelow, closeMenus } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
@@ -127,7 +127,8 @@ export function createToolbar(app) {
 
   // tempo
   const tempoVal = h('span', { class: 'tempo-val' }, '130.000');
-  const tempoBox = h('div', { class: 'tempo-box', 'data-hint': 'Tempo — drag, scroll or double-click to type (BPM)' }, tempoVal);
+  const tempoBox = h('div', { class: 'tempo-box', 'data-hint': 'Tempo — drag, scroll or double-click to type (BPM); right-click to automate it' }, tempoVal);
+  tempoBox.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'tempo' }));
   let tdrag = null;
   tempoBox.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -313,6 +314,7 @@ export function createToolbar(app) {
   refreshProject();
 
   let lastMem = 0;
+  let tempoAuto = false;
   const level = [0, 0];
   function drawMasterMeter() {
     const c = meterCtx;
@@ -344,6 +346,16 @@ export function createToolbar(app) {
       timeBig.textContent = `${t.bar}:${String(t.beat).padStart(2, '0')}`;
       timeSmall.textContent = `:${String(t.tick).padStart(2, '0')}`;
     }
+    // with tempo automation the display follows the song's tempo while it plays
+    if (transport.playing && transport.tempo.varies) {
+      const bpm = transport.currentBpm().toFixed(3);
+      if (tempoVal.textContent !== bpm) tempoVal.textContent = bpm;
+      tempoAuto = true;
+    } else if (tempoAuto) {
+      tempoAuto = false;
+      tempoVal.textContent = store.project.bpm.toFixed(3);
+    }
+    tempoBox.classList.toggle('automated', tempoAuto);
     const voices = app.engine.voiceCount;
     polyEl.textContent = `${voices} voice${voices === 1 ? '' : 's'}`;
     drawMasterMeter();

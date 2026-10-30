@@ -17,6 +17,7 @@ const TARGET_FORMATS = [
   { kind: 'channel', fields: '{ kind: "channel", id, param: "vol" | "pan" }', note: 'Channel volume (0-1) / pan.' },
   { kind: 'fx', fields: '{ kind: "fx", track, slot, key }', note: 'A parameter of the effect in a mixer slot; see list_catalog kind "effects" for keys and ranges.' },
   { kind: 'chparam', fields: '{ kind: "chparam", id, key }', note: 'A numeric instrument parameter of a channel; see list_catalog kind "channel_params".' },
+  { kind: 'tempo', fields: '{ kind: "tempo" }', note: 'Song tempo, 40-240 BPM. After a tempo clip ends the song stays at its last tempo; before the first one it plays at the project tempo.' },
 ];
 
 export const tools = [

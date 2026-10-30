@@ -43,6 +43,7 @@ export function blankProject() {
 export class Store extends Emitter {
   constructor() {
     super();
+    this.rev = 0; // bumped on every event: lets caches (the tempo map) know the project may have changed
     this.project = blankProject();
     this.samples = new Map(); // sampleId -> { name, data: ArrayBuffer, buffer: AudioBuffer|null }
     this.undoStack = [];
@@ -53,6 +54,11 @@ export class Store extends Emitter {
   }
 
   uid() { return this.project.nextId++; }
+
+  emit(evt, data) {
+    this.rev++;
+    super.emit(evt, data);
+  }
 
   // ---------- project lifecycle ----------
   resetToDefault() {

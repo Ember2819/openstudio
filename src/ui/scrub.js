@@ -78,7 +78,7 @@ export function createScrub(app) {
     const raw = transport.position();
     const pos = transport.mode === 'pattern' && transport.playing && len > 0 ? raw % len : raw; // the pattern loops; one length lookup per frame
     const frac = drag ? drag.frac : len > 0 ? clamp(pos / len, 0, 1) : 0;
-    const sec = (frac * len) * transport.stepDur;
+    const sec = transport.secondsAt(frac * len);
 
     if (frac !== shown.frac) {
       shown.frac = frac;
@@ -92,13 +92,13 @@ export function createScrub(app) {
       elapsed.textContent = clock(sec);
       root.setAttribute('aria-valuenow', Math.round(pos));
       root.setAttribute('aria-valuemax', len);
-      root.setAttribute('aria-valuetext', `${clock(sec)} of ${clock(len * transport.stepDur)}`);
+      root.setAttribute('aria-valuetext', `${clock(sec)} of ${clock(transport.secondsAt(len))}`);
     }
     const bars = len / 16;
     if (len !== shown.len || bars !== shown.bars) {
       shown.len = len;
       shown.bars = bars;
-      total.textContent = clock(len * transport.stepDur);
+      total.textContent = clock(transport.secondsAt(len));
       // bar lines are a repeating gradient; with hundreds of bars they'd be noise
       const lines = bars > 0 && bars <= 96;
       track.style.setProperty('--bars', lines ? bars : 1);

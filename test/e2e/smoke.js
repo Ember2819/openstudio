@@ -144,6 +144,27 @@
     ok('…but reaches the master through a send', l3 > l * 0.5);
   }
 
+  // tempo automation: a render follows the tempo curve
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'song';
+    const pat = s.currentPattern;
+    pat.notes[s.project.channels[0].id] = [{ p: 60, s: 0, l: 1, v: 0.8 }];
+    s.addClip({ type: 'pattern', pat: pat.id, track: 0, start: 0, len: 32 });
+    const target = { kind: 'tempo' };
+    const { valueToNorm } = await import('./src/automation.js');
+    const auto = s.addAutomation({ name: 'Tempo', target, value: valueToNorm(s, target, 240), len: 32 });
+    s.addClip({ type: 'auto', autoId: auto.id, track: 1, start: 0, len: 32 });
+    s.emit('playlist');
+    const out = await renderSteps(s, 32, { tail: 0 });
+    ok('a render at an automated 240 BPM lasts half as long', Math.abs(out.duration - 2) < 0.02);
+    t.play();
+    await wait(300);
+    ok('the transport plays at the automated tempo', Math.abs(t.currentBpm() - 240) < 0.01);
+    t.stop();
+  }
+
   // FL Studio project import through the real action
   {
     const { parseFlp } = await import('./src/flp.js');

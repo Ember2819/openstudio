@@ -2,12 +2,17 @@ import { faderToGain, channelGain, clamp } from './util.js';
 import { EFFECT_DEFS } from './audio/effects.js';
 import { PARAM_META } from './audio/instruments.js';
 
+// the tempo automation range (kept here rather than imported from tempo.js, which imports this module)
+const TEMPO_MIN = 40;
+const TEMPO_MAX = 240;
+
 /**
  * Automation targets are small JSON descriptors so they can be saved with the project:
  *   { kind: 'mixer', track, param: 'vol' | 'pan' }
  *   { kind: 'fx', track, slot, key }
  *   { kind: 'channel', id, param: 'vol' | 'pan' }
  *   { kind: 'chparam', id, key }
+ *   { kind: 'tempo' }  — read by the scheduler through the tempo map (src/tempo.js), not applied here
  * Values are stored normalised (0..1) in automation clips and mapped to the real range here.
  */
 
@@ -27,6 +32,8 @@ function range(store, t) {
       const meta = ch && PARAM_META[ch.type]?.find((p) => p.key === t.key);
       return meta && meta.min != null ? { min: meta.min, max: meta.max, log: meta.log } : null;
     }
+    case 'tempo':
+      return { min: TEMPO_MIN, max: TEMPO_MAX };
     default:
       return null;
   }
@@ -39,6 +46,7 @@ export function targetValid(store, t) {
     case 'channel': return !!store.channel(t.id);
     case 'fx':
     case 'chparam': return !!range(store, t);
+    case 'tempo': return true;
     default: return false;
   }
 }
@@ -62,6 +70,7 @@ export function readTarget(store, t) {
     case 'channel': return store.channel(t.id)?.[t.param] ?? 0;
     case 'fx': return store.project.mixer[t.track].fx[t.slot]?.params[t.key] ?? 0;
     case 'chparam': return store.channel(t.id)?.params[t.key] ?? 0;
+    case 'tempo': return store.project.bpm;
     default: return 0;
   }
 }
@@ -80,6 +89,7 @@ export function describeTarget(store, t) {
       const meta = ch && PARAM_META[ch.type]?.find((p) => p.key === t.key);
       return `${ch?.name ?? 'Channel'} — ${meta?.label ?? t.key}`;
     }
+    case 'tempo': return 'Tempo';
     default: return 'Automation';
   }
 }
@@ -101,6 +111,7 @@ export function formatTarget(store, t, v) {
       const meta = ch && PARAM_META[ch.type]?.find((p) => p.key === t.key);
       return meta?.fmt ? meta.fmt(v) : v.toFixed(2);
     }
+    case 'tempo': return `${v.toFixed(2)} BPM`;
     default: return v.toFixed(2);
   }
 }

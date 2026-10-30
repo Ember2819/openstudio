@@ -14,6 +14,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   audio clips whose file is missing are played by the stand-in. A report lists what was substituted. Agents can do the
   same with `open_project`.
 - Notes can carry their own **pan** and **fine pitch** (cents).
+- **Tempo automation**: right-click the tempo display → Create automation clip (or an agent's `create_automation` with
+  target `{ kind: "tempo" }`). Playback, export, the song clock and the position slider all follow the tempo curve, and
+  the tempo display shows the current tempo while the song plays. After a tempo clip ends the song keeps its last tempo.
 - Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
 
 ## [0.4.0]

@@ -1,6 +1,6 @@
 import { Engine } from './engine.js';
 import { scheduleStep } from './transport.js';
-import { STEPS_PER_BEAT } from '../state.js';
+import { TempoMap } from '../tempo.js';
 
 /**
  * Render `steps` steps of the project offline and resolve to an AudioBuffer.
@@ -12,8 +12,10 @@ import { STEPS_PER_BEAT } from '../state.js';
  * Progress is reported each time the render pauses to schedule more steps (OfflineAudioContext has no progress events).
  */
 export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, from = 0, configure, onProgress, signal } = {}) {
-  const stepDur = 60 / store.project.bpm / STEPS_PER_BEAT;
-  const seconds = (steps - from) * stepDur + tail;
+  const tempo = new TempoMap(store); // follows tempo automation
+  const t0 = tempo.timeAt(from);
+  const at = (step) => tempo.timeAt(step) - t0; // seconds into the render
+  const seconds = at(steps) + tail;
   const ctx = new OfflineAudioContext(2, Math.ceil(seconds * sampleRate), sampleRate);
   const engine = new Engine(store, ctx);
   configure?.(engine);
@@ -27,17 +29,18 @@ export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, 
   let next = from;
   const lengths = new Map(); // the project cannot change mid-render, so pattern lengths are computed once
   const scheduleUpTo = (end) => {
-    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, (next - from) * stepDur, stepDur, { first: next === from, lengths });
+    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, at(next), tempo.stepDur(next), { first: next === from, lengths });
   };
   scheduleUpTo(from + AHEAD);
   for (let s = 1; s * AHEAD < steps - from; s++) {
-    const at = s * AHEAD; // steps into the render
+    const step = from + s * AHEAD;
+    const when = at(step);
     // suspend times are quantised to 128-frame blocks; suspend a little early so nothing is scheduled in the past
-    ctx.suspend(Math.max(0, at * stepDur - 0.01)).then(() => {
+    ctx.suspend(Math.max(0, when - 0.01)).then(() => {
       // an aborted render is simply left suspended
       if (signal?.aborted) return;
-      scheduleUpTo(from + at + AHEAD);
-      onProgress?.(Math.min(0.99, (at * stepDur) / seconds));
+      scheduleUpTo(step + AHEAD);
+      onProgress?.(Math.min(0.99, when / seconds));
       ctx.resume();
     });
   }

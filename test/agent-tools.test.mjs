@@ -280,6 +280,13 @@ test('automation: create with real values, read back, update, remove', async () 
   assert.match(await callFails(app, 'create_automation', { target: { kind: 'fx', track: 9, slot: 3, key: 'mix' } }), /does not exist/);
   assert.match(await callFails(app, 'create_automation', { target: { kind: 'mixer', track: 1 } }), /need track, param/);
 
+  const tempo = await call(app, 'create_automation', { target: { kind: 'tempo' }, start: 0, points: [{ step: 0, value: 100 }, { step: 16, value: 160 }] });
+  assert.equal(tempo.name, 'Tempo');
+  assert.equal(tempo.points[1].value, 160);
+  app.store.project.mode = 'song';
+  assert.equal(Math.round(app.transport.tempo.bpm(8)), 130);
+  await call(app, 'remove_automation', { id: tempo.id });
+
   await call(app, 'remove_automation', { id: au.id });
   assert.equal(app.store.project.automations.length, 1);
   assert.equal(app.store.project.playlist.clips.filter((c) => c.type === 'auto').length, 1);
@@ -350,7 +357,7 @@ test('catalog lookups', async () => {
   assert.ok(fx.effects.find((e) => e.type === 'reverb').params.some((p) => p.key === 'mix'));
   assert.ok((await call(app, 'list_catalog', { kind: 'channel_params' })).synth.some((p) => p.key === 'cutoff' && p.logarithmic));
   assert.ok((await call(app, 'list_catalog', { kind: 'drum_voices' })).voices.length >= 8);
-  assert.ok((await call(app, 'list_catalog', { kind: 'automation_targets' })).formats.length === 4);
+  assert.ok((await call(app, 'list_catalog', { kind: 'automation_targets' })).formats.length === 5);
 });
 
 test('ui tools: selection and windows', async () => {

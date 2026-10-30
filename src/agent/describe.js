@@ -64,7 +64,7 @@ export function transportInfo(app) {
   const bst = t.formatBst(pos);
   return {
     playing: t.playing, positionSteps: round(pos), position: `${bst.bar}:${bst.beat}:${String(bst.tick).padStart(2, '0')}`,
-    seconds: round(pos * t.stepDur, 2), mode: t.mode, loopEnabled: t.loopEnabled, metronome: t.metronome,
+    seconds: round(t.secondsAt(pos), 2), mode: t.mode, loopEnabled: t.loopEnabled, metronome: t.metronome,
   };
 }
 

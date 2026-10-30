@@ -48,6 +48,7 @@
 }
 .tempo-box:hover { border-color: var(--border-hover); }
 .tempo-val { font: 600 15px/1 var(--font-mono); color: var(--text-bright); letter-spacing: .02em; }
+.tempo-box.automated .tempo-val { color: var(--accent); }
 
 .time-box {
   width: 124px; height: 34px; padding: 0 9px; cursor: pointer; box-sizing: border-box;

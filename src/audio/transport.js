@@ -1,6 +1,7 @@
 import { Emitter } from '../util.js';
 import { STEPS_PER_BEAT, STEPS_PER_BAR } from '../state.js';
 import { applyTarget, curveAt, normToValue, targetValid } from '../automation.js';
+import { TempoMap } from '../tempo.js';
 
 const LOOKAHEAD = 0.12; // seconds scheduled ahead
 const TICK_MS = 25;
@@ -62,7 +63,7 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1);
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
-      if (!auto || !targetValid(store, auto.target)) continue;
+      if (!auto || auto.target?.kind === 'tempo' || !targetValid(store, auto.target)) continue; // tempo: see tempo.js
       const local = step - clip.start + (clip.offset || 0);
       const v0 = normToValue(store, auto.target, curveAt(auto.points, local));
       const v1 = normToValue(store, auto.target, curveAt(auto.points, local + 1));
@@ -91,13 +92,18 @@ export class Transport extends Emitter {
     this.timer = null;
     this.queue = []; // {time, step} history for UI position
     this.openRecordNotes = new Map();
+    this.tempo = new TempoMap(store);
     // a new or loaded project stops playback; undo / redo keeps it going (the scheduler reads the project afresh on every step)
     store.on('project', (e) => { if (this.playing && !e?.history) this.stop(); });
   }
 
   get ctx() { return this.engine.ctx; }
   get bpm() { return this.store.project.bpm; }
+  /** Length of a step at the project tempo (seconds). With tempo automation use `tempo.stepDur(step)`. */
   get stepDur() { return 60 / this.bpm / STEPS_PER_BEAT; }
+
+  /** The tempo at the play position: follows tempo automation while the song plays. */
+  currentBpm() { return this.tempo.bpm(this.position()); }
   get mode() { return this.store.project.mode; }
 
   setMode(mode) {
@@ -200,8 +206,8 @@ export class Transport extends Emitter {
     while (i > 0 && q[i].time > now) i--;
     if (i < 0 || q.length === 0) return this.resumeStep;
     const e = q[i];
-    if (e.time > now) return Math.max(0, e.step - (e.time - now) / this.stepDur);
-    return e.step + (now - e.time) / this.stepDur;
+    if (e.time > now) return Math.max(0, e.step - (e.time - now) / e.dur);
+    return e.step + (now - e.time) / e.dur;
   }
 
   /** Position within the current pattern (pattern mode wraps). */
@@ -227,18 +233,19 @@ export class Transport extends Emitter {
           if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
         }
       }
-      this._scheduleStep(this.nextStep, this.nextTime);
+      const dur = this.tempo.stepDur(this.nextStep);
+      this._scheduleStep(this.nextStep, this.nextTime, dur);
       this.jumped = false;
-      this.queue.push({ time: this.nextTime, step: this.nextStep });
-      this.nextTime += this.stepDur;
+      this.queue.push({ time: this.nextTime, step: this.nextStep, dur });
+      this.nextTime += dur;
       this.nextStep++;
     }
     const cutoff = this.ctx.currentTime - 1;
     while (this.queue.length > 2 && this.queue[1].time < cutoff) this.queue.shift();
   }
 
-  _scheduleStep(step, time) {
-    scheduleStep(this.store, this.engine, step, time, this.stepDur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
+  _scheduleStep(step, time, dur) {
+    scheduleStep(this.store, this.engine, step, time, dur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
   }
 
   // -------------------------------------------------------------- recording
@@ -285,8 +292,11 @@ export class Transport extends Emitter {
   }
 
   // ---------------------------------------------------------------- format
+  /** Seconds from the song start to `step` (follows tempo automation). */
+  secondsAt(step) { return this.mode === 'song' ? this.tempo.timeAt(step) : step * this.stepDur; }
+
   formatTime(step) {
-    const sec = (step * this.stepDur);
+    const sec = this.secondsAt(step);
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     const cs = Math.floor((sec * 100) % 100);

@@ -70,19 +70,20 @@ export const tools = [
         if (pat) proj.selected.pattern = pat.id;
         steps = scope === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
         if (steps <= 0) fail('Nothing to render — the playlist has no clips (add clips, or use scope "pattern")');
-        const seconds = steps * transport.stepDur + (a.tail ?? 2);
+        const seconds = transport.secondsAt(steps) + (a.tail ?? 2);
         if (seconds > MAX_SECONDS) fail(`That would be ${Math.round(seconds)} s of audio; the limit is ${MAX_SECONDS} s`);
         if (only) proj.channels.forEach((c) => { c.solo = c.id === only.id; });
         const sampleRate = a.sampleRate ?? 44100;
         const rendered = await renderSteps(store, steps, { tail: a.tail ?? 2, sampleRate });
         const stepDur = 60 / proj.bpm / 4;
+        const at = (step) => (scope === 'song' ? transport.tempo.timeAt(step) : step * stepDur);
         const result = {
           scope, channel: only?.id ?? null, steps, bars: steps / STEPS_PER_BAR, bpm: proj.bpm, sampleRate,
           bandsHz: Object.fromEntries(BANDS.map(([name, lo, hi]) => [name, `${lo}-${hi}`])),
           ...analyze(rendered.getChannelData(0), rendered.getChannelData(1), sampleRate, {
             windowSeconds: STEPS_PER_BAR * stepDur,
-            from: (a.fromStep ?? 0) * stepDur,
-            to: a.toStep === undefined ? undefined : a.toStep * stepDur,
+            from: at(a.fromStep ?? 0),
+            to: a.toStep === undefined ? undefined : at(a.toStep),
           }),
         };
         if (a.path) result.path = await app.files.write(a.path, encodeWav(rendered));
