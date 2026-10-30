@@ -34,6 +34,24 @@ function hatVoice(ctx, dest, t, v, k, p, decay, level = 0.42) {
   return finish(nodes, g, t + decay + 0.06);
 }
 
+/**
+ * Cymbal metal: six detuned square waves at inharmonic ratios (the 808's recipe). Summed, their odd harmonics
+ * fill the top octaves with a dense, clangy spectrum that a filter then places, which plain noise cannot do.
+ */
+const METAL = [205.3, 304.4, 369.6, 522.7, 540, 800];
+function metal(ctx, t, stop, mult) {
+  const bus = ctx.createGain();
+  bus.gain.value = 0.2;
+  const nodes = METAL.map((f) => {
+    const o = osc(ctx, 'square', f * mult);
+    o.connect(bus);
+    o.start(t);
+    o.stop(stop);
+    return o;
+  });
+  return { bus, nodes };
+}
+
 /** A sine "body" with a pitch drop, through its own envelope. */
 function body(ctx, dest, t, from, to, drop, decay, peak) {
   const o = osc(ctx, 'sine', from);
@@ -141,30 +159,39 @@ export const DRUMS = {
     bp.connect(g).connect(dest);
     return finish(nodes, g, t + 0.35 * p.decay + 0.05);
   },
+  /** Crash: a bright splash of metal and noise that blooms and then washes out over a couple of seconds. */
   crash(ctx, dest, t, v, k, p) {
-    const nz = burst(ctx, dest, t, v * 0.5, 1.3 * p.decay, [filt(ctx, 'highpass', 5200 * k)], 0.002);
-    return finish([nz.n], nz.g, t + 1.4 * p.decay + 0.05);
+    const d = p.decay;
+    const end = t + 2.4 * d + 0.06;
+    const m = metal(ctx, t, end, 2.8 * k);
+    const g = ctx.createGain();
+    env(g, t, v * 0.55, 2.3 * d, 0.003);
+    m.bus.connect(filt(ctx, 'highpass', 3600 * k)).connect(filt(ctx, 'lowpass', 9000 + p.tone * 7000)).connect(g).connect(dest);
+    const wash = burst(ctx, dest, t, v * 0.32, 1.9 * d, [filt(ctx, 'highpass', 4500 * k), filt(ctx, 'lowpass', 8000 + p.tone * 8000)], 0.004);
+    const splash = burst(ctx, dest, t, v * 0.28, 0.12 * d, [filt(ctx, 'bandpass', 3800 * k, 0.8)]);
+    return finish([...m.nodes, wash.n, splash.n], g, end);
   },
+  /** Ride: a defined stick "ping" on a quieter, sustaining shimmer of metal. */
   ride(ctx, dest, t, v, k, p) {
     const d = p.decay;
-    // washy metal: inharmonic square partials through a bandpass, plus a short "ping" on top
-    const bp = filt(ctx, 'bandpass', 5800 * k, 0.5);
+    const end = t + 1.8 * d + 0.06;
+    const m = metal(ctx, t, end, 3.4 * k);
     const g = ctx.createGain();
-    env(g, t, v * 0.35, 1.2 * d, 0.002);
-    const wash = [317, 392, 554, 831, 1244].map((f) => {
-      const o = osc(ctx, 'square', f * 4.6 * k);
-      o.connect(bp);
-      o.start(t);
-      o.stop(t + 1.3 * d + 0.06);
+    env(g, t, v * 0.32, 1.7 * d, 0.002);
+    m.bus.connect(filt(ctx, 'bandpass', 7200 * k, 0.7)).connect(filt(ctx, 'highpass', 3000 * k)).connect(g).connect(dest);
+    const ping = ctx.createGain();
+    env(ping, t, v * 0.16, 0.35 * d);
+    const pings = [[3150, 1], [4520, 0.6], [5870, 0.4]].map(([f, a]) => {
+      const o = osc(ctx, 'sine', f * k);
+      const og = ctx.createGain();
+      og.gain.value = a;
+      o.connect(og).connect(ping);
+      o.start(t); o.stop(t + 0.45 * d + 0.05);
       return o;
     });
-    bp.connect(g).connect(dest);
-    const ping = osc(ctx, 'sine', 1050 * k);
-    const pg = ctx.createGain();
-    env(pg, t, v * 0.3, 0.4 * d);
-    ping.connect(pg).connect(dest);
-    ping.start(t); ping.stop(t + 0.5 * d + 0.05);
-    return finish([...wash, ping], g, t + 1.3 * d + 0.06);
+    ping.connect(dest);
+    const tick = burst(ctx, dest, t, v * 0.18, 0.015, [filt(ctx, 'highpass', 5000)]);
+    return finish([...m.nodes, ...pings, tick.n], g, end);
   },
   shaker(ctx, dest, t, v, k, p) {
     const d = p.decay;
@@ -172,16 +199,22 @@ export const DRUMS = {
     const nz = burst(ctx, dest, t, v * 0.5, 0.09 * d, [filt(ctx, 'bandpass', 5200 * k, 1.6), filt(ctx, 'highpass', 3000 + p.tone * 3000)], 0.02);
     return finish([nz.n], nz.g, t + 0.14 * d + 0.05);
   },
+  /** Tambourine: the jingles ring as metal, re-struck a few times in quick succession as they rattle together. */
   tambourine(ctx, dest, t, v, k, p) {
     const d = p.decay;
-    const n = noise(ctx);
+    const end = t + 0.32 * d + 0.05;
+    const m = metal(ctx, t, end, 9.5 * k);
     const g = ctx.createGain();
-    env(g, t, v * 0.5, 0.22 * d, 0.002);
-    for (const [freq, q] of [[8200, 1.2], [11400, 2]]) n.connect(filt(ctx, 'bandpass', freq * k, q)).connect(g);
-    g.connect(dest);
-    const end = t + 0.3 * d + 0.05;
-    n.start(t); n.stop(end);
-    return finish([n], g, end);
+    g.gain.setValueAtTime(0.0001, t);
+    [[0, 1], [0.011, 0.75], [0.024, 0.6], [0.04, 0.45]].forEach(([off, a], i, hits) => {
+      const at = t + off;
+      g.gain.setValueAtTime(Math.max(v * 0.5 * a, 0.0002), at);
+      if (i < hits.length - 1) g.gain.exponentialRampToValueAtTime(v * 0.12 * a + 0.0002, t + hits[i + 1][0] - 0.0005);
+    });
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.04 + 0.26 * d);
+    m.bus.connect(filt(ctx, 'bandpass', 9000 * k, 1.1)).connect(filt(ctx, 'highpass', 5500)).connect(g).connect(dest);
+    const shh = burst(ctx, dest, t, v * 0.18, 0.12 * d, [filt(ctx, 'bandpass', 10500 * k, 1.5)], 0.003);
+    return finish([...m.nodes, shh.n], g, end);
   },
   clave(ctx, dest, t, v, k, p) {
     const d = p.decay;

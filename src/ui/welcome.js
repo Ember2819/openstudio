@@ -20,7 +20,7 @@ export function createWelcome(app) {
         kbd(resolveCombo('Mod+T', mod)), ' or in Settings → Windows & keys.'),
       item('Settings', 'Open the gear in the top right (', kbd('Ctrl+,'), ') to change the theme, accent colours and wallpaper, and to configure tiling and its key bindings.'),
       item('Updates', 'Use Help → Check for updates… to see if there is a newer version. OpenStudio can also check quietly on startup (toggle it in the same menu).'),
-      item('AI agents (MCP)', 'OpenStudio runs a local MCP server so AI agents such as Claude Code can edit your project. Help → Agents (MCP server)… shows the address and how to connect.'),
+      item('AI agents (MCP)', 'OpenStudio runs a local MCP server so AI agents (Claude Code, Codex, OpenCode, Antigravity, Pi, …) can edit your project. Help → Agents (MCP server)… shows the address and how to connect.'),
     ], [
       { label: 'Try tiling mode', value: 'tiling' },
       { label: 'Get started', value: 'ok', primary: true },
