@@ -40,6 +40,8 @@ mac:
         - x64
         - arm64
   artifactName: ${productName}-${version}-macos-${arch}.${ext}
+  extendInfo:
+    NSMicrophoneUsageDescription: OpenStudio records audio from your microphone or audio interface when you arm audio recording.
 
 win:
   target:

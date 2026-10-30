@@ -335,8 +335,9 @@ async function startAgents() {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  const allowed = (perm) => perm === 'midi' || perm === 'midiSysex';
-  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(allowed(perm)));
+  // MIDI devices, and audio input for recording (Options → Record → Audio)
+  const allowed = (perm) => perm === 'midi' || perm === 'midiSysex' || perm === 'media' || perm === 'audioCapture';
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) => cb(allowed(perm) && !details?.mediaTypes?.includes('video')));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => allowed(perm));
   await startAgents();
   createWindow();

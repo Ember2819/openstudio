@@ -1,7 +1,7 @@
 import { h } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob, hint, showAutomationMenu } from './knob.js';
-import { showMenuBelow, closeMenus } from './menu.js';
+import { showMenu, showMenuBelow, closeMenus } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
@@ -9,6 +9,13 @@ import { createScrub } from './scrub.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
+  /** What Record captures (FL asks the same when you arm it). */
+  const recordMenu = () => [
+    { label: 'Record on / off', checked: app.transport.recording, action: () => app.transport.setRecording(!app.transport.recording) },
+    { separator: true },
+    { label: 'Notes into the piano roll', checked: app.transport.recordNotes, action: () => app.transport.setRecordNotes(!app.transport.recordNotes) },
+    { label: 'Audio into the playlist', checked: app.transport.recordAudio, action: () => app.transport.setRecordAudio(!app.transport.recordAudio) },
+  ];
   const root = document.getElementById('toolbar');
 
   // ------------------------------------------------------------------ menus
@@ -59,7 +66,16 @@ export function createToolbar(app) {
     ],
     OPTIONS: () => [
       { label: 'Metronome', shortcut: 'Ctrl+M', checked: transport.metronome, action: () => transport.setMetronome(!transport.metronome) },
-      { label: 'Record to piano roll', checked: transport.recording, action: () => transport.setRecording(!transport.recording) },
+      { label: 'Record', submenu: recordMenu },
+      { label: 'Audio input', submenu: () => {
+        const rec = app.recorder;
+        const devs = rec?.known ?? [];
+        rec?.refreshDevices();
+        return [
+          { label: 'Default input', checked: !rec?.deviceId, action: () => rec.setDevice('') },
+          ...devs.filter((d) => d.id && d.id !== 'default').map((d) => ({ label: d.name, checked: rec.deviceId === d.id, action: () => rec.setDevice(d.id) })),
+        ];
+      } },
       { label: 'MIDI input', submenu: () => {
         const devs = app.midi?.devices?.() ?? [];
         return devs.length ? devs.map((d) => ({ label: d.name, checked: d.on, action: () => app.midi.toggle(d.id) })) : [{ label: app.midi?.error || 'No MIDI devices found', disabled: true }];
@@ -120,7 +136,8 @@ export function createToolbar(app) {
   const restartBtn = h('button', { class: 'tbtn big restart', 'data-hint': 'Back to the start (Home)', onClick: () => transport.restart() }, icon('restart'));
   const playBtn = h('button', { class: 'tbtn big play', 'data-hint': 'Play / Pause (Space)', onClick: () => transport.togglePlay() }, icon('play'));
   const stopBtn = h('button', { class: 'tbtn big stop', 'data-hint': 'Stop — back to where playback started', onClick: () => transport.stop() }, icon('stop'));
-  const recBtn = h('button', { class: 'tbtn big rec', 'data-hint': 'Record notes from the keyboard into the piano roll', onClick: () => transport.setRecording(!transport.recording) }, icon('record'));
+  const recBtn = h('button', { class: 'tbtn big rec', 'data-hint': 'Record — notes into the piano roll and / or audio input into the playlist (right-click to choose)', onClick: () => transport.setRecording(!transport.recording) }, icon('record'));
+  recBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); const r = recBtn.getBoundingClientRect(); showMenu(recordMenu(), r.left, r.bottom); });
   const metroBtn = h('button', { class: 'tbtn', 'data-hint': 'Metronome (Ctrl+M)', onClick: () => transport.setMetronome(!transport.metronome) }, icon('metronome'));
 
   const loopBtn = h('button', { class: 'tbtn', 'data-hint': 'Loop the playlist region (Shift+drag on the playlist ruler to set it)', onClick: () => transport.setLoop(!transport.loopEnabled) }, icon('loop'));

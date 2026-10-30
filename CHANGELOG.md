@@ -28,6 +28,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Chop (Alt+U), Flam, Articulate (staccato / short / tenuto), Snap pitches to scale, Limit to range, velocity fade
   in / out. Agents get the same through `transform_notes`.
 - The piano roll's event lane switches between **Velocity, Pan and Fine pitch** (click its label).
+- **Audio recording**: arm Record with Options → Record → "Audio into the playlist" (or right-click the record button),
+  press Play, and the take lands in the playlist as an audio clip where you started, on a free track named "Audio".
+  Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
+  Options → Audio input. Record can capture notes, audio or both.
 - Exported MIDI files include tempo automation as tempo changes.
 - Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
 

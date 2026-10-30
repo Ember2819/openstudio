@@ -3,7 +3,7 @@
 Rough priorities, not promises. Pick something and open an issue before starting large work.
 
 ## Near term
-- Audio recording (input device → audio clip).
+- Audio recording: loop takes, input monitoring through a mixer insert.
 - Per-note cutoff and slide (portamento) notes in the piano roll.
 - Sampler: root key, loop points, slicing; drag-to-load into a channel.
 - Recent files.

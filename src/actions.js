@@ -307,6 +307,27 @@ export function createActions(app) {
       return true;
     },
 
+    /**
+     * Put a recorded take (AudioBuffer) into the playlist at `step` on the first free track. Stored as a 32-bit float
+     * WAV, so nothing is lost. One undo step.
+     */
+    addAudioTake(buffer, step) {
+      const taken = [...store.samples.values()].filter((s) => /^Take \d+/.test(s.name)).length;
+      store.checkpoint();
+      const id = store.addSample(`Take ${taken + 1}.wav`, encodeWav(buffer, { float: true }));
+      store.samples.get(id).buffer = buffer;
+      const tempo = transport.tempo;
+      const start = Math.round(step * 1000) / 1000;
+      const len = Math.max(0.25, Math.round((tempo.stepAt(tempo.timeAt(start) + buffer.duration) - start) * 1000) / 1000);
+      const track = firstFreeTrack(start, len);
+      const t = store.project.playlist.tracks[track];
+      if (/^Track \d+$/.test(t.name)) t.name = 'Audio';
+      const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+      store.emit('playlist');
+      store.emit('sampleReady', id);
+      return clip;
+    },
+
     /** Create an automation clip for a knob/fader and open its editor. */
     createAutomation(target) {
       const norm = valueToNorm(store, target, readTarget(store, target));

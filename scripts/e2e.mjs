@@ -21,7 +21,9 @@ if (!existsSync(join(root, 'assets/soundfonts/GeneralUser-GS.sf2'))) {
 function runScript(name) {
   const script = readFileSync(join(root, 'test/e2e', name), 'utf8');
   const args = ['.', '--no-sandbox', '--disable-gpu', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'openstudio-ud-'))}`,
-    '--no-mcp', `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300'];
+    '--no-mcp', `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300',
+    // a fake microphone (a test tone) for the audio-recording test
+    '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'];
   const headless = !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
   const cmd = headless ? 'xvfb-run' : electron;
   const full = headless ? ['-a', '-s', '-screen 0 1600x900x24', electron, ...args] : args;

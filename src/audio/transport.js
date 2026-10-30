@@ -82,6 +82,9 @@ export class Transport extends Emitter {
     this.engine = engine;
     this.playing = false;
     this.recording = false;
+    // what Record captures: notes from the keyboard / MIDI into the piano roll, audio input into the playlist
+    this.recordNotes = globalThis.localStorage?.getItem('openstudio.recordNotes') !== '0';
+    this.recordAudio = globalThis.localStorage?.getItem('openstudio.recordAudio') === '1';
     this.metronome = false;
     this.loopEnabled = false;
     this.jumped = true;
@@ -124,6 +127,8 @@ export class Transport extends Emitter {
   setMetronome(on) { this.metronome = on; this.emit('change'); }
   setLoop(on) { this.loopEnabled = on; this.emit('change'); }
   setRecording(on) { this.recording = on; this.emit('change'); }
+  setRecordNotes(on) { this.recordNotes = on; globalThis.localStorage?.setItem('openstudio.recordNotes', on ? '1' : '0'); this.emit('change'); }
+  setRecordAudio(on) { this.recordAudio = on; globalThis.localStorage?.setItem('openstudio.recordAudio', on ? '1' : '0'); this.emit('change'); }
 
   // -------------------------------------------------------------- control
   play() {
@@ -266,7 +271,7 @@ export class Transport extends Emitter {
   }
 
   recordNoteOn(ch, pitch, vel) {
-    if (!this.recording || !this.playing) return;
+    if (!this.recording || !this.recordNotes || !this.playing) return;
     const at = this._recordPos();
     if (!at) return;
     const snapped = Math.round(at.pos * 4) / 4;
