@@ -8,6 +8,7 @@ import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
 import { parseFlp, importFlp, flpSamplePaths } from './flp.js';
+import { guessBars, slicesToNotes } from './audio/slicing.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 import { ACTIONS, resolveCombo } from './ui/tiling.js';
 
@@ -326,6 +327,27 @@ export function createActions(app) {
       store.emit('playlist');
       store.emit('sampleReady', id);
       return clip;
+    },
+
+    /**
+     * Write a sliced sampler's slices into the current pattern as notes that play the loop back in time (FL's Slicex
+     * "dump score"). The loop's length in bars is guessed from the sample's duration at the project tempo.
+     */
+    slicesToPattern(chId) {
+      const ch = store.channel(chId);
+      const s = ch && store.samples.get(ch.sampleId);
+      if (!ch?.slices?.length || !s?.buffer) return null;
+      const beatsPerBar = store.barSteps / 4;
+      const bars = guessBars(s.buffer.duration, store.project.bpm, beatsPerBar);
+      const pat = store.currentPattern;
+      store.checkpoint();
+      pat.notes[ch.id] = slicesToNotes(ch.slices, bars * store.barSteps, ch.rootPitch ?? 60);
+      pat.bars = Math.max(pat.bars, bars);
+      store.normalizePattern(pat);
+      store.selectChannel(ch.id);
+      store.emit('notes');
+      store.emit('patterns');
+      return pat;
     },
 
     /** Create an automation clip for a knob/fader and open its editor. */

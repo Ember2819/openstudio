@@ -1,5 +1,6 @@
 import { COLOR, PITCH, bool, choice, int, num, obj, ref, str, arr } from '../schema.js';
-import { channelOf, checkParam, edit, fail, parsePitch, pickByName, round } from '../helpers.js';
+import { channelOf, checkParam, edit, fail, noteName, parsePitch, pickByName, round } from '../helpers.js';
+import { detectOnsets, equalSlices } from '../../audio/slicing.js';
 import { channelInfo } from '../describe.js';
 import { DRUM_KIT, PARAM_META, ENGINE_PRESETS, ENGINES, DRUM_VOICES, defaultParams } from '../../audio/instruments.js';
 import { ROLES } from '../music/styles.js';
@@ -249,6 +250,47 @@ export const tools = [
       const pitches = (a.pitches ?? [60]).map(parsePitch);
       for (const p of pitches) app.engine.preview(ch, p, a.velocity ?? 0.8, a.seconds ?? 0.6);
       return { played: pitches, channel: ch.id };
+    },
+  },
+  {
+    name: 'slice_sample',
+    title: 'Slice sample',
+    description: 'Chop a sampler channel\'s sample into slices played from its root key up, like FL Studio\'s Slicex: "auto" cuts at the hits (sensitivity 0-1), "equal" into `count` parts, "set" uses your own `slices` (fractions 0-1, first 0), "clear" removes them. With toPattern the slices are written into the current pattern as notes that replay the loop in time (it then follows the project tempo).',
+    inputSchema: obj({
+      channel: ref('Sampler channel'),
+      mode: choice(['auto', 'equal', 'set', 'clear'], 'How to slice'),
+      sensitivity: num('auto: 0 (fewer slices) to 1 (more), default 0.5', { minimum: 0, maximum: 1 }),
+      count: int('equal: number of slices', { minimum: 1, maximum: 128 }),
+      slices: arr(num('', { minimum: 0, maximum: 1 }), 'set: slice starts as fractions of the sample'),
+      toPattern: bool('Write the slices into the current pattern'),
+    }, ['channel', 'mode']),
+    annotations: { ...WRITE, destructiveHint: true, title: 'Slice sample' },
+    async run(a, app) {
+      const { store } = app;
+      const ch = channelOf(store, a.channel);
+      if (ch.type !== 'sampler' || ch.sampleId == null) fail('Only sampler channels with a sample can be sliced');
+      let slices = null;
+      if (a.mode === 'auto') {
+        const buf = await app.engine.ensureSample(ch.sampleId);
+        if (!buf?.getChannelData) fail('The sample could not be decoded');
+        slices = detectOnsets(buf.getChannelData(0), buf.sampleRate, { sensitivity: a.sensitivity ?? 0.5 });
+      } else if (a.mode === 'equal') {
+        slices = equalSlices(a.count ?? fail('equal needs count'));
+      } else if (a.mode === 'set') {
+        const list = [...(a.slices ?? fail('set needs slices'))].sort((x, y) => x - y);
+        if (list[0] !== 0) list.unshift(0);
+        if (list.some((x, i) => x >= 1 || (i && x <= list[i - 1]))) fail('slices must be distinct fractions below 1');
+        slices = list;
+      }
+      edit(store, () => {
+        if (slices) ch.slices = slices; else delete ch.slices;
+        store.emit('channelParams', ch.id);
+        store.emit('channels');
+      });
+      if (a.toPattern && slices) {
+        if (!app.actions.slicesToPattern(ch.id)) fail('Could not write the slices into the pattern (is the sample decoded?)');
+      }
+      return { channel: ch.id, slices: (ch.slices ?? []).map((x) => round(x, 4)), keys: ch.slices ? `${noteName(ch.rootPitch ?? 60)} and up` : null };
     },
   },
   {

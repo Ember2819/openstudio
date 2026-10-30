@@ -363,7 +363,7 @@ export class Engine {
     else if (ch.type === 'sfx') v = playSfx(this.ctx, dest, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'sampler') {
       const s = this.store.samples.get(ch.sampleId);
-      if (s?.buffer) v = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params);
+      if (s?.buffer) v = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params, ch.rootPitch ?? ROOT_NOTE, ch.slices);
     } else if (ch.type === 'sf' && sharedSoundfont) {
       const preset = this._preset(ch);
       if (preset) {

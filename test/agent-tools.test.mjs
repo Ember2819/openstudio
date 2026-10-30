@@ -274,6 +274,23 @@ test('playlist: place, move, duplicate, make unique, remove', async () => {
   assert.match(await callFails(app, 'edit_clips', { action: 'remove' }), /either ids or track/);
 });
 
+test('slice_sample slices a sampler channel and writes the slices as notes', async () => {
+  const app = makeApp();
+  const id = app.store.addSample('loop.wav', new ArrayBuffer(8));
+  const ch = app.store._addChannel({ name: 'Loop', type: 'sampler', sampleId: id });
+  app.actions.slicesToPattern = (chId) => { app.calls.push(['slicesToPattern', chId]); return app.store.currentPattern; };
+  let r = await call(app, 'slice_sample', { channel: ch.id, mode: 'equal', count: 4, toPattern: true });
+  assert.deepEqual(r.slices, [0, 0.25, 0.5, 0.75]);
+  assert.ok(app.calls.some((c) => c[0] === 'slicesToPattern' && c[1] === ch.id));
+  r = await call(app, 'slice_sample', { channel: ch.id, mode: 'set', slices: [0.5, 0.25] });
+  assert.deepEqual(r.slices, [0, 0.25, 0.5]);
+  await call(app, 'slice_sample', { channel: ch.id, mode: 'clear' });
+  assert.equal(ch.slices, undefined);
+  app.store.undo();
+  assert.deepEqual(ch.slices ?? app.store.channel(ch.id).slices, [0, 0.25, 0.5]);
+  assert.match(await callFails(app, 'slice_sample', { channel: app.store.project.channels[0].id, mode: 'equal', count: 2 }), /Only sampler/);
+});
+
 test('audio clips take their length from the sample', async () => {
   const app = makeApp();
   const id = app.store.addSample('loop.wav', new ArrayBuffer(8));

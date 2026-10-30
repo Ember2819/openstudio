@@ -209,8 +209,8 @@
 .cs-toggle { margin-top: 8px; min-width: 60px; }
 .cs-foot { padding: 6px 16px 16px; }
 .cs-sampler { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 0; }
-.cs-wave { width: 100%; height: 70px; border: 1px solid var(--line); border-radius: 4px; }
-.cs-sampler .btn { align-self: flex-start; }
+.cs-wave { width: 100%; height: 90px; border: 1px solid var(--line); border-radius: 4px; }
+.cs-sampler-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* ===================================================== Automation editor */
 .ae-wrap { flex: 1; min-height: 0; position: relative; background: var(--grid-bg); }

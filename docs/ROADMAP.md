@@ -5,7 +5,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 ## Near term
 - Audio recording: loop takes, input monitoring through a mixer insert.
 - Per-note cutoff and slide (portamento) notes in the piano roll.
-- Sampler: root key, loop points, slicing; drag-to-load into a channel.
+- Sampler: drag-to-load into a channel; multi-sample zones.
 - Recent files.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 

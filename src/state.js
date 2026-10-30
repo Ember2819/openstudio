@@ -164,6 +164,8 @@ export class Store extends Emitter {
       ch.color ||= COLORS[(ch.id * 5) % COLORS.length];
       ch.rootPitch ??= ROOT_NOTE;
       if (!(ch.mixer >= 0 && ch.mixer < MIXER_TRACKS)) ch.mixer = 0;
+      // sampler slices: sorted fractions starting at 0
+      if (ch.slices !== undefined && !(Array.isArray(ch.slices) && ch.slices.length && ch.slices.every((x, i) => Number.isFinite(x) && x >= 0 && x < 1 && (i === 0 || x > ch.slices[i - 1])))) delete ch.slices;
     }
     if (!p.patterns.length) this._addPattern();
     if (!this.pattern(p.selected.pattern)) p.selected.pattern = p.patterns[0].id;

@@ -1,4 +1,5 @@
-import { h } from '../util.js';
+import { h, noteName, rgba } from '../util.js';
+import { detectOnsets, equalSlices } from '../audio/slicing.js';
 import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu } from './menu.js';
@@ -82,7 +83,7 @@ export function createSettings(app) {
     if (!wm.tiling) {
       const rows = Math.ceil(PARAM_META[ch.type].length / 6);
       const room = (document.getElementById('desktop')?.clientHeight ?? 700) - 24;
-      const want = Math.min(room, 170 + rows * 90);
+      const want = Math.min(room, 170 + rows * 90 + (ch.type === 'sampler' ? 150 : 0));
       if (win.h < want) win.setRect(win.x, Math.max(0, Math.min(win.y, room - want)), win.w, want);
     }
 
@@ -149,7 +150,7 @@ export function createSettings(app) {
 
   function samplerPanel(ch) {
     const s = store.samples.get(ch.sampleId);
-    const canvas = h('canvas', { class: 'cs-wave' });
+    const canvas = h('canvas', { class: 'cs-wave', 'data-hint': 'Drag the start / end (and loop) markers. With slices: click a slice to hear it, drag a line to move it, double-click to add one, right-click a line to remove it.' });
     const load = h('button', { class: 'btn' }, icon('open'), s ? s.name : 'Load sample…');
     load.addEventListener('click', async () => {
       const files = await window.studioAPI.openSamples();
@@ -157,17 +158,116 @@ export function createSettings(app) {
       store.checkpoint();
       ch.sampleId = store.addSample(files[0].name, files[0].data);
       ch.name = files[0].name.replace(/\.[^.]+$/, '');
+      delete ch.slices;
       store.emit('channels');
       render();
     });
-    const wrap = h('div', { class: 'cs-sampler' }, canvas, load);
+    const root = h('button', { class: 'dd', 'data-hint': 'Root note: the key that plays the sample at its own pitch (with slices: the key of the first slice)' }, h('span', {}, `Root ${noteName(ch.rootPitch ?? 60)}`), h('span', { class: 'caret' }, '▼'));
+    root.addEventListener('click', () => {
+      const r = root.getBoundingClientRect();
+      showMenu([3, 4, 5, 6].map((oct) => ({ label: `Octave ${oct}`, submenu: Array.from({ length: 12 }, (_, k) => oct * 12 + k).map((p) => ({ label: noteName(p), checked: ch.rootPitch === p, action: () => { store.checkpoint(); ch.rootPitch = p; touch(); store.emit('channels'); render(); } })) })), r.left, r.bottom);
+    });
+    const sliceBtn = h('button', { class: 'dd', 'data-hint': 'Chop the sample into slices played from the root key up (like FL Studio\'s Slicex)' }, h('span', {}, ch.slices?.length ? `${ch.slices.length} slices` : 'Slice'), h('span', { class: 'caret' }, '▼'));
+    sliceBtn.addEventListener('click', () => {
+      const r = sliceBtn.getBoundingClientRect();
+      const ready = !!s?.buffer;
+      showMenu([
+        { label: 'Auto-slice at the hits', disabled: !ready, action: () => sliceAuto(ch, 0.5) },
+        { label: 'Auto-slice (more slices)', disabled: !ready, action: () => sliceAuto(ch, 0.85) },
+        { label: 'Auto-slice (fewer slices)', disabled: !ready, action: () => sliceAuto(ch, 0.2) },
+        { label: 'Equal slices', disabled: !ready, submenu: [2, 4, 8, 16, 32].map((n) => ({ label: `${n}`, action: () => setSlices(ch, equalSlices(n)) })) },
+        { separator: true },
+        { label: 'Slices → pattern (plays the loop in time)', disabled: !ch.slices?.length, action: () => actions.slicesToPattern(ch.id) },
+        { label: 'Clear slices', disabled: !ch.slices?.length, action: () => setSlices(ch, null) },
+      ], r.left, r.bottom);
+    });
+    const tools = h('div', { class: 'cs-sampler-tools' }, load, root, sliceBtn);
+    const wrap = h('div', { class: 'cs-sampler' }, canvas, tools);
     requestAnimationFrame(() => drawWave(canvas, s, ch));
+    waveInteraction(canvas, s, ch);
     return wrap;
+  }
+
+  function setSlices(ch, slices) {
+    store.checkpoint();
+    if (slices?.length) ch.slices = slices; else delete ch.slices;
+    touch();
+    render();
+  }
+
+  function sliceAuto(ch, sensitivity) {
+    const s = store.samples.get(ch.sampleId);
+    if (!s?.buffer) return;
+    const b = s.buffer;
+    const mono = new Float32Array(b.length);
+    for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / b.numberOfChannels; }
+    setSlices(ch, detectOnsets(mono, b.sampleRate, { sensitivity }));
+  }
+
+  /** Markers on the waveform: start / end / loop points, or slice lines. */
+  function waveInteraction(canvas, s, ch) {
+    let drag = null;
+    const fracAt = (e) => { const r = canvas.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+    const near = (e, f) => Math.abs((fracAt(e) - f) * canvas.getBoundingClientRect().width) < 6;
+    const markers = () => {
+      if (ch.slices?.length) return ch.slices.map((f, i) => ({ key: i, f })).filter((m) => m.key > 0);
+      const out = [{ key: 'start', f: ch.params.start || 0 }, { key: 'end', f: ch.params.end ?? 1 }];
+      if (ch.params.loop) out.push({ key: 'loopStart', f: ch.params.loopStart ?? 0 }, { key: 'loopEnd', f: ch.params.loopEnd ?? 1 });
+      return out;
+    };
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!s?.buffer || e.button !== 0) return;
+      const hit = markers().find((m) => near(e, m.f));
+      if (hit) {
+        store.checkpoint();
+        canvas.setPointerCapture(e.pointerId);
+        drag = hit.key;
+        return;
+      }
+      if (ch.slices?.length) {
+        // audition the slice under the pointer
+        const f = fracAt(e);
+        let i = 0;
+        while (i + 1 < ch.slices.length && ch.slices[i + 1] <= f) i++;
+        engine.preview(ch, (ch.rootPitch ?? 60) + i, 0.85, 2);
+      }
+    });
+    canvas.addEventListener('pointermove', (e) => {
+      if (drag == null) { canvas.style.cursor = s?.buffer && markers().some((m) => near(e, m.f)) ? 'ew-resize' : ''; return; }
+      const f = fracAt(e);
+      if (typeof drag === 'number') {
+        const lo = ch.slices[drag - 1] + 0.002;
+        const hi = (ch.slices[drag + 1] ?? 1) - 0.002;
+        ch.slices[drag] = Math.round(Math.min(hi, Math.max(lo, f)) * 1e5) / 1e5;
+      } else {
+        const p = ch.params;
+        if (drag === 'start') p.start = Math.min(f, (p.end ?? 1) - 0.01, 0.95);
+        else if (drag === 'end') p.end = Math.max(f, (p.start || 0) + 0.01, 0.05);
+        else if (drag === 'loopStart') p.loopStart = Math.min(f, (p.loopEnd ?? 1) - 0.01);
+        else if (drag === 'loopEnd') p.loopEnd = Math.max(f, (p.loopStart ?? 0) + 0.01);
+      }
+      store.dirty = true;
+      drawWave(canvas, s, ch);
+    });
+    const end = () => { if (drag != null) { drag = null; touch(); render(); } };
+    canvas.addEventListener('pointerup', end);
+    canvas.addEventListener('pointercancel', end);
+    canvas.addEventListener('dblclick', (e) => {
+      if (!ch.slices?.length) return;
+      const f = fracAt(e);
+      if (ch.slices.some((x) => Math.abs(x - f) < 0.004)) return;
+      setSlices(ch, [...ch.slices, Math.round(f * 1e5) / 1e5].sort((a, b) => a - b));
+    });
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const hit = ch.slices?.length ? markers().find((m) => near(e, m.f)) : null;
+      if (hit) setSlices(ch, ch.slices.filter((_, i) => i !== hit.key));
+    });
   }
 
   function drawWave(canvas, s, ch) {
     const w = canvas.clientWidth || 560;
-    const hh = 70;
+    const hh = 90;
     const ctx = canvas.getContext('2d');
     sizeCanvas(canvas, ctx, w, hh);
     ctx.fillStyle = T.waveBg;
@@ -186,9 +286,36 @@ export function createSettings(app) {
       for (let i = 0; i < step; i++) { const v = data[x * step + i] || 0; if (v < min) min = v; if (v > max) max = v; }
       ctx.fillRect(x, hh / 2 - max * (hh / 2 - 3), 1, Math.max(1, (max - min) * (hh / 2 - 3)));
     }
-    const sx = (ch.params.start || 0) * w;
-    ctx.fillStyle = 'rgba(0,0,0,.45)';
+    ctx.font = '10px "Noto Sans", sans-serif';
+    ctx.textBaseline = 'top';
+    if (ch.slices?.length) {
+      ch.slices.forEach((f, i) => {
+        const x = Math.round(f * w) + 0.5;
+        ctx.strokeStyle = T.accent;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, hh); ctx.stroke();
+        ctx.fillStyle = T.text;
+        ctx.fillText(noteName((ch.rootPitch ?? 60) + i), x + 3, 3);
+      });
+      return;
+    }
+    const p = ch.params;
+    const sx = (p.start || 0) * w;
+    const ex = (p.end ?? 1) * w;
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
     ctx.fillRect(0, 0, sx, hh);
+    ctx.fillRect(ex, 0, w - ex, hh);
+    if (p.loop) {
+      const lx = (p.loopStart ?? 0) * w;
+      const rx = (p.loopEnd ?? 1) * w;
+      ctx.fillStyle = rgba(T.accent, 0.12);
+      ctx.fillRect(lx, 0, rx - lx, hh);
+      ctx.strokeStyle = T.accent;
+      for (const x of [lx, rx]) { ctx.beginPath(); ctx.moveTo(Math.round(x) + 0.5, 0); ctx.lineTo(Math.round(x) + 0.5, hh); ctx.stroke(); }
+      ctx.fillStyle = T.text;
+      ctx.fillText('loop', lx + 3, hh - 13);
+    }
+    ctx.strokeStyle = T.text;
+    for (const x of [sx, ex]) { ctx.beginPath(); ctx.moveTo(Math.round(Math.min(w - 1, x)) + 0.5, 0); ctx.lineTo(Math.round(Math.min(w - 1, x)) + 0.5, hh); ctx.stroke(); }
   }
 
   store.on('selection', () => { if (win.visible && store.selectedChannel) { chId = store.selectedChannel.id; render(); } });

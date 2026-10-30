@@ -35,6 +35,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   press Play, and the take lands in the playlist as an audio clip where you started, on a free track named "Audio".
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both.
+- **Sampler**: root note, end point and a loop region (all draggable on the waveform), and **slicing** like FL Studio's
+  Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
+  each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
+  Agents get `slice_sample`.
 - **Effect windows**: clicking an effect in the mixer opens its editor in its own window (like FL Studio's plugin
   windows), with a power switch and Reset.
 - **New effects**: a 7-band **Parametric EQ** with a response graph you drag directly (wheel = Q, double-click = reset)

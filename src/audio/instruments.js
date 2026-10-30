@@ -94,11 +94,15 @@ const SFX_PARAMS = [
 const SAMPLER_PARAMS = [
   { key: 'pitch', label: 'Pitch', min: -12, max: 12, def: 0, fmt: st },
   { key: 'start', label: 'Start', min: 0, max: 0.95, def: 0, fmt: pct },
+  { key: 'end', label: 'End', min: 0.05, max: 1, def: 1, fmt: pct },
   { key: 'attack', label: 'Attack', min: 0.001, max: 1, def: 0.002, log: true, fmt: ms },
   { key: 'release', label: 'Release', min: 0.005, max: 2, def: 0.05, log: true, fmt: ms },
   { key: 'cutoff', label: 'Cutoff', min: 100, max: 20000, def: 20000, log: true, fmt: hz },
   { key: 'gate', label: 'Gate', type: 'toggle', def: false },
   { key: 'reverse', label: 'Reverse', type: 'toggle', def: false },
+  { key: 'loop', label: 'Loop', type: 'toggle', def: false },
+  { key: 'loopStart', label: 'Loop start', min: 0, max: 0.99, def: 0, fmt: pct },
+  { key: 'loopEnd', label: 'Loop end', min: 0.01, max: 1, def: 1, fmt: pct },
 ];
 
 const SF_PARAMS = [
@@ -319,10 +323,20 @@ export const allEnginePresets = () => Object.entries(ENGINE_PRESETS).flatMap(([t
 
 export const DRUM_VOICES = Object.keys(DRUMS);
 
-export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
+/**
+ * Play a sample. `root`: the key that plays it at its own pitch. With `slices` (fractions 0..1, see slicing.js) the
+ * keys from `root` up play slice 0, 1, 2 … at their own pitch, each up to the next slice (FL's Slicex). Otherwise
+ * `start` / `end` trim it and `loop` repeats loopStart..loopEnd while the note is held.
+ */
+export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p, root = ROOT_NOTE, slices = null) {
   const src = ctx.createBufferSource();
   src.buffer = p.reverse ? reversed(ctx, buffer) : buffer;
-  src.playbackRate.value = Math.pow(2, (pitch - ROOT_NOTE + semis + (p.pitch || 0)) / 12);
+  const sliced = Array.isArray(slices) && slices.length > 0;
+  const index = sliced ? pitch - root : -1;
+  if (sliced && (index < 0 || index >= slices.length)) return null; // no slice on this key
+  // fine pitch (fractional pitch / semis) still applies to slices; the key itself only picks the slice
+  const keyShift = sliced ? pitch - Math.round(pitch) : pitch - root;
+  src.playbackRate.value = Math.pow(2, (keyShift + semis + (p.pitch || 0)) / 12);
   const g = ctx.createGain();
   const peak = 0.25 + vel * 0.75;
   g.gain.setValueAtTime(0.0001, t);
@@ -336,11 +350,21 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
     node = lp;
   }
   node.connect(g).connect(dest);
-  const offset = buffer.duration * (p.start || 0);
-  const natural = (buffer.duration - offset) / src.playbackRate.value;
+  const len = buffer.duration;
+  const from = sliced ? slices[index] : (p.start || 0);
+  const to = sliced ? (slices[index + 1] ?? 1) : Math.max(from + 0.001, p.end ?? 1);
+  const offset = len * from;
+  const looping = !sliced && p.loop && (p.loopEnd ?? 1) > (p.loopStart ?? 0);
+  if (looping) {
+    src.loop = true;
+    src.loopStart = len * (p.loopStart ?? 0);
+    src.loopEnd = len * (p.loopEnd ?? 1);
+  }
+  const gated = p.gate || looping; // a loop plays until the note ends
+  const natural = looping ? Infinity : (len * (to - from)) / src.playbackRate.value;
   const voice = { nodes: [src], out: g, end: t + natural + 0.05, released: false };
   voice.release = (when) => {
-    if (voice.released || !p.gate) return;
+    if (voice.released || !gated) return;
     voice.released = true;
     const rt = Math.max(when, t + 0.002);
     g.gain.cancelAndHoldAtTime(rt);
@@ -348,8 +372,14 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
     src.stop(rt + p.release * 1.6 + 0.05);
     voice.end = rt + p.release * 1.6 + 0.05;
   };
-  src.start(t, offset);
-  if (p.gate && Number.isFinite(dur)) voice.release(t + dur);
+  if (looping) src.start(t, offset);
+  else {
+    src.start(t, offset, len * (to - from));
+    // a short fade at the end of a trimmed region or slice avoids a click
+    const stopAt = t + natural;
+    if (to < 1 && natural > 0.01) { g.gain.setValueAtTime(peak, Math.max(t + 0.001, stopAt - 0.004)); g.gain.linearRampToValueAtTime(0.0001, stopAt); }
+  }
+  if (gated && Number.isFinite(dur)) voice.release(t + dur);
   return voice;
 }
 

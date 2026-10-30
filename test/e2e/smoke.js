@@ -224,6 +224,45 @@
     ok('a non-FLP file is refused', threw);
   }
 
+  // sampler: slice a rendered drum loop at its hits, then rebuild it as notes
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'pattern';
+    const kick = s.project.channels[0];
+    s.currentPattern.notes[kick.id] = [0, 4, 8, 12].map((st) => ({ p: kick.rootPitch, s: st, l: 1, v: 0.9 }));
+    for (const c of s.project.channels.slice(1)) delete s.currentPattern.notes[c.id];
+    const loopBuf = await renderSteps(s, 16, { tail: 0 });
+    ok('rendered a one-bar loop', Math.abs(loopBuf.duration - 2) < 0.01);
+    const { encodeWav } = await import('./src/audio/wav.js');
+    const sid = s.addSample('loop.wav', encodeWav(loopBuf));
+    const smp = s._addChannel({ name: 'Loop', type: 'sampler', sampleId: sid });
+    await a.engine.ensureSample(sid);
+    const { detectOnsets } = await import('./src/audio/slicing.js');
+    smp.slices = detectOnsets(s.samples.get(sid).buffer.getChannelData(0), loopBuf.sampleRate, { sensitivity: 0.5 });
+    ok(`auto-slice finds the four kicks (${smp.slices.map((x) => (x * 2).toFixed(2)).join(', ')})`, smp.slices.length === 4 && smp.slices.every((x, i) => Math.abs(x * 2 - i * 0.5) < 0.02));
+    s.selectChannel(kick.id);
+    a.actions.slicesToPattern(smp.id);
+    const notes = s.currentPattern.notes[smp.id];
+    ok('slices → pattern writes one note per slice, in time', notes.length === 4 && notes.every((n, i) => n.p === 60 + i && Math.abs(n.s - i * 4) < 0.1));
+    delete s.currentPattern.notes[kick.id];
+    s.project.bpm = 150; // the sliced loop now follows the tempo
+    const re = await renderSteps(s, 16, { tail: 0.3 });
+    let hits = 0;
+    { const d = re.getChannelData(0); let prev = 0; const blk = 441; for (let i = 0; i + blk < d.length; i += blk) { let e = 0; for (let k = 0; k < blk; k++) e = Math.max(e, Math.abs(d[i + k])); if (e > 0.05 && prev <= 0.05) hits++; prev = e; } }
+    ok(`the sliced loop replays its hits at the new tempo (${hits})`, hits === 4 && Math.abs(re.duration - (1.6 + 0.3)) < 0.02);
+    s.currentPattern.notes[smp.id] = [{ p: 59, s: 0, l: 1, v: 0.9 }];
+    const below = await renderSteps(s, 4, { tail: 0 });
+    let bp = 0; { const d = below.getChannelData(0); for (let i = 0; i < d.length; i += 5) bp = Math.max(bp, Math.abs(d[i])); }
+    ok('a key below the first slice is silent', bp < 1e-4);
+    delete smp.slices;
+    Object.assign(smp.params, { loop: true, loopStart: 0, loopEnd: 0.25 });
+    s.currentPattern.notes[smp.id] = [{ p: 60, s: 0, l: 16, v: 0.9 }];
+    const looped = await renderSteps(s, 16, { tail: 0 });
+    let late = 0; { const d = looped.getChannelData(0); for (let i = Math.round(1.3 * 44100); i < d.length; i += 3) late = Math.max(late, Math.abs(d[i])); }
+    ok('a looped sample keeps sounding while the note is held', late > 0.05);
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }
