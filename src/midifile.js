@@ -1,4 +1,6 @@
 // Standard MIDI File (type 1) writer.
+import { validTimeSig } from './state.js';
+import { TempoMap } from './tempo.js';
 
 const PPQ = 96;
 const TICKS_PER_STEP = PPQ / 4;
@@ -48,13 +50,30 @@ export function buildMidi(store, { song }) {
   const proj = store.project;
   const tracks = [];
 
-  const tempo = Math.round(60000000 / proj.bpm);
-  tracks.push(chunk('MTrk', [
+  const tempoEvent = (bpm) => { const us = Math.round(60000000 / bpm); return [0xff, 0x51, 0x03, (us >> 16) & 255, (us >> 8) & 255, us & 255]; };
+  const [num, den] = validTimeSig(proj.timeSig) ? proj.timeSig : [4, 4];
+  const conductor = [
     0, ...metaText(0x03, proj.name),
-    0, 0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255,
-    0, 0xff, 0x58, 0x04, 4, 2, 24, 8,
-    0, 0xff, 0x2f, 0x00,
-  ]));
+    0, ...tempoEvent(proj.bpm),
+    0, 0xff, 0x58, 0x04, num, Math.log2(den), 24, 8,
+  ];
+  // tempo automation becomes tempo changes (one per step where the tempo moves)
+  const map = new TempoMap(store);
+  if (song && map.varies) {
+    let last = proj.bpm;
+    let lastTick = 0;
+    const end = store.playlistEndStep();
+    for (let step = 0; step < end; step++) {
+      const bpm = Math.round(map.bpm(step) * 1000) / 1000;
+      if (Math.abs(bpm - last) < 0.001) continue;
+      const tick = step * TICKS_PER_STEP;
+      conductor.push(...vlq(tick - lastTick), ...tempoEvent(bpm));
+      last = bpm;
+      lastTick = tick;
+    }
+  }
+  conductor.push(0, 0xff, 0x2f, 0x00);
+  tracks.push(chunk('MTrk', conductor));
 
   let nextChannel = 0;
   for (const ch of proj.channels) {

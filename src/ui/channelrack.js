@@ -2,13 +2,15 @@ import { h, COLORS, clamp } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu, showMenuBelow } from './menu.js';
-import { STEPS_PER_BAR } from '../state.js';
+import { barSteps, beatSteps } from '../state.js';
 import { overlayScrollbars } from './scrollbars.js';
 
 const TYPE_ICON = { drum: 'drum', synth: 'synth', fm: 'synth', organ: 'keys', pluck: 'wave', sfx: 'wave', sampler: 'sampler', sf: 'piano' };
 
 export function createChannelRack(app) {
   const { store, wm, transport, engine, actions } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
 
   const win = wm.create({
     id: 'rack', title: 'Channel rack', icon: 'channelrack', minW: 420, minH: 140,
@@ -22,9 +24,9 @@ export function createChannelRack(app) {
   stepsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
   stepsBtn.addEventListener('click', () => {
     const pat = store.currentPattern;
-    const min = Math.ceil(store.patternSteps({ ...pat, bars: 1 }) / STEPS_PER_BAR);
+    const min = Math.ceil(store.patternSteps({ ...pat, bars: 1 }) / BAR());
     showMenuBelow(stepsBtn, [1, 2, 3, 4, 6, 8].map((bars) => ({
-      label: `${bars * STEPS_PER_BAR} steps (${bars} bar${bars > 1 ? 's' : ''})`,
+      label: `${bars * BAR()} steps (${bars} bar${bars > 1 ? 's' : ''})`,
       checked: pat.bars === bars,
       disabled: bars < min,
       action: () => { store.checkpoint(); pat.bars = bars; store.emit('notes'); store.emit('patterns'); },
@@ -186,7 +188,7 @@ export function createChannelRack(app) {
     rowMap.clear();
     for (const ch of store.project.channels) {
       const r = buildRow(ch);
-      r.padCount = 0;
+      r.padKey = null;
       rowMap.set(ch.id, r);
       rowsEl.append(r.row);
     }
@@ -195,21 +197,31 @@ export function createChannelRack(app) {
   }
 
   // ------------------------------------------------------------------ pads
+  /** Pads are shaded in groups: a beat in x/4, a dotted beat (3 eighths) in 6/8, 9/8, 12/8, two eighths otherwise. */
+  function padGroup() {
+    const beat = BEAT();
+    if (beat >= 4) return beat;
+    return store.project.timeSig[0] % 3 === 0 ? beat * 3 : beat * 2;
+  }
+
   function ensurePadCount(n) {
+    const g = padGroup();
+    const key = `${n}:${g}`;
     for (const r of rowMap.values()) {
-      if (r.padCount === n) continue;
+      if (r.padKey === key) continue;
       r.pads.replaceChildren();
       const frag = document.createDocumentFragment();
       for (let i = 0; i < n; i++) {
-        frag.append(h('div', { class: `cr-pad g${Math.floor(i / 4) % 2}${i % 4 === 0 && i ? ' gap' : ''}`, dataset: { step: i } }));
+        frag.append(h('div', { class: `cr-pad g${Math.floor(i / g) % 2}${i % g === 0 && i ? ' gap' : ''}`, dataset: { step: i } }));
       }
       r.pads.append(frag);
-      r.padCount = n;
+      r.padKey = key;
     }
-    if (n !== header.querySelector('.cr-leds').childElementCount) {
-      const leds = header.querySelector('.cr-leds');
+    const leds = header.querySelector('.cr-leds');
+    if (leds.dataset.key !== key) {
+      leds.dataset.key = key;
       leds.replaceChildren();
-      for (let i = 0; i < n; i++) leds.append(h('div', { class: `cr-pled${i % 4 === 0 && i ? ' gap' : ''}` }));
+      for (let i = 0; i < n; i++) leds.append(h('div', { class: `cr-pled${i % g === 0 && i ? ' gap' : ''}` }));
     }
   }
 

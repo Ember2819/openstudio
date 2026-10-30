@@ -38,10 +38,13 @@ One plain JSON object, `store.project`:
 | `playlist` | 125 `tracks[]` and `clips[]` of type `pattern`, `audio` or `auto` (start/len in steps) |
 | `automations[]` | A target descriptor plus curve points (`x` in steps, `y` normalised 0–1) |
 | `mixer[]` | Track 0 is master, 1–125 inserts: volume, pan, mute/solo, 10 FX slots, sends |
-| `loop`, `swing`, `bpm`, `mode` | Transport-level settings |
+| `loop`, `swing`, `bpm`, `timeSig`, `mode` | Transport-level settings |
 
 Conventions worth knowing:
-- Time is measured in **steps**; 4 steps = 1 beat, 16 steps = 1 bar. Only 4/4 is supported.
+- Time is measured in **steps** (16th notes). A bar is `barSteps(project)` steps: 16 in 4/4, 12 in 3/4 and 6/8
+  (`project.timeSig`). The agent's composing code (`src/agent/music/`) writes 4/4.
+- Tempo can be automated (target `{ kind: 'tempo' }`); `src/tempo.js` maps steps to seconds for the scheduler,
+  offline renders and clocks.
 - Pitch uses FL-style octave naming: MIDI 60 is **C5**.
 - The channel rack's step pads *are* notes: a pad is lit when a note starts within that step.
 - Samples (`store.samples`) live outside `project` so undo snapshots stay small; they are embedded in saved files.

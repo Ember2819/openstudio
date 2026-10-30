@@ -3,7 +3,6 @@
 Rough priorities, not promises. Pick something and open an issue before starting large work.
 
 ## Near term
-- Time-signature support.
 - Audio recording (input device → audio clip).
 - Per-note properties in the piano roll (pan, cutoff, slide) and chord/arpeggio helpers in the UI (agents have `compose`).
 - Sampler: root key, loop points, slicing; drag-to-load into a channel.

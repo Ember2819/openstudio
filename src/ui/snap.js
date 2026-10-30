@@ -10,14 +10,20 @@ export const SNAPS = [
   { id: 'bar', label: 'Bar', size: 16 },
 ];
 
-/** Resolve the effective snap size in steps for the given zoom (pixels per step). 0 = no snapping. */
-export function snapSize(id, pxPerStep) {
+/**
+ * Resolve the effective snap size in steps for the given zoom (pixels per step). 0 = no snapping.
+ * `beat` / `bar` are the project's beat and bar lengths in steps (time signature), 4 and 16 in 4/4.
+ */
+export function snapSize(id, pxPerStep, beat = 4, bar = 16) {
   if (id === 'none') return 0;
+  if (id === 'beat') return beat;
+  if (id === 'half-beat') return beat / 2;
+  if (id === 'bar') return bar;
   const fixed = SNAPS.find((s) => s.id === id)?.size;
   if (fixed) return fixed;
   // "Line": snap to the finest grid line that is visible at this zoom level
-  for (const size of [0.25, 0.5, 1, 2, 4, 16]) if (size * pxPerStep >= 10) return size;
-  return 16;
+  for (const size of [0.25, 0.5, 1, beat / 2, beat, bar]) if (size * pxPerStep >= 10) return size;
+  return bar;
 }
 
 export const snapRound = (v, size) => (size ? Math.round(v / size) * size : v);

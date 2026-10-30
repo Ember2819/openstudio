@@ -4,7 +4,7 @@ import { showMenu } from './menu.js';
 import { sizeCanvas } from './draw.js';
 import { snapSize, snapRound } from './snap.js';
 import { curveAt, describeTarget, formatTarget, normToValue, targetValid } from '../automation.js';
-import { STEPS_PER_BAR, STEPS_PER_BEAT } from '../state.js';
+import { barSteps, beatSteps } from '../state.js';
 
 const PAD_L = 46;
 const PAD_R = 14;
@@ -14,6 +14,8 @@ const PAD_B = 24;
 /** Floating editor for one automation clip's curve. */
 export function createAutomationEditor(app) {
   const { store, wm } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
   const win = wm.create({
     id: 'automation', title: 'Automation', icon: 'fx', minW: 420, minH: 220,
     rect: (dw, dh) => ({ x: Math.max(20, dw / 2 - 330), y: Math.max(40, dh / 2 - 170), w: 660, h: 340 }),
@@ -25,8 +27,8 @@ export function createAutomationEditor(app) {
 
   const title = h('span', { class: 'ae-title' }, '');
   const lenLabel = h('span', { class: 'ae-len' }, '');
-  const lenDown = h('button', { class: 'tbtn small', 'data-hint': 'Shorter', onClick: () => setLen(-STEPS_PER_BAR) }, '−');
-  const lenUp = h('button', { class: 'tbtn small', 'data-hint': 'Longer', onClick: () => setLen(STEPS_PER_BAR) }, '+');
+  const lenDown = h('button', { class: 'tbtn small', 'data-hint': 'Shorter', onClick: () => setLen(-BAR()) }, '−');
+  const lenUp = h('button', { class: 'tbtn small', 'data-hint': 'Longer', onClick: () => setLen(BAR()) }, '+');
   const flat = h('button', { class: 'btn', 'data-hint': 'Flatten the curve to its first value', onClick: () => flatten() }, 'Flatten');
   const toolbar = h('div', { class: 'pr-toolbar' }, title, h('div', { class: 'tb-flex' }), h('span', { class: 'ae-lbl' }, 'Length'), lenDown, lenLabel, lenUp, flat);
   const canvas = h('canvas', { class: 'ae-canvas' });
@@ -64,12 +66,12 @@ export function createAutomationEditor(app) {
     ctx.font = '10px "Noto Sans", sans-serif';
     ctx.textBaseline = 'top';
     for (let s = 0; s <= a.len; s++) {
-      const bar = s % STEPS_PER_BAR === 0, beat = s % STEPS_PER_BEAT === 0;
+      const bar = s % BAR() === 0, beat = s % BEAT() === 0;
       if (!bar && !beat && p.w / a.len < 9) continue;
       const x = Math.round(toX(s)) + 0.5;
       ctx.strokeStyle = bar ? T.gridLineBar : beat ? T.gridLineBeat : T.gridLineStep;
       ctx.beginPath(); ctx.moveTo(x, p.y); ctx.lineTo(x, p.y + p.h); ctx.stroke();
-      if (bar) { ctx.fillStyle = T.rulerMajor; ctx.fillText(String(s / STEPS_PER_BAR + 1), x + 4, p.y + p.h + 6); }
+      if (bar) { ctx.fillStyle = T.rulerMajor; ctx.fillText(String(s / BAR() + 1), x + 4, p.y + p.h + 6); }
     }
     // horizontal grid + value labels (real units)
     for (let i = 0; i <= 4; i++) {
@@ -127,7 +129,7 @@ export function createAutomationEditor(app) {
     return { index: best, mx, my };
   };
   const touch = () => { store.dirty = true; store.emit('playlist'); draw(); };
-  const sz = () => snapSize(app.ui.snap, plot().w / auto().len);
+  const sz = () => snapSize(app.ui.snap, plot().w / auto().len, BEAT(), BAR());
 
   canvas.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -182,7 +184,7 @@ export function createAutomationEditor(app) {
   function setLen(delta) {
     const a = auto();
     if (!a) return;
-    const next = Math.max(STEPS_PER_BAR, a.len + delta);
+    const next = Math.max(BAR(), a.len + delta);
     if (next === a.len) return;
     store.checkpoint();
     const old = a.len;
@@ -206,7 +208,7 @@ export function createAutomationEditor(app) {
     const a = auto();
     if (!a) { title.textContent = ''; lenLabel.textContent = ''; return; }
     title.textContent = describeTarget(store, a.target);
-    lenLabel.textContent = `${a.len / STEPS_PER_BAR} bar${a.len / STEPS_PER_BAR === 1 ? '' : 's'}`;
+    lenLabel.textContent = `${a.len / BAR()} bar${a.len / BAR() === 1 ? '' : 's'}`;
     win.setTitle(`Automation — ${describeTarget(store, a.target)}`);
   }
 

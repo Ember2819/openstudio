@@ -5,7 +5,7 @@
 // blob (text or binary). Which object an event belongs to is implied by order: a "new channel" event starts a
 // channel and everything up to the next one describes it, the same for patterns, arrangements and mixer inserts.
 // This reader was written from observing files saved by FL Studio 11-21; anything it does not understand is skipped.
-import { STEPS_PER_BEAT, STEPS_PER_BAR, PLAYLIST_TRACKS, MIXER_TRACKS, blankProject } from './state.js';
+import { STEPS_PER_BEAT, PLAYLIST_TRACKS, MIXER_TRACKS, blankProject, validTimeSig } from './state.js';
 import { defaultEffectParams } from './audio/effects.js';
 
 const EV = {
@@ -337,7 +337,7 @@ export function importFlp(store, flp, { name = '', samples = new Map() } = {}) {
   const proj = store.project;
   proj.name = flp.title || name || 'FL Studio project';
   proj.bpm = Math.min(522, Math.max(10, Math.round(flp.bpm * 1000) / 1000));
-  if (flp.timeSig?.[0] && flp.timeSig?.[1]) proj.timeSig = [flp.timeSig[0], flp.timeSig[1]];
+  if (validTimeSig(flp.timeSig)) proj.timeSig = [flp.timeSig[0], flp.timeSig[1]];
   const toSteps = (ticks) => (ticks / flp.ppq) * STEPS_PER_BEAT;
   const round = (x) => Math.round(x * 1000) / 1000;
 
@@ -434,7 +434,7 @@ export function importFlp(store, flp, { name = '', samples = new Map() } = {}) {
       }
     }
     const lenSteps = fp.length ? toSteps(fp.length) : 0;
-    pat.bars = Math.max(1, Math.ceil(Math.max(endStep, lenSteps) / STEPS_PER_BAR - 1e-6));
+    pat.bars = Math.max(1, Math.ceil(Math.max(endStep, lenSteps) / store.barSteps - 1e-6));
     patById.set(fp.index, pat);
     report.patterns++;
   }

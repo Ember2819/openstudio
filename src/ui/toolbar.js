@@ -216,6 +216,23 @@ export function createToolbar(app) {
 
   const snapBtn = createSnapSelect(app);
 
+  // time signature
+  const tsBtn = h('button', { class: 'ts-box', 'data-hint': 'Time signature — beats per bar / beat unit' }, '4/4');
+  tsBtn.addEventListener('click', () => {
+    const [n, d] = store.project.timeSig;
+    const pick = (ts) => actions.setTimeSignature(ts);
+    showMenuBelow(tsBtn, [
+      ...[[4, 4], [3, 4], [2, 4], [5, 4], [6, 4], [7, 4], [6, 8], [7, 8], [9, 8], [12, 8], [5, 8], [2, 2]]
+        .map(([a, b]) => ({ label: `${a}/${b}`, checked: a === n && b === d, action: () => pick([a, b]) })),
+      { separator: true },
+      { label: 'Custom…', action: async () => {
+        const v = await promptDialog('Time signature', `${n}/${d}`, 'Beats per bar / beat unit (2, 4, 8 or 16), e.g. 11/8');
+        const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v || '');
+        if (m) pick([Number(m[1]), Number(m[2])]);
+      } },
+    ]);
+  });
+
   const patName = h('span', { class: 'pat-name' }, 'Pattern 1');
   const patSwatch = h('span', { class: 'pat-swatch' });
   const patBox = h('button', { class: 'pat-box', 'data-hint': 'Selected pattern — click to choose, scroll to step through patterns' }, patSwatch, patName, h('span', { class: 'caret' }, '▼'));
@@ -252,6 +269,7 @@ export function createToolbar(app) {
   const row2 = h('div', { class: 'tb-row tb-row2' },
     hintPanel,
     snapBtn,
+    tsBtn,
     h('div', { class: 'pat-group' }, patPrev, patBox, patNext, patAdd),
     h('div', { class: 'tb-flex scrub-slot' }, scrub.el),
     h('div', { class: 'tb-group toggles' }, toggles),
@@ -299,6 +317,7 @@ export function createToolbar(app) {
     patName.textContent = pat.name;
     patSwatch.style.background = pat.color;
     tempoVal.textContent = p.bpm.toFixed(3);
+    tsBtn.textContent = `${p.timeSig[0]}/${p.timeSig[1]}`;
     masterKnob.setValue(p.mixer[0].vol);
     pitchKnob.setValue(p.masterPitch);
     refreshStatic();
@@ -309,7 +328,7 @@ export function createToolbar(app) {
   transport.on('bpm', () => { tempoVal.textContent = store.project.bpm.toFixed(3); });
   wm.on('visibility', refreshStatic);
   app.on('browser', refreshStatic);
-  for (const evt of ['project', 'patterns', 'selection']) store.on(evt, refreshProject);
+  for (const evt of ['project', 'patterns', 'selection', 'settings']) store.on(evt, refreshProject);
   store.on('mixer', () => masterKnob.setValue(store.project.mixer[0].vol));
   refreshProject();
 

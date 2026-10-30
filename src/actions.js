@@ -1,7 +1,7 @@
 import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDialog } from './ui/dialog.js';
 import { renderSteps } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
-import { STEPS_PER_BAR } from './state.js';
+import { STEPS_PER_BAR, validTimeSig } from './state.js';
 import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
 import { buildCatalog } from './audio/catalog.js';
@@ -288,12 +288,32 @@ export function createActions(app) {
 
     showAgents() { app.prefs?.open('agents'); },
 
+    /**
+     * Change the project's time signature ([beats, unit]). Notes stay where they are in time; patterns keep (at least)
+     * their length, rounded up to whole bars of the new signature.
+     */
+    setTimeSignature(ts) {
+      if (!validTimeSig(ts)) { messageDialog('Time signature', 'Use 1–32 beats per bar and a beat unit of 2, 4, 8 or 16.'); return false; }
+      const p = store.project;
+      if (p.timeSig[0] === ts[0] && p.timeSig[1] === ts[1]) return true;
+      store.checkpoint();
+      const lens = new Map(p.patterns.map((pat) => [pat, store.patternSteps(pat)]));
+      p.timeSig = [ts[0], ts[1]];
+      for (const [pat, len] of lens) pat.bars = Math.max(1, Math.ceil(len / store.barSteps - 1e-6));
+      store.emit('settings');
+      store.emit('patterns');
+      store.emit('notes');
+      store.emit('playlist');
+      return true;
+    },
+
     /** Create an automation clip for a knob/fader and open its editor. */
     createAutomation(target) {
       const norm = valueToNorm(store, target, readTarget(store, target));
       store.checkpoint();
-      const auto = store.addAutomation({ name: describeTarget(store, target), target, value: norm, len: STEPS_PER_BAR });
-      const start = Math.floor(transport.startStep / STEPS_PER_BAR) * STEPS_PER_BAR;
+      const bar = store.barSteps;
+      const auto = store.addAutomation({ name: describeTarget(store, target), target, value: norm, len: bar });
+      const start = Math.floor(transport.startStep / bar) * bar;
       store.addClip({ type: 'auto', autoId: auto.id, track: firstFreeTrack(start, auto.len), start, len: auto.len });
       store.emit('playlist');
       app.wm.get('playlist').show();

@@ -109,7 +109,7 @@ For a tour of the code read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limitations
 
-Plugin (VST/CLAP) hosting, time signatures other than 4/4, time-stretching audio, audio recording, plugin settings and automation clips in imported FL Studio projects, and most of the commercial DAWs' bundled instruments and effects
+Plugin (VST/CLAP) hosting, time-stretching audio, audio recording, plugin settings and automation clips in imported FL Studio projects, and most of the commercial DAWs' bundled instruments and effects
 are not implemented. OpenStudio is an independent project and is not affiliated with, endorsed by, or derived
 from any commercial DAW; product names mentioned in this repository belong to their respective owners.
 

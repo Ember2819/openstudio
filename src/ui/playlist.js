@@ -9,7 +9,7 @@ import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
 import { T, appearance } from '../theme.js';
 import { drawWaveform } from './peaks.js';
 import { curveAt, describeTarget } from '../automation.js';
-import { STEPS_PER_BAR, STEPS_PER_BEAT, PLAYLIST_TRACKS } from '../state.js';
+import { PLAYLIST_TRACKS, barSteps, beatSteps } from '../state.js';
 
 const TRACK_H = 58;
 const HEAD_W = 118;
@@ -29,8 +29,12 @@ const TOOLS = [
 const mod = (a, n) => ((a % n) + n) % n;
 const typeOf = (c) => c.type || 'pattern';
 
+const ZOOM_STEPS = 16;
+
 export function createPlaylist(app) {
   const { store, wm, transport, engine } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
 
   const win = wm.create({
     id: 'playlist', title: 'Playlist — Arrangement', icon: 'playlist', minW: 560, minH: 260,
@@ -39,7 +43,7 @@ export function createPlaylist(app) {
   });
 
   const S = { tool: 'draw', pxBar: 130, selection: new Set(), clipboard: [], band: null };
-  const pxStep = () => S.pxBar / STEPS_PER_BAR;
+  const pxStep = () => S.pxBar / ZOOM_STEPS; // zoom is kept per 16 steps whatever the time signature
 
   // ---------------------------------------------------------------- layout
   const toolBtns = TOOLS.map(([id, ico, tip]) => {
@@ -98,12 +102,12 @@ export function createPlaylist(app) {
 
   const clips = () => store.project.playlist.clips;
   const tracks = () => store.project.playlist.tracks;
-  const snap = () => snapSize(app.ui.snap, pxStep());
+  const snap = () => snapSize(app.ui.snap, pxStep(), BEAT(), BAR());
   const stepSeconds = () => 60 / store.project.bpm / 4;
 
   function totalSteps() {
-    const end = Math.ceil(store.playlistEndStep() / STEPS_PER_BAR) + 24;
-    return Math.max(96, end) * STEPS_PER_BAR;
+    const end = Math.ceil(store.playlistEndStep() / BAR()) + 24;
+    return Math.max(96, end) * BAR();
   }
   function updateSpacer() {
     spacer.style.width = `${totalSteps() * pxStep()}px`;
@@ -199,11 +203,12 @@ export function createPlaylist(app) {
     const px = pxStep();
     ctx.clearRect(0, 0, gw, gh);
 
-    const b0 = Math.floor(sx / px / STEPS_PER_BAR);
-    const b1 = Math.ceil((sx + gw) / px / STEPS_PER_BAR);
+    const barPx = BAR() * px;
+    const b0 = Math.floor(sx / barPx);
+    const b1 = Math.ceil((sx + gw) / barPx);
     for (let b = b0; b <= b1; b++) {
       ctx.fillStyle = b % 2 === 0 ? T.gridA : T.gridB;
-      ctx.fillRect(b * S.pxBar - sx, 0, S.pxBar, gh);
+      ctx.fillRect(b * barPx - sx, 0, barPx, gh);
     }
     ctx.strokeStyle = T.gridLineEdge;
     ctx.lineWidth = 1;
@@ -217,8 +222,8 @@ export function createPlaylist(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       let color = null;
-      if (s % STEPS_PER_BAR === 0) color = T.gridLineBar;
-      else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 22) color = T.gridLineBeat;
+      if (s % BAR() === 0) color = T.gridLineBar;
+      else if (s % BEAT() === 0 && px * 4 >= 22) color = T.gridLineBeat;
       else if (px >= 14) color = T.gridLineStep;
       if (!color) continue;
       ctx.strokeStyle = color;
@@ -400,13 +405,13 @@ export function createPlaylist(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       const x = Math.round(s * px - sx) + 0.5;
-      if (s % STEPS_PER_BAR === 0) {
-        const bar = s / STEPS_PER_BAR;
+      if (s % BAR() === 0) {
+        const bar = s / BAR();
         const major = bar % everyBars === 0;
         ctx.strokeStyle = major ? T.rulerMajor : T.rulerMinor;
         ctx.beginPath(); ctx.moveTo(x, major ? 4 : 14); ctx.lineTo(x, RULER_H); ctx.stroke();
         if (major) { ctx.fillStyle = T.rulerText; ctx.fillText(String(bar + 1), x + 4, 10); }
-      } else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 26) {
+      } else if (s % BEAT() === 0 && px * 4 >= 26) {
         ctx.strokeStyle = T.rulerTick;
         ctx.beginPath(); ctx.moveTo(x, 17); ctx.lineTo(x, RULER_H); ctx.stroke();
       }
@@ -732,10 +737,10 @@ export function createPlaylist(app) {
     cRuler.setPointerCapture(e.pointerId);
     const step = rulerStep(e);
     if (e.button === 2 || e.shiftKey) {
-      const a = snapRound(step, STEPS_PER_BEAT);
+      const a = snapRound(step, BEAT());
       scrub = { type: 'loop', a };
       store.checkpoint();
-      store.project.loop = { start: a, end: a + STEPS_PER_BEAT };
+      store.project.loop = { start: a, end: a + BEAT() };
     } else {
       scrub = { type: 'seek' };
       transport.seek(snapRound(step, Math.min(snap() || 1, 4)));
@@ -746,8 +751,8 @@ export function createPlaylist(app) {
     const step = rulerStep(e);
     if (scrub.type === 'seek') transport.seek(snapRound(step, Math.min(snap() || 1, 4)));
     else {
-      const b = snapRound(step, STEPS_PER_BEAT);
-      store.project.loop = { start: Math.min(scrub.a, b), end: Math.max(scrub.a, b) + (b === scrub.a ? STEPS_PER_BEAT : 0) };
+      const b = snapRound(step, BEAT());
+      store.project.loop = { start: Math.min(scrub.a, b), end: Math.max(scrub.a, b) + (b === scrub.a ? BEAT() : 0) };
       invalidate();
     }
   });
@@ -785,7 +790,7 @@ export function createPlaylist(app) {
       if (!S.clipboard.length) return;
       handled();
       store.checkpoint();
-      const at = snapFloor(transport.playing || transport.mode === 'song' ? transport.position() : scroller.scrollLeft / pxStep(), STEPS_PER_BAR);
+      const at = snapFloor(transport.playing || transport.mode === 'song' ? transport.position() : scroller.scrollLeft / pxStep(), BAR());
       const baseTrack = Math.floor(scroller.scrollTop / TRACK_H);
       S.selection.clear();
       for (const c of S.clipboard) {

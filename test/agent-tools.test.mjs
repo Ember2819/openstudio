@@ -287,6 +287,12 @@ test('automation: create with real values, read back, update, remove', async () 
   assert.equal(Math.round(app.transport.tempo.bpm(8)), 130);
   await call(app, 'remove_automation', { id: tempo.id });
 
+  const settings = await call(app, 'set_project', { timeSig: [3, 4] });
+  assert.deepEqual(settings.timeSig, [3, 4]);
+  assert.equal(app.store.barSteps, 12);
+  assert.match(await callFails(app, 'set_project', { timeSig: [3, 5] }), /timeSig/);
+  await call(app, 'set_project', { timeSig: [4, 4] });
+
   await call(app, 'remove_automation', { id: au.id });
   assert.equal(app.store.project.automations.length, 1);
   assert.equal(app.store.project.playlist.clips.filter((c) => c.type === 'auto').length, 1);

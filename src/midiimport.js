@@ -1,5 +1,5 @@
 // Standard MIDI File (type 0/1) reader and importer.
-import { STEPS_PER_BEAT, STEPS_PER_BAR } from './state.js';
+import { STEPS_PER_BEAT, validTimeSig } from './state.js';
 import { GM_FAMILIES } from './audio/sf2.js';
 
 const GM_NAMES_FALLBACK = (program) => `${GM_FAMILIES[program >> 3] ?? 'Instrument'} ${program + 1}`;
@@ -133,8 +133,9 @@ export function importMidi(store, midi, { name = 'MIDI import', setTempo = true,
       return { p: n.key, s: Math.round(s * 1000) / 1000, l: Math.round(l * 1000) / 1000, v: Math.max(0.02, n.vel / 127) };
     });
   }
-  pat.bars = Math.max(1, Math.ceil(end / STEPS_PER_BAR - 1e-6));
   if (setTempo && midi.tempo) proj.bpm = Math.min(522, Math.max(10, Math.round((60000000 / midi.tempo) * 1000) / 1000));
+  if (setTempo && validTimeSig(midi.timeSig)) proj.timeSig = [...midi.timeSig];
+  pat.bars = Math.max(1, Math.ceil(end / store.barSteps - 1e-6));
   proj.selected.pattern = pat.id;
   proj.selected.channel = proj.channels[proj.channels.length - 1]?.id ?? proj.selected.channel;
   return pat;

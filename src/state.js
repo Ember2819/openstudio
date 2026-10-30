@@ -2,7 +2,7 @@ import { Emitter, COLORS, ROOT_NOTE, arrayBufferToBase64, base64ToArrayBuffer } 
 import { defaultParams } from './audio/instruments.js';
 
 export const STEPS_PER_BEAT = 4;
-export const STEPS_PER_BAR = 16;
+export const STEPS_PER_BAR = 16; // in 4/4; a project's bar length is barSteps(project)
 export const MIXER_TRACKS = 126; // 0 = master, 1..125 inserts
 export const PLAYLIST_TRACKS = 125;
 
@@ -18,6 +18,12 @@ const makeMixer = () =>
     sends: {}, // destination track -> level (fader law)
   }));
 
+// Time signature: [beats per bar, beat unit]. A step is always a 16th note, so a beat is 16 / unit steps.
+export const TIME_SIG_UNITS = [2, 4, 8, 16];
+export const validTimeSig = (ts) => Array.isArray(ts) && Number.isInteger(ts[0]) && ts[0] >= 1 && ts[0] <= 32 && TIME_SIG_UNITS.includes(ts[1]);
+export const beatSteps = (proj) => 16 / (validTimeSig(proj?.timeSig) ? proj.timeSig[1] : 4);
+export const barSteps = (proj) => (validTimeSig(proj?.timeSig) ? proj.timeSig[0] : 4) * beatSteps(proj);
+
 const makeTracks = () => Array.from({ length: PLAYLIST_TRACKS }, (_, i) => ({ name: `Track ${i + 1}`, color: null, mute: false, mixer: 0 }));
 
 export function blankProject() {
@@ -25,6 +31,7 @@ export function blankProject() {
     version: 1,
     name: 'Untitled',
     bpm: 130,
+    timeSig: [4, 4],
     masterPitch: 0,
     mode: 'pattern',
     nextId: 1,
@@ -172,6 +179,7 @@ export class Store extends Emitter {
     sampleIds.forEach(seen);
     p.nextId = Math.max(p.nextId || 1, maxId + 1);
     if (!Number.isFinite(p.bpm) || p.bpm <= 0) p.bpm = base.bpm;
+    if (!validTimeSig(p.timeSig)) p.timeSig = [4, 4];
   }
 
   _mergeMixer(base, saved) {
@@ -200,14 +208,19 @@ export class Store extends Emitter {
   patternSteps(pat) {
     let end = 0;
     for (const list of Object.values(pat.notes)) for (const n of list) end = Math.max(end, n.s + n.l);
-    return Math.max(pat.bars, Math.ceil(end / STEPS_PER_BAR - 1e-6)) * STEPS_PER_BAR;
+    const bar = barSteps(this.project);
+    return Math.max(pat.bars, Math.ceil(end / bar - 1e-6)) * bar;
   }
+
+  /** Steps in a bar / a beat of the project's time signature. */
+  get barSteps() { return barSteps(this.project); }
+  get beatSteps() { return beatSteps(this.project); }
 
   /** Grow the pattern if a note extends past its end (like FL's auto-extending patterns). */
   normalizePattern(pat) {
     let end = 0;
     for (const list of Object.values(pat.notes)) for (const n of list) end = Math.max(end, n.s + n.l);
-    pat.bars = Math.max(pat.bars, Math.ceil(end / STEPS_PER_BAR - 1e-6), 1);
+    pat.bars = Math.max(pat.bars, Math.ceil(end / barSteps(this.project) - 1e-6), 1);
   }
 
   // ---------- channels ----------

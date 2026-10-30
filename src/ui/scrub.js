@@ -63,7 +63,7 @@ export function createScrub(app) {
     const pos = transport.position();
     const move = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
     let to;
-    if (move) to = pos + move * (e.shiftKey ? 16 : 4);
+    if (move) to = pos + move * (e.shiftKey ? store.barSteps : store.beatSteps);
     else if (e.key === 'Home') to = 0;
     else if (e.key === 'End') to = len - 1;
     else return;
@@ -94,7 +94,7 @@ export function createScrub(app) {
       root.setAttribute('aria-valuemax', len);
       root.setAttribute('aria-valuetext', `${clock(sec)} of ${clock(transport.secondsAt(len))}`);
     }
-    const bars = len / 16;
+    const bars = len / store.barSteps;
     if (len !== shown.len || bars !== shown.bars) {
       shown.len = len;
       shown.bars = bars;

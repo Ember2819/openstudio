@@ -85,6 +85,8 @@ export function summarize(app) {
     filePath: store.filePath,
     unsavedChanges: store.dirty,
     bpm: p.bpm,
+    timeSig: p.timeSig,
+    stepsPerBar: store.barSteps,
     ...(p.song ? { song: p.song } : {}),
     swing: p.swing,
     masterPitch: p.masterPitch,

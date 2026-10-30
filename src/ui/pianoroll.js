@@ -6,7 +6,7 @@ import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
 import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
 import { T, appearance } from '../theme.js';
-import { STEPS_PER_BAR, STEPS_PER_BEAT } from '../state.js';
+import { barSteps, beatSteps } from '../state.js';
 import { kitKeyNames, isKitChannel } from '../audio/catalog.js';
 
 const KEYS_W = 84;
@@ -38,6 +38,8 @@ const CHORDS = {
 
 export function createPianoRoll(app) {
   const { store, wm, transport, engine } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
 
   const win = wm.create({
     id: 'piano', title: 'Piano roll', icon: 'pianoroll', minW: 520, minH: 280,
@@ -171,8 +173,8 @@ export function createPianoRoll(app) {
     const cat = app.actions.catalog();
     return ch && cat && isKitChannel(ch) ? kitKeyNames(cat, ch.program) : null;
   };
-  const totalSteps = () => store.patternSteps(pat()) + 2 * STEPS_PER_BAR;
-  const snap = () => snapSize(app.ui.snap, S.px);
+  const totalSteps = () => store.patternSteps(pat()) + 2 * BAR();
+  const snap = () => snapSize(app.ui.snap, S.px, BEAT(), BAR());
 
   function updateSpacer() {
     spacer.style.width = `${totalSteps() * S.px}px`;
@@ -244,8 +246,8 @@ export function createPianoRoll(app) {
       const step = q * 0.25;
       const x = Math.round(step * px - sx) + 0.5;
       let color = null;
-      if (step % STEPS_PER_BAR === 0) color = T.gridLineBar;
-      else if (step % STEPS_PER_BEAT === 0) color = T.gridLineBeat;
+      if (step % BAR() === 0) color = T.gridLineBar;
+      else if (step % BEAT() === 0) color = T.gridLineBeat;
       else if (Number.isInteger(step) && px >= 9) color = T.gridLineStep;
       else if (step % 0.5 === 0 && px >= 36) color = T.gridLineSub;
       else if (px >= 72) color = T.gridLineQ;
@@ -340,15 +342,15 @@ export function createPianoRoll(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       const x = Math.round(s * px - sx) + 0.5;
-      if (s % STEPS_PER_BAR === 0) {
+      if (s % BAR() === 0) {
         ctx.strokeStyle = T.rulerMajor;
         ctx.beginPath(); ctx.moveTo(x, 3); ctx.lineTo(x, RULER_H); ctx.stroke();
         ctx.fillStyle = T.rulerText;
-        ctx.fillText(String(s / STEPS_PER_BAR + 1), x + 4, 8);
-      } else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 28) {
+        ctx.fillText(String(s / BAR() + 1), x + 4, 8);
+      } else if (s % BEAT() === 0 && px * 4 >= 28) {
         ctx.strokeStyle = T.rulerMinor;
         ctx.beginPath(); ctx.moveTo(x, 12); ctx.lineTo(x, RULER_H); ctx.stroke();
-        if (px * 4 >= 64) { ctx.fillStyle = T.rulerTextDim; ctx.fillText(`${Math.floor(s / STEPS_PER_BAR) + 1}.${(s % STEPS_PER_BAR) / STEPS_PER_BEAT + 1}`, x + 3, 8); }
+        if (px * 4 >= 64) { ctx.fillStyle = T.rulerTextDim; ctx.fillText(`${Math.floor(s / BAR()) + 1}.${(s % BAR()) / BEAT() + 1}`, x + 3, 8); }
       } else if (px >= 14) {
         ctx.strokeStyle = T.rulerTick;
         ctx.beginPath(); ctx.moveTo(x, 16); ctx.lineTo(x, RULER_H); ctx.stroke();
@@ -433,8 +435,8 @@ export function createPianoRoll(app) {
     const q0 = Math.floor(sx / px);
     const q1 = Math.ceil((sx + gw) / px);
     for (let s = q0; s <= q1; s++) {
-      const bar = s % STEPS_PER_BAR === 0;
-      const beat = s % STEPS_PER_BEAT === 0;
+      const bar = s % BAR() === 0;
+      const beat = s % BEAT() === 0;
       if (!bar && !beat && px < 9) continue;
       ctx.strokeStyle = bar ? T.gridLineBar : beat ? T.gridLineBeat : T.gridLineStep;
       const x = Math.round(s * px - sx) + 0.5;

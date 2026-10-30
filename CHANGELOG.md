@@ -17,6 +17,11 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - **Tempo automation**: right-click the tempo display → Create automation clip (or an agent's `create_automation` with
   target `{ kind: "tempo" }`). Playback, export, the song clock and the position slider all follow the tempo curve, and
   the tempo display shows the current tempo while the song plays. After a tempo clip ends the song keeps its last tempo.
+- **Time signatures** (2/4, 3/4, 5/4, 6/8, 7/8, 12/8 … any n/2, n/4, n/8, n/16): the box beside the snap selector in the
+  toolbar, or `set_project` `timeSig`. Bars, beats, grid lines, rulers, snapping, the bar:beat clock, the metronome,
+  channel-rack pad groups and pattern lengths follow it; MIDI files carry it both ways, as do FL Studio projects.
+  Changing it keeps every note where it is.
+- Exported MIDI files include tempo automation as tempo changes.
 - Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
 
 ## [0.4.0]

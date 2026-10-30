@@ -1,5 +1,5 @@
 import { Emitter } from '../util.js';
-import { STEPS_PER_BEAT, STEPS_PER_BAR } from '../state.js';
+import { STEPS_PER_BEAT, barSteps, beatSteps } from '../state.js';
 import { applyTarget, curveAt, normToValue, targetValid } from '../automation.js';
 import { TempoMap } from '../tempo.js';
 
@@ -15,7 +15,7 @@ const TICK_MS = 25;
  */
 export function scheduleStep(store, engine, step, time, sd, opts = {}) {
   const proj = store.project;
-  if (opts.metronome && step % STEPS_PER_BEAT === 0) engine.click(time, step % STEPS_PER_BAR === 0);
+  if (opts.metronome && step % beatSteps(proj) === 0) engine.click(time, step % barSteps(proj) === 0);
 
   const anySolo = proj.channels.some((c) => c.solo);
   const swing = proj.swing || 0;
@@ -165,7 +165,8 @@ export class Transport extends Emitter {
     if (this.mode === 'pattern') return this.store.patternSteps(this.store.currentPattern);
     const loop = this.store.project.loop;
     if (this.loopEnabled && loop) return loop.end;
-    return Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+    const bar = this.store.barSteps;
+    return Math.ceil(this.store.playlistEndStep() / bar) * bar;
   }
 
   stop() {
@@ -229,7 +230,7 @@ export class Transport extends Emitter {
           if (this.nextStep >= loop.end) { this.nextStep = loop.start; this.jumped = true; }
         } else {
           // like FL Studio, the song wraps to the start once it runs past the last bar that has clips
-          const end = Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+          const end = this.lengthSteps;
           if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
         }
       }
@@ -304,9 +305,11 @@ export class Transport extends Emitter {
   }
 
   formatBst(step) {
-    const bar = Math.floor(step / STEPS_PER_BAR) + 1;
-    const beat = Math.floor((step % STEPS_PER_BAR) / STEPS_PER_BEAT) + 1;
-    const tick = Math.floor(((step % STEPS_PER_BEAT) / STEPS_PER_BEAT) * 96);
+    const barLen = this.store.barSteps;
+    const beatLen = this.store.beatSteps;
+    const bar = Math.floor(step / barLen) + 1;
+    const beat = Math.floor((step % barLen) / beatLen) + 1;
+    const tick = Math.floor(((step % beatLen) / beatLen) * 96);
     return { bar, beat, tick };
   }
 }
