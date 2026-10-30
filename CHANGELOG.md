@@ -5,6 +5,11 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [0.5.0]
+
+### Changed
+- Releases now build automatically after a version-bump change reaches `main`, and the release workflow rejects duplicate or
+  non-increasing package versions.
 ### Added
 - Agent quickstarts for **Codex**, **Google Antigravity** and **Pi** in Settings → Agents, next to Claude Code and OpenCode: copy
   the prompt, paste it into the agent, and it registers OpenStudio's MCP server in its own config (`codex mcp add`,

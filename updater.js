@@ -5,8 +5,8 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-// Every push to main publishes a release tagged `v<package version>-build<run number>` (see release.yml), so the
-// package version alone does not order releases: the build number breaks ties.
+// Releases are tagged with the package version (see release.yml), and each
+// release must increase that version instead of reusing it for a new build.
 const TAG_RE = /^v?(\d+)\.(\d+)\.(\d+)(?:-build(\d+))?$/;
 const TRUSTED_HOSTS = [/^github\.com$/, /(^|\.)githubusercontent\.com$/];
 

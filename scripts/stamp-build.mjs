@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Writes buildinfo.json (gitignored, packaged by electron-builder) so an installed app knows which CI build it is.
-// Releases are tagged v<version>-build<run number>, so the run number is what orders them — see updater.js.
+// The package version orders releases; the CI run number identifies the build
+// within the packaged app for diagnostics.
 // Usage: BUILD_NUMBER=42 GITHUB_SHA=abc… node scripts/stamp-build.mjs
 import { writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
