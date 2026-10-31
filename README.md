@@ -17,25 +17,33 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - 261 General MIDI instruments and 13 drum kits (TR-808/909, Electronic, Jazz, Orchestral, …) from the
   [GeneralUser GS](assets/CREDITS.md) SoundFont, played by a built-in sampler engine (velocity, loops, envelopes,
   filters, vibrato, hi-hat choke).
-- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO),
-  an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps, textures);
-  26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio files.
+- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO,
+  mono / legato with glide for 808 slides), an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound
+  FX generator (risers, impacts, sweeps, textures); 26 synthesized drum voices (808, punchy, acoustic-style); and a
+  sampler for your own audio (root note, start / end, loop region, and Slicex-style slicing at the hits).
 - Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
   delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
   multiband compressor, sidechain compressor, gate, limiter, stereo width.
 
 **Workflow**
-- **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo and mixer routing.
-- **Piano roll** with draw / select / delete / mute / slice tools, scale highlighting, ghost notes, velocity lane,
-  quantize, and drum-kit key labels.
-- **Playlist** with pattern, audio and automation clips, loop region, drag-and-drop of samples and audio files.
-- **Mixer** with 125 inserts, sends (feedback-protected), 10 effect slots per track and stereo meters.
-- **Automation** — right-click any knob or fader to create an automation clip with an editable curve.
+- **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL
+  plugins and samples found beside the project.
+- **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo, mixer routing and
+  drag-and-drop of samples.
+- **Piano roll** with draw / select / delete / mute / slice tools, scale highlighting, chord stamps, ghost notes,
+  velocity / pan / fine-pitch lanes, quantize, legato, arpeggiate, strum, chop, flam, articulate, scale snap and limit.
+- **Playlist** with pattern, audio and automation clips, time markers, loop region, split by channel, audio-clip fades,
+  gain and reverse, and drag-and-drop of patterns, samples and audio files.
+- **Mixer** with 125 inserts, routing (to the master, to buses, or both — feedback-protected), sidechain, 10 effect
+  slots per track and stereo meters with peak hold.
+- **Automation** of any knob, fader, effect parameter or the **tempo**; **time signatures**; **MIDI controller links**
+  (right-click → Link to controller).
+- **Recording** of notes from the computer or a MIDI keyboard, and of **audio** from any input into the playlist.
+- **Browser** with your own sample folders (preview, drag in), every instrument, preset, drum voice and effect.
+- **Export** to WAV, FLAC, per-mixer-track stems and MIDI; `.osp` projects with autosave, recent files and undo/redo.
 - **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
-- **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL plugins.
-- Undo/redo, `.osp` project files, WAV, FLAC, stem and MIDI export, computer-keyboard and MIDI-keyboard input, live note and audio recording.
 
 ## Getting started
 
