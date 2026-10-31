@@ -66,6 +66,8 @@
   };
   await tune('subtractive synth', 'synth', { wave1: 'sawtooth', mix: 0, cutoff: 8000, attack: 0.001, release: 0.1 });
   await tune('FM synth', 'fm', { ratio: 1, index: 0.5, indexSus: 1, sustain: 1, decay: 2 });
+  // a stacked modulator whose ratio is a multiple of the one below it carries DC, which would detune the carrier
+  await tune('FM synth, stacked operators', 'fm', { ratio: 2, index: 3, ratio2: 1, index2: 1, indexSus: 1, sustain: 1, decay: 2 }, 0.02);
   await tune('organ (8′ and up)', 'organ', { d16: 0, d513: 0 });
   await tune('plucked string', 'pluck', { decay: 3, bright: 0.5, damp: 0.3 });
   for (const table of (await import('./src/audio/wavetable.js')).WAVETABLES) {

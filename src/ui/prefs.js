@@ -5,7 +5,7 @@ import { icon } from './icons.js';
 import { appearance, THEMES, ACCENTS } from '../theme.js';
 import { SOLIDS, GRADIENTS, IMAGES, gradientCss, importImageFile, themeFromWallpaper } from '../wallpapers.js';
 import { messageDialog } from './dialog.js';
-import { claudePrompt, opencodePrompt } from './agentprompts.js';
+import { claudePrompt, opencodePrompt, codexPrompt, antigravityPrompt, piPrompt } from './agentprompts.js';
 import { PROFILES, ACTIONS, MODIFIERS, comboOf, resolveCombo } from './tiling.js';
 import { keymap, COMMANDS, comboLabel } from '../keymap.js';
 
@@ -354,7 +354,10 @@ export function createPreferences(app) {
           ? 'OpenStudio runs an MCP server so AI agents can write notes, build the arrangement, mix and render. Copy a quickstart, paste it into your agent, and it will connect itself — every edit it makes is on your undo stack.'
           : 'The MCP server is off. Start OpenStudio without --no-mcp (and without OPENSTUDIO_MCP=0), and make sure its port is free, to let AI agents work on your projects.'),
         quick('Copy quickstart for Claude Code', 'Tells Claude Code to run claude mcp add for you.', claudePrompt),
-        quick('Copy quickstart for OpenCode', 'Tells OpenCode to add the server to its opencode.json config.', opencodePrompt)),
+        quick('Copy quickstart for OpenCode', 'Tells OpenCode to add the server to its opencode.json config.', opencodePrompt),
+        quick('Copy quickstart for Codex', 'Tells Codex to run codex mcp add for you.', codexPrompt),
+        quick('Copy quickstart for Antigravity', 'Tells Antigravity\'s agent to add the server to its mcp_config.json.', antigravityPrompt),
+        quick('Copy quickstart for Pi', 'Tells Pi to run pi mcp add for you.', piPrompt)),
       section('Endpoint',
         h('p', { class: 'prefs-note' }, url ? `${url}  (this computer only)` : 'Not running'),
         h('p', { class: 'prefs-note' }, 'Other clients: add it as a Streamable HTTP MCP server with this URL, or use node scripts/mcp-stdio.mjs for stdio-only clients. Details: docs/AGENTS.md')));

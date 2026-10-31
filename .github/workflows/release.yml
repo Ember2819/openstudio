@@ -2,23 +2,16 @@ name: Release builds
 description: >-
   Builds distributable OpenStudio packages for x64 and ARM64. Windows produces
   standalone portable .exe files, Linux .AppImage files, and macOS .dmg files.
-# Releases are cut deliberately, not on every commit. To publish one:
-#   1. bump "version" in package.json and commit it
-#   2. git tag v<version> && git push origin v<version>
-# That builds all six packages (3 platforms x 2 architectures) and publishes
-# them as a GitHub Release, e.g. OpenStudio-0.3.0-windows-x64-portable.exe.
-# Pushes to main without a tag only run CI (ci.yml).
-#
-# "Run workflow" in the Actions tab does a test build of the current branch:
-# the packages are uploaded as workflow artifacts but no release is created.
+# Manual only ("Run workflow" in the Actions tab) — releases are never created
+# automatically, not on branch or tag pushes. This does a test build of the
+# current branch; the packages are uploaded as workflow artifacts and can be
+# published to the releases page by hand if wanted.
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
 
 permissions:
-  contents: write # required to create GitHub releases
+  contents: read
 
 concurrency:
   group: release-builds
@@ -42,16 +35,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-
-      - name: Check tag matches package.json version
-        if: github.ref_type == 'tag'
-        shell: bash
-        run: |
-          pkg="v$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "$pkg" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version ($pkg). Bump the version first."
-            exit 1
-          fi
 
       - name: Install dependencies
         run: npm ci
@@ -117,44 +100,3 @@ jobs:
             release/*.AppImage
             release/*.dmg
           if-no-files-found: error
-
-  release:
-    name: Publish release
-    needs: build
-    if: github.ref_type == 'tag'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7 # package.json needed for the version
-
-      - name: Compute version
-        id: ver
-        shell: bash
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: openstudio-*
-          path: release
-          merge-multiple: true
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: OpenStudio ${{ github.ref_name }}
-          generate_release_notes: true
-          body: >-
-            Downloads:
-            OpenStudio-${{ steps.ver.outputs.version }}-windows-x64-portable.exe (Windows x64),
-            OpenStudio-${{ steps.ver.outputs.version }}-windows-arm64-portable.exe (Windows on ARM),
-            OpenStudio-${{ steps.ver.outputs.version }}-linux-x64.AppImage (Linux x64),
-            OpenStudio-${{ steps.ver.outputs.version }}-linux-arm64.AppImage (Linux ARM64),
-            OpenStudio-${{ steps.ver.outputs.version }}-macos-x64.dmg (Intel Macs) and
-            OpenStudio-${{ steps.ver.outputs.version }}-macos-arm64.dmg (Apple Silicon).
-          draft: false
-          prerelease: false
-          files: |
-            release/*.exe
-            release/*.AppImage
-            release/*.dmg

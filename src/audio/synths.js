@@ -50,9 +50,12 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p, from = null) 
   // cutoff follows the note a little (keytrack), so a bass and a high lead sound like the same patch
   const base = clamp(p.cutoff * Math.pow(freq / REF_FREQ, p.keytrack ?? 0), 40, 20000);
   const top = Math.min(20000, base * (1 + p.envAmt * 7));
+  // the filter opens over the attack and closes over the decay, with the amp: a slow pad or brass swell gets
+  // brighter as it fades in instead of starting wide open and darkening while it is still silent
   for (const f of stages) {
-    f.frequency.setValueAtTime(top, t);
-    f.frequency.exponentialRampToValueAtTime(Math.max(base, 20), t + p.attack + p.decay);
+    f.frequency.setValueAtTime(base, t);
+    f.frequency.exponentialRampToValueAtTime(top, t + Math.max(p.attack, 0.001));
+    f.frequency.exponentialRampToValueAtTime(base, t + Math.max(p.attack, 0.001) + p.decay);
   }
 
   const bus = ctx.createGain();
@@ -183,7 +186,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
   const m1 = ctx.createOscillator();
   m1.frequency.value = freq * p.ratio;
   const m1g = ctx.createGain();
-  m1.connect(m1g).connect(carrier.frequency);
+  m1g.connect(carrier.frequency);
   const sources = [carrier, m1];
 
   // frequency deviation = index x modulator frequency; clamp it so very high notes cannot alias into noise
@@ -202,6 +205,16 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
     shape(m2g, p.index2, freq * p.ratio2);
     sources.push(m2);
     pitched.push(m2.detune);
+    // A modulated modulator has a DC component whenever ratio is a multiple of ratio2 (a sideband lands on 0 Hz).
+    // Fed into the carrier's frequency, that DC offsets its pitch and the note goes out of tune and inharmonic,
+    // so block it before it reaches the carrier.
+    const dc = ctx.createBiquadFilter();
+    dc.type = 'highpass';
+    dc.frequency.value = Math.min(12, freq * 0.1);
+    dc.Q.value = 0.5;
+    m1.connect(dc).connect(m1g);
+  } else {
+    m1.connect(m1g);
   }
 
   let tail = carrier;
@@ -336,44 +349,63 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
 // ---------------------------------------------------------------------------
 /**
  * Extended Karplus-Strong. `decay` is the time (s) for the fundamental to fall 60 dB, `bright` (0-1) the
- * colour of the initial pluck, `damp` (0-1) how quickly the highs die away, `pick` the pluck position along
- * the string (0.05 near the bridge = thin and nasal, 0.5 = hollow). Tuned with an all-pass fractional delay,
- * so it is in tune up to the top of the keyboard.
+ * colour of the initial pluck, `damp` (0-1) how much faster the highs die away than the fundamental, `pick`
+ * the pluck position along the string (0.05 near the bridge = thin and nasal, 0.5 = hollow). Tuned with an
+ * all-pass fractional delay, so it is in tune up to the top of the keyboard.
  */
 export function karplusStrong(sr, freq, { decay = 2, bright = 0.6, damp = 0.4, pick = 0.2, velocity = 0.8, seconds } = {}) {
   const N = sr / freq;
-  const s = clamp(0.5 * damp, 0.005, 0.5); // weight on the previous sample in the 2-tap loop filter
-  const M = Math.max(2, Math.floor(N - s - 0.5));
-  const d = N - s - M; // fractional delay the all-pass must supply (0.5..1.5)
+  const w0 = (2 * Math.PI * freq) / sr;
+
+  // Loss filter: a one-pole low-pass in the loop, H(z) = b / (1 - a z^-1). Its gain per trip round the string
+  // gives the fundamental a 60 dB decay of `decay` seconds and the top of the spectrum a much shorter one, so
+  // the tone mellows as it rings the way a real string does. Both are per second, so every pitch decays alike.
+  const t60 = Math.max(decay, 0.05);
+  const t60High = t60 * Math.pow(10, -0.3 - 1.5 * clamp(damp, 0, 1));
+  const g0 = Math.pow(10, -3 / (freq * t60));
+  const gHigh = Math.pow(10, -3 / (freq * t60High));
+  const r = g0 / gHigh;
+  const a = Math.min((r - 1) / (r + 1), 0.95);
+  const b = Math.min(g0 * Math.sqrt(1 - 2 * a * Math.cos(w0) + a * a), 0.99995 * (1 - a)); // |H| = g0 at the fundamental, never above 1
+  const lossDelay = Math.atan2(a * Math.sin(w0), 1 - a * Math.cos(w0)) / w0; // its phase delay there, in samples
+
+  const M = Math.max(2, Math.floor(N - lossDelay - 0.5));
+  const d = N - lossDelay - M; // fractional delay the all-pass must supply (0.5..1.5)
   const C = (1 - d) / (1 + d);
-  const g = Math.min(0.99995, Math.pow(10, -3 / (freq * Math.max(decay, 0.05))));
   const length = Math.ceil(sr * (seconds ?? clamp(decay * 0.9, 0.3, 4.5)));
   const out = new Float32Array(length);
 
-  // excitation: noise, low-passed by `bright` (brighter with velocity), with the pick-position comb notch
+  // Excitation: the string's shape at the moment it is let go — a triangle peaking at the pick position, which
+  // gives the 1/n² harmonics and the pick-position notches of a real pluck — plus a little noise for the
+  // finger or plectrum, low-passed by brightness and velocity (relative to the pitch, so every note has the
+  // same colour). Filtered circularly: the delay line is one period of a periodic wave.
   const line = new Float32Array(M);
-  const a = clamp(0.1 + 0.9 * clamp(bright + (velocity - 0.6) * 0.3, 0, 1), 0.05, 1);
-  let lp = 0;
-  for (let i = 0; i < M; i++) { lp += a * ((Math.random() * 2 - 1) - lp); line[i] = lp; }
-  const offset = Math.max(1, Math.round(pick * M));
-  const comb = Float32Array.from(line);
-  for (let i = 0; i < M; i++) line[i] = comb[i] - comb[(i - offset + M) % M];
+  const apex = clamp(Math.round(pick * M), 1, M - 1);
+  for (let i = 0; i < M; i++) line[i] = i < apex ? i / apex : (M - i) / (M - apex);
+  const bv = clamp(bright + (velocity - 0.6) * 0.3, 0, 1);
+  const grit = 0.1 + 0.5 * bv;
+  for (let i = 0; i < M; i++) line[i] += grit * (Math.random() * 2 - 1);
+  const fc = Math.min(freq * (1.5 + 30 * bv * bv), sr * 0.45);
+  const k = 1 - Math.exp((-2 * Math.PI * fc) / sr);
+  for (let pass = 0; pass < 2; pass++) { // two one-pole stages (12 dB/oct), each run twice round so it wraps cleanly
+    let y = 0;
+    for (let n = 0; n < 2 * M; n++) { const i = n % M; y += k * (line[i] - y); if (n >= M) line[i] = y; }
+  }
   let mean = 0, max = 1e-9;
   for (let i = 0; i < M; i++) mean += line[i];
   mean /= M;
   for (let i = 0; i < M; i++) { line[i] -= mean; max = Math.max(max, Math.abs(line[i])); }
   for (let i = 0; i < M; i++) line[i] /= max;
 
-  let ptr = 0, prev = 0, apIn = 0, apOut = 0;
+  let ptr = 0, lp = 0, apIn = 0, apOut = 0;
   for (let n = 0; n < length; n++) {
     const cur = line[ptr];
     out[n] = cur;
-    const filtered = (1 - s) * cur + s * prev;
-    prev = cur;
-    const ap = C * (filtered - apOut) + apIn;
-    apIn = filtered;
+    lp = b * cur + a * lp;
+    const ap = C * (lp - apOut) + apIn;
+    apIn = lp;
     apOut = ap;
-    line[ptr] = g * ap;
+    line[ptr] = ap;
     if (++ptr === M) ptr = 0;
   }
   const fade = Math.min(length, Math.round(sr * 0.06)); // no click where the rendered buffer ends
@@ -403,7 +435,7 @@ export function playPluck(ctx, dest, pitch, t, dur, vel, semis, p) {
   const src = ctx.createBufferSource();
   src.buffer = buf;
   const out = ctx.createGain();
-  out.gain.value = 0.55 * (0.3 + vel * 0.7);
+  out.gain.value = 0.4 * (0.3 + vel * 0.7);
   let tail = src;
   if (p.body > 0.01) { // a resonance in the low mids, like the air in a guitar body
     const eq = ctx.createBiquadFilter();

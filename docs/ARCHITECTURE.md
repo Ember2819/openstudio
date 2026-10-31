@@ -21,7 +21,7 @@ Web Audio API; everything is driven by one project model.
 - `mcp/`: the MCP server for AI agents (`server.js` protocol, `bridge.js` main↔renderer wiring). See
   [AGENTS.md](AGENTS.md).
 - `updater.js` (+ the `update:*` handlers in `main.js`): in-app updates. Releases are tagged
-  `v<version>-build<run number>` by `release.yml`, which also stamps `buildinfo.json` (via
+  `v<version>` by `release.yml`, which also stamps `buildinfo.json` (via
   `scripts/stamp-build.mjs`) so a packaged app knows its own build number. The renderer UI is `src/ui/updater.js`; it
   never passes URLs to the main process, which only downloads the asset found by its own last check.
 - `preload.js`: exposes a small `window.studioAPI` bridge (`contextIsolation` on, `nodeIntegration` off).
