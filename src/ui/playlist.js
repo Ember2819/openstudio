@@ -816,7 +816,7 @@ export function createPlaylist(app) {
   // drag & drop: patterns, library samples, and audio files from the desktop
   const accepts = (e) => {
     const t = e.dataTransfer.types;
-    return t.includes('text/openstudio-pattern') || t.includes('text/openstudio-sample') || t.includes('Files');
+    return t.includes('text/openstudio-pattern') || t.includes('text/openstudio-sample') || t.includes('text/openstudio-file') || t.includes('Files');
   };
   scroller.addEventListener('dragover', (e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   scroller.addEventListener('drop', async (e) => {
@@ -828,7 +828,15 @@ export function createPlaylist(app) {
     let track = trackAt(w.y);
     const patId = Number(e.dataTransfer.getData('text/openstudio-pattern'));
     const sampleId = Number(e.dataTransfer.getData('text/openstudio-sample'));
-    if (store.pattern(patId)) {
+    const libFile = e.dataTransfer.getData('text/openstudio-file');
+    if (libFile) {
+      // a file from the browser's sample folders
+      try {
+        const data = await app.browser.readFile(libFile);
+        const id = store.addSample(libFile.split(/[\\/]/).pop(), data.slice(0));
+        await placeAudio(id, track, start);
+      } catch (err) { console.warn('Could not place the sample', err); }
+    } else if (store.pattern(patId)) {
       store.checkpoint();
       placeClip(patId, track, start, patLen(patId));
       store.emit('playlist');

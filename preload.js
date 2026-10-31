@@ -11,6 +11,13 @@ contextBridge.exposeInMainWorld('studioAPI', {
   flpSamples: (paths) => ipcRenderer.invoke('flp:samples', paths),
   writeFile: (opts) => ipcRenderer.invoke('file:write', opts),
   pickFolder: (opts) => ipcRenderer.invoke('dir:pick', opts),
+  library: {
+    folders: () => ipcRenderer.invoke('lib:folders'),
+    add: () => ipcRenderer.invoke('lib:add'),
+    remove: (p) => ipcRenderer.invoke('lib:remove', p),
+    list: (dir) => ipcRenderer.invoke('lib:list', dir),
+    read: (file) => ipcRenderer.invoke('lib:read', file),
+  },
   writeInFolder: (opts) => ipcRenderer.invoke('dir:write', opts),
   readAsset: (rel) => ipcRenderer.invoke('asset:read', rel),
   devWrite: (file, data) => ipcRenderer.invoke('dev:write', file, data),

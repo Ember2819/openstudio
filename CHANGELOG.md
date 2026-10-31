@@ -43,6 +43,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **Sample folders in the browser**: add the folders where your samples live (Browser → Sample folders → Add a
+  folder…), browse them, click a file to hear it, double-click to make a sampler channel, or drag it into the playlist
+  (an audio clip) or the channel rack (a new sampler, or onto a sampler to swap its sample). The app can only read
+  audio files inside folders you added.
 - The synth has **Mono / legato** and **Glide** (portamento): overlapping notes slide into each other without
   retriggering — 808 glides — with a new "808 Glide" preset.
 - **Link to controller** (MIDI learn): right-click any knob, fader, effect parameter or the tempo → "Link to

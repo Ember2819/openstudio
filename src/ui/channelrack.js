@@ -145,6 +145,38 @@ export function createChannelRack(app) {
   });
   rowsEl.addEventListener('pointerdown', () => scroll.focus({ preventScroll: true }), true);
 
+  // drop samples (browser sample folders, the project's samples, or files from the desktop): onto a sampler row it
+  // replaces that channel's sample, anywhere else it makes a new sampler channel
+  const dropTypes = ['text/openstudio-file', 'text/openstudio-sample', 'Files'];
+  scroll.addEventListener('dragover', (e) => { if (dropTypes.some((t) => e.dataTransfer.types.includes(t))) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  scroll.addEventListener('drop', async (e) => {
+    if (!dropTypes.some((t) => e.dataTransfer.types.includes(t))) return;
+    e.preventDefault();
+    const target = store.channel(Number(e.target.closest?.('.cr-row')?.dataset.ch));
+    const samples = [];
+    const libFile = e.dataTransfer.getData('text/openstudio-file');
+    const libSample = Number(e.dataTransfer.getData('text/openstudio-sample'));
+    if (libFile) samples.push({ name: libFile.split(/[\\/]/).pop(), data: (await app.browser.readFile(libFile)).slice(0) });
+    else if (store.samples.has(libSample)) samples.push({ id: libSample, name: store.samples.get(libSample).name });
+    else for (const f of e.dataTransfer.files) if (/^audio\//.test(f.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(f.name)) samples.push({ name: f.name, data: await f.arrayBuffer() });
+    if (!samples.length) return;
+    store.checkpoint();
+    samples.forEach((smp, k) => {
+      const id = smp.id ?? store.addSample(smp.name, smp.data);
+      const name = smp.name.replace(/\.[^.]+$/, '');
+      if (k === 0 && target?.type === 'sampler') {
+        target.sampleId = id;
+        target.name = name;
+        delete target.slices;
+      } else {
+        const ch = store._addChannel({ name, type: 'sampler', sampleId: id });
+        store.project.selected.channel = ch.id;
+      }
+    });
+    store.emit('channels');
+    store.emit('selection');
+  });
+
   function buildRow(ch) {
     const led = h('button', { class: `led cr-led${ch.mute ? '' : ' on'}`, 'data-hint': 'Channel enabled — click to mute, right-click to solo' });
     led.addEventListener('click', () => { store.checkpoint(); ch.mute = !ch.mute; store.emit('channels'); });
