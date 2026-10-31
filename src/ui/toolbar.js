@@ -87,7 +87,12 @@ export function createToolbar(app) {
         const rec = app.recorder;
         const devs = rec?.known ?? [];
         rec?.refreshDevices();
+        const sel = store.project.selected.mixer;
         return [
+          { label: rec?.monitorTrack != null ? `Stop monitoring (through ${store.project.mixer[rec.monitorTrack].name})` : `Monitor through mixer track “${store.project.mixer[sel].name}”`,
+            checked: rec?.monitorTrack != null,
+            action: () => rec.setMonitor(rec.monitorTrack != null ? null : sel) },
+          { separator: true },
           { label: 'Default input', checked: !rec?.deviceId, action: () => rec.setDevice('') },
           ...devs.filter((d) => d.id && d.id !== 'default').map((d) => ({ label: d.name, checked: rec.deviceId === d.id, action: () => rec.setDevice(d.id) })),
         ];

@@ -41,6 +41,16 @@
 
   t.setRecording(false);
   ok('turning recording off closes the device', await until(() => !a.recorder.armed, 2000));
+  // monitoring: the input plays through a mixer track (its meter moves) without recording
+  await a.recorder.setMonitor(5);
+  ok('monitoring opens the input', await until(() => a.recorder.armed));
+  // the fake device only beeps briefly once a second: watch the meter closely for a few seconds
+  let heard = false;
+  for (let i = 0; i < 1000 && !heard; i++) { const [l, r] = a.engine.readLevels(5); heard = l > 0.01 || r > 0.01; await wait(4); }
+  ok('the monitored input reaches its mixer track', heard);
+  await a.recorder.setMonitor(null);
+  ok('monitoring off closes the input', await until(() => !a.recorder.armed, 2000));
+
   t.setRecordAudio(false);
   t.setRecordNotes(true);
   return log.join('\n');

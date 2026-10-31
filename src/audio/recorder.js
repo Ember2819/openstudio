@@ -28,6 +28,17 @@ export class AudioRecorder extends Emitter {
 
   get armed() { return !!this.node; }
 
+  /**
+   * Hear the input through a mixer track's input (its effects, fader and routing), or stop with null. `dest` is that
+   * track's input node; it is remembered and reconnected whenever the device is (re)armed.
+   */
+  monitor(dest) {
+    if (this.monitorDest && this.source) { try { this.source.disconnect(this.monitorDest); } catch { /* not connected */ } }
+    this.monitorDest = dest;
+    if (dest && this.source) this.source.connect(dest);
+    this.emit('change');
+  }
+
   /** Audio inputs the browser can see (labels need permission, so they may be blank until the first arm). */
   async devices() {
     const list = await navigator.mediaDevices?.enumerateDevices?.() ?? [];
@@ -65,6 +76,7 @@ export class AudioRecorder extends Emitter {
     this.sink = this.ctx.createGain();
     this.sink.gain.value = 0; // the worklet must reach the destination to be processed, silently
     this.source.connect(this.node).connect(this.sink).connect(this.ctx.destination);
+    if (this.monitorDest) this.source.connect(this.monitorDest);
     this.node.port.onmessage = (e) => {
       const { t, l, r } = e.data;
       let peak = 0;

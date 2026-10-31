@@ -11,23 +11,34 @@ export function installAudioRecording(app) {
   let arming = null;
   let busy = Promise.resolve();
 
-  const wanted = () => transport.recording && transport.recordAudio;
+  // monitoring keeps the input device open even when not recording
+  let monitorTrack = null;
+  const wanted = () => (transport.recording && transport.recordAudio) || monitorTrack != null;
+  rec.setMonitor = async (track) => {
+    monitorTrack = track;
+    rec.monitorTrack = track;
+    rec.monitor(track == null ? null : engine.track(track).input);
+    await sync();
+  };
 
   async function sync() {
     if (wanted() && !rec.armed) {
       if (!arming) {
         arming = rec.arm().catch((err) => {
           transport.setRecordAudio(false);
+          monitorTrack = null;
+          rec.monitorTrack = null;
           messageDialog('Audio recording', `${err.message}.\n\nChoose an input under Options → Audio input, and check that OpenStudio may use the microphone.`);
         }).finally(() => { arming = null; });
       }
       await arming;
       if (!rec.armed) return;
       // audio takes go into the playlist, so they record against the song
-      if (transport.mode !== 'song') transport.setMode('song');
+      if (transport.recording && transport.recordAudio && transport.mode !== 'song') transport.setMode('song');
     }
-    if (wanted() && transport.playing && rec.armed && !rec.capturing) startTake();
-    if (rec.capturing && !(wanted() && transport.playing)) busy = busy.then(finishTake);
+    const taking = transport.recording && transport.recordAudio;
+    if (taking && transport.playing && rec.armed && !rec.capturing) startTake();
+    if (rec.capturing && !(taking && transport.playing)) busy = busy.then(finishTake);
     if (!wanted() && rec.armed && !rec.capturing) { await busy; if (!wanted() && !rec.capturing) rec.disarm(); }
   }
 
