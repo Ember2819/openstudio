@@ -508,6 +508,28 @@
     ok(`new from template works for every style (${good}/${Object.keys(STYLES).length})`, good === Object.keys(STYLES).length);
   }
 
+  // mixer groups: wheel on one grouped fader moves its group; Alt moves it alone; mute switches the group
+  {
+    s.resetToDefault();
+    const mx = s.project.mixer;
+    mx[1].group = 3; mx[2].group = 3;
+    s.emit('mixer');
+    a.wm.get('mixer').show();
+    await new Promise((r) => setTimeout(r, 50));
+    const strip = (i) => document.querySelector(`.mx-strip[data-track="${i}"]`);
+    strip(1).querySelector('.mx-fader-wrap').dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }));
+    const moved = [mx[1].vol, mx[2].vol, mx[3].vol].map((v) => Math.round(v * 100) / 100);
+    strip(1).querySelector('.mx-fader-wrap').dispatchEvent(new WheelEvent('wheel', { deltaY: 100, altKey: true, bubbles: true, cancelable: true }));
+    ok(`grouped faders move together, Alt moves one (${moved} → ${mx[1].vol.toFixed(2)}, ${mx[2].vol.toFixed(2)})`, moved[0] === 0.82 && moved[1] === 0.82 && moved[2] === 0.8 && Math.abs(mx[1].vol - 0.8) < 1e-9 && Math.abs(mx[2].vol - 0.82) < 1e-9);
+    strip(2).querySelector('.mx-btn.mute').click();
+    ok('mute switches the whole group', mx[1].mute && mx[2].mute && !mx[3].mute);
+    mx[2].name = 'Snare bus';
+    s.emit('mixer');
+    ok('a rename from elsewhere shows on the strip', strip(2).querySelector('.mx-label').textContent === 'Snare bus');
+    ok('grouped strips show their group', strip(1).classList.contains('grouped') && strip(1).querySelector('.mx-name').dataset.group === 'G3');
+    a.wm.get('mixer').hide();
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

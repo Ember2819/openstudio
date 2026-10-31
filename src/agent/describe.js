@@ -57,6 +57,7 @@ export function mixerTrackInfo(store, i) {
   const m = store.project.mixer[i];
   const out = { track: i, name: m.name, vol: round(m.vol), pan: round(m.pan), mute: m.mute, solo: m.solo, color: m.color };
   if (i > 0) out.toMaster = m.master !== false;
+  if (m.group) out.group = m.group;
   out.effects = m.fx.map((slot, k) => (slot ? { slot: k, type: slot.type, on: slot.on, params: slot.params } : null)).filter(Boolean);
   out.sends = Object.entries(m.sends).map(([to, level]) => ({ to: Number(to), level: round(level) }));
   out.channels = store.project.channels.filter((c) => c.mixer === i).map((c) => c.id);
@@ -65,7 +66,7 @@ export function mixerTrackInfo(store, i) {
 
 const isCustomMixer = (store, i) => {
   const m = store.project.mixer[i];
-  return i === 0 || m.name !== `Insert ${i}` || m.vol !== 0.8 || m.pan !== 0 || m.mute || m.solo || m.color || m.master === false || m.fx.some(Boolean) || Object.keys(m.sends).length
+  return i === 0 || m.name !== `Insert ${i}` || m.vol !== 0.8 || m.pan !== 0 || m.mute || m.solo || m.color || m.master === false || m.group || m.fx.some(Boolean) || Object.keys(m.sends).length
     || store.project.channels.some((c) => c.mixer === i) || store.project.playlist.tracks.some((t) => t.mixer === i);
 };
 

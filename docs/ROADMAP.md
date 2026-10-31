@@ -7,7 +7,6 @@ Rough priorities, not promises. Pick something and open an issue before starting
 
 ## Mid term
 - More built-in instruments.
-- Mixer track grouping.
 - MP3 export.
 - Theming and a keyboard-shortcut editor; accessibility pass.
 

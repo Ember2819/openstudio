@@ -24,7 +24,7 @@ export const tools = [
   {
     name: 'update_mixer_track',
     title: 'Update mixer track',
-    description: 'Set a mixer track\'s name, fader (0-1, where 0.8 = 0 dB and 1 = +6 dB), pan (-1..1), mute, solo, colour, or whether it feeds the master (toMaster: false for an insert that should only reach the master through a send to a bus). Only the fields you pass change.',
+    description: 'Set a mixer track\'s name, fader (0-1, where 0.8 = 0 dB and 1 = +6 dB), pan (-1..1), mute, solo, colour, group (1-8: grouped tracks move together in the mixer; 0 = none), or whether it feeds the master (toMaster: false for an insert that should only reach the master through a send to a bus). Only the fields you pass change.',
     inputSchema: obj({
       track: TRACK,
       name: str('Track name'),
@@ -34,6 +34,7 @@ export const tools = [
       solo: bool('Solo'),
       color: maybe(COLOR),
       toMaster: bool('Route this insert to the master (default true)'),
+      group: int('Mixer group 1-8 (faders, mute and solo of grouped tracks move together in the UI); 0 = no group', { minimum: 0, maximum: 8 }),
     }, ['track']),
     annotations: { ...WRITE, idempotentHint: true, title: 'Update mixer track' },
     run(a, app) {
@@ -47,6 +48,7 @@ export const tools = [
         if (a.solo !== undefined) m.solo = a.solo;
         if (a.color !== undefined) m.color = a.color;
         if (a.toMaster !== undefined && a.track > 0) { if (a.toMaster) delete m.master; else m.master = false; }
+        if (a.group !== undefined) { if (a.track === 0 && a.group) fail('The master cannot be grouped'); if (a.group) m.group = a.group; else delete m.group; }
         store.emit('mixer');
         store.emit('mixerSelection');
       });

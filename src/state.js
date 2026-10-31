@@ -212,6 +212,7 @@ export class Store extends Emitter {
       const out = { ...b, ...m, fx: b.fx.map((_, k) => m.fx?.[k] ?? null), sends: m.sends ?? {} };
       if (!Number.isFinite(out.vol)) out.vol = b.vol;
       if (!Number.isFinite(out.pan)) out.pan = b.pan;
+      if (out.group !== undefined && !(i > 0 && Number.isInteger(out.group) && out.group >= 1 && out.group <= 8)) delete out.group;
       return out;
     });
   }

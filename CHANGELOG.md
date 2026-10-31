@@ -19,6 +19,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Makeup. The Limiter now holds its ceiling exactly instead of overshooting by up to 1 dB.
 - Duplicating, copying and pasting notes keeps their mute state (and the new per-note pan and fine pitch).
 - MIDI export left muted notes in.
+- Mixer track names changed by an agent or by undo didn't show on the strip until the mixer was rebuilt.
 
 ### Added
 - **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
@@ -50,6 +51,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
   becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
+- **Mixer groups**: right-click a track → Group → 1-8. Grouped faders move together (by the same amount), and mute
+  and solo switch the whole group; hold Alt to adjust one track alone. Agents: `update_mixer_track` `group`.
 - **Pitch shifter** (±24 semitones and cents, adjustable grain), **pitch correction** (snaps a voice to the nearest
   note of a key and scale; speed from natural to the robotic hard-tune) and a 16-band **vocoder** (put it on the synth,
   pick the voice's mixer track as the modulator; formant shift, sibilance, release).

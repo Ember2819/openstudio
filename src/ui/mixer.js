@@ -6,6 +6,7 @@ import { promptDialog } from './dialog.js';
 import { MIXER_TRACKS } from '../state.js';
 import { EFFECT_DEFS, defaultEffectParams, effectMenu } from '../audio/effects.js';
 import { overlayScrollbars, wheelScrollsHorizontally } from './scrollbars.js';
+import { GROUPS, GROUP_COLORS, groupMates, setGroupVolume, setGroupFlag } from '../mixergroups.js';
 import { T, appearance } from '../theme.js';
 
 const METER_W = 12;
@@ -76,9 +77,19 @@ export function createMixer(app) {
         ] : []),
         { label: 'Rename…', action: () => name.dispatchEvent(new MouseEvent('dblclick')) },
         { label: 'Color', submenu: COLORS.map((c) => ({ label: ' ', swatch: c, action: () => { store.checkpoint(); m().color = c; refreshLabels(); } })) },
+        ...(i > 0 ? [{ label: 'Group', submenu: [
+          { label: 'None', checked: !m().group, action: () => setGroup(null) },
+          ...Array.from({ length: GROUPS }, (_, g) => ({ label: `Group ${g + 1}`, swatch: GROUP_COLORS[g], checked: m().group === g + 1, action: () => setGroup(g + 1) })),
+        ] }] : []),
         { label: 'Reset', action: () => { store.checkpoint(); Object.assign(m(), { vol: 0.8, pan: 0, mute: false, solo: false, fx: m().fx.map(() => null), sends: {} }); engine.syncFx(i); store.emit('mixer'); renderFx(); } },
       ], e.clientX, e.clientY);
     });
+
+    const setGroup = (g) => {
+      store.checkpoint();
+      if (g) m().group = g; else delete m().group;
+      store.emit('mixer'); // refreshes every strip
+    };
 
     const pan = createKnob({
       value: m().pan, min: -1, max: 1, def: 0, size: 26, bipolar: true, label: 'Pan',
@@ -94,10 +105,10 @@ export function createMixer(app) {
     const scale = h('div', { class: 'mx-scale' }, SCALE_MARKS.map(([t, v]) => h('span', { style: { bottom: faderOffset(v) } }, t)));
     const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset' }, rail, thumb);
     const setFaderUi = () => { thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`; };
-    const setVol = (v) => {
-      m().vol = clamp(v, 0, 1);
-      setFaderUi();
-      hint.set(`Track ${i}: ${fmtDb(faderToGain(m().vol))} dB`);
+    // grouped tracks follow (Alt moves this one alone)
+    const setVol = (v, alone = false) => {
+      setGroupVolume(mixer(), i, clamp(v, 0, 1), { alone });
+      hint.set(`Track ${i}: ${fmtDb(faderToGain(m().vol))} dB${!alone && groupMates(mixer(), i).length ? ` · group ${m().group}` : ''}`);
       store.emit('mixer');
     };
     let dragStart = null;
@@ -107,17 +118,17 @@ export function createMixer(app) {
       fader.setPointerCapture(e.pointerId);
       store.checkpoint();
       // relative drag (clicking never makes the level jump); Shift for fine control
-      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height - THUMB_H };
+      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height - THUMB_H, alone: e.altKey };
     });
     fader.addEventListener('pointermove', (e) => {
       if (!dragStart) return;
       const d = (dragStart.y - e.clientY) / dragStart.h;
-      setVol(dragStart.vol + d * (e.shiftKey ? 0.2 : 1));
-      if (e.shiftKey) { dragStart = { y: e.clientY, vol: m().vol, h: dragStart.h }; }
+      setVol(dragStart.vol + d * (e.shiftKey ? 0.2 : 1), dragStart.alone);
+      if (e.shiftKey) { dragStart = { ...dragStart, y: e.clientY, vol: m().vol }; }
     });
     fader.addEventListener('pointerup', () => { dragStart = null; });
     fader.addEventListener('pointercancel', () => { dragStart = null; });
-    fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8); });
+    fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8, true); }); // a reset is for this track only
     fader.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'mixer', track: i, param: 'vol' }));
 
     const meter = h('canvas', { class: 'mx-meter' });
@@ -125,12 +136,17 @@ export function createMixer(app) {
 
     // the whole scale | fader | meter column takes the wheel, so it never scrolls the mixer by accident
     const faderWrap = h('div', { class: 'mx-fader-wrap' }, scale, fader, h('div', { class: 'mx-meter-box' }, meter));
-    faderWrap.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02); }, { passive: false });
+    faderWrap.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02, e.altKey); }, { passive: false });
 
     const muteBtn = h('button', { class: 'mx-btn mute', 'data-hint': 'Mute' }, 'M');
     const soloBtn = h('button', { class: 'mx-btn solo', 'data-hint': 'Solo' }, 'S');
-    muteBtn.addEventListener('click', () => { store.checkpoint(); m().mute = !m().mute; refresh(); store.emit('mixer'); });
-    soloBtn.addEventListener('click', () => { store.checkpoint(); m().solo = !m().solo; refresh(); store.emit('mixer'); });
+    const flag = (key, e) => {
+      store.checkpoint();
+      setGroupFlag(mixer(), i, key, !m()[key], { alone: e.altKey });
+      store.emit('mixer');
+    };
+    muteBtn.addEventListener('click', (e) => flag('mute', e));
+    soloBtn.addEventListener('click', (e) => flag('solo', e));
 
     const el = h('div', { class: `mx-strip${i === 0 ? ' master' : ''}`, dataset: { track: i } },
       name, label, pan, h('div', { class: 'mx-btns' }, muteBtn, soloBtn),
@@ -151,6 +167,10 @@ export function createMixer(app) {
       s.active = isRouted(i);
       el.classList.toggle('routed', s.active);
       label.style.setProperty('--tc', mm.color || 'transparent');
+      if (label.textContent !== mm.name) label.textContent = mm.name; // renamed by an agent, undo or a load
+      el.classList.toggle('grouped', !!mm.group);
+      el.style.setProperty('--group', mm.group ? GROUP_COLORS[mm.group - 1] : 'transparent');
+      name.dataset.group = mm.group ? `G${mm.group}` : '';
     };
     s.refresh = refresh;
     refresh();

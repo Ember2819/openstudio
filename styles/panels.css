@@ -234,3 +234,6 @@
 .fxw-band-name i { width: 8px; height: 8px; border-radius: 50%; }
 .fxw-knobs { flex: none; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); padding: 14px 12px; }
 .cs-keymap { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.mx-strip.grouped .mx-name { box-shadow: inset 0 -3px 0 var(--group); }
+.mx-name[data-group]:not([data-group=""])::after { content: attr(data-group); margin-left: 4px; font-size: 9px; color: var(--group); }
+.mx-strip.selected .mx-name[data-group]:not([data-group=""])::after { color: inherit; }

@@ -215,6 +215,11 @@ test('mixer: levels, effects, sends, reset', async () => {
   info = await call(app, 'update_mixer_track', { track: 3, toMaster: true });
   assert.equal(info.toMaster, true);
   assert.equal(app.store.project.mixer[3].master, undefined);
+  info = await call(app, 'update_mixer_track', { track: 3, group: 2 });
+  assert.equal(info.group, 2);
+  info = await call(app, 'update_mixer_track', { track: 3, group: 0 });
+  assert.equal(info.group, undefined);
+  assert.match(await callFails(app, 'update_mixer_track', { track: 0, group: 1 }), /master cannot be grouped/);
 
   let t = await call(app, 'set_effect', { track: 3, type: 'reverb', params: { mix: 0.5 } });
   assert.deepEqual(t.effects.map((e) => [e.slot, e.type, e.params.mix]), [[0, 'reverb', 0.5]]);
