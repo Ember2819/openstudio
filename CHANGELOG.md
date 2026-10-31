@@ -39,6 +39,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **Export stems** (File menu, Ctrl+Shift+R): one WAV per used mixer track (post-fader) plus the master, into a folder
+  you pick — FL Studio's "split mixer tracks". Rendered in one pass for up to 15 tracks. Agents: `export_stems`.
 - **Effect windows**: clicking an effect in the mixer opens its editor in its own window (like FL Studio's plugin
   windows), with a power switch and Reset.
 - **New effects**: a 7-band **Parametric EQ** with a response graph you drag directly (wheel = Q, double-click = reset)

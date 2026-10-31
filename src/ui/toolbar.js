@@ -32,6 +32,7 @@ export function createToolbar(app) {
       { label: 'Import MIDI file…', action: () => actions.importMidiFile() },
       { separator: true },
       { label: 'Export audio (WAV)…', shortcut: 'Ctrl+R', action: actions.exportWav },
+      { label: 'Export stems (one WAV per mixer track)…', shortcut: 'Ctrl+Shift+R', action: actions.exportStems },
       { label: 'Export MIDI…', action: actions.exportMidi },
     ],
     EDIT: () => [

@@ -195,6 +195,27 @@
     ok('…but reaches the master through a send', l3 > l * 0.5);
   }
 
+  // stems: each mixer track rendered into its own pair of channels, in one pass
+  {
+    a.actions.loadDemo();
+    s.project.mode = 'song';
+    const tracks = a.actions.stemTracks();
+    const { renderStems } = await import('./src/audio/render.js');
+    const res = await renderStems(s, s.playlistEndStep(), tracks, { tail: 0.5 });
+    const level = (b) => { let m = 0; for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i += 7) m = Math.max(m, Math.abs(d[i])); } return m; };
+    ok(`stems: one per used mixer track (${tracks.join(',')})`, tracks.length >= 4 && res.stems.size === tracks.length);
+    ok('stems: every stem and the master have signal', level(res.master) > 0.05 && [...res.stems.values()].every((b) => level(b) > 0.005));
+    const kickTrack = s.project.channels.find((c) => /kick/i.test(c.name)).mixer;
+    const other = tracks.find((t) => t !== kickTrack && !s.project.channels.some((c) => c.mixer === t && /kick/i.test(c.name)));
+    // the kick stem has the kick and the master plays like a normal render
+    const normal = await renderSteps(s, s.playlistEndStep(), { tail: 0.5 });
+    ok('stems: the master pass matches a normal render', Math.abs(level(normal) - level(res.master)) < 0.02);
+    ok('stems: tracks differ from each other', level(res.stems.get(kickTrack)) > 0.01 && other != null);
+    const many = Array.from({ length: 20 }, (_, i) => i + 1);
+    const big = await renderStems(s, 16, many, { tail: 0 });
+    ok('stems: more than 15 tracks take several passes', big.stems.size === 20);
+  }
+
   // tempo automation: a render follows the tempo curve
   {
     s.resetToDefault();

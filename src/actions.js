@@ -1,5 +1,5 @@
 import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDialog } from './ui/dialog.js';
-import { renderSteps } from './audio/render.js';
+import { renderSteps, renderStems } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { STEPS_PER_BAR, validTimeSig } from './state.js';
 import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
@@ -404,6 +404,52 @@ export function createActions(app) {
     },
 
     loadDemo() { loadDemo(store, transport); },
+
+    /** Mixer tracks worth a stem: anything a channel, a playlist track or a send feeds, or that has effects. */
+    stemTracks() {
+      const p = store.project;
+      const used = new Set();
+      for (const c of p.channels) if (c.mixer > 0) used.add(c.mixer);
+      for (const t of p.playlist.tracks) if (t.mixer > 0) used.add(t.mixer);
+      p.mixer.forEach((m, i) => {
+        if (i === 0) return;
+        for (const d of Object.keys(m.sends || {})) used.add(Number(d));
+        if (m.fx.some(Boolean)) used.add(i);
+      });
+      return [...used].filter((i) => i > 0 && i < p.mixer.length).sort((x, y) => x - y);
+    },
+
+    /** Export one WAV per used mixer track plus the master into a folder (FL Studio's "split mixer tracks"). */
+    async exportStems() {
+      const proj = store.project;
+      const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
+      if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return null; }
+      const tracks = a.stemTracks();
+      if (!tracks.length) { messageDialog('Export stems', 'Nothing is routed to a mixer insert, so there are no stems to export.\n\nRoute channels to their own mixer tracks first (channel rack → the track number box).'); return null; }
+      const dir = await window.studioAPI.pickFolder({ title: 'Export stems into…' });
+      if (!dir) return null;
+      transport.stop();
+      app.toolbar?.setBusy?.('Rendering stems…');
+      const dlg = progressDialog('Exporting stems', 'Preparing…');
+      const abort = new AbortController();
+      dlg.done.then(() => abort.abort());
+      let res;
+      try {
+        res = await renderStems(store, steps, tracks, { signal: abort.signal, onProgress: (f) => dlg.set(f, `Rendering ${tracks.length} stems… ${Math.round(f * 100)}%`) });
+      } catch (err) {
+        if (err.name !== 'AbortError') messageDialog('Export failed', err.message);
+        return null;
+      } finally {
+        dlg.close();
+        app.toolbar?.setBusy?.(null);
+      }
+      const safe = (s) => s.replace(/[\\/:*?"<>|]/g, '_');
+      const files = [await window.studioAPI.writeInFolder({ dir, name: `${safe(proj.name)} - Master.wav`, data: encodeWav(res.master) })];
+      for (const [i, buf] of res.stems) {
+        files.push(await window.studioAPI.writeInFolder({ dir, name: `${safe(proj.name)} - ${String(i).padStart(2, '0')} ${safe(proj.mixer[i].name)}.wav`, data: encodeWav(buf) }));
+      }
+      return files;
+    },
 
     async exportWav() {
       const proj = store.project;

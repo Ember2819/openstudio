@@ -83,7 +83,7 @@ referred to by id (channels and patterns also by unique name).
 | Playlist | `get_playlist`, `add_clips` (pattern, audio, automation), `update_clips`, `edit_clips` (remove, duplicate, make unique, fit, mute), `update_playlist_track` |
 | Mixer | `get_mixer_track`, `update_mixer_track` (incl. `toMaster`), `set_effect`, `move_effect`, `set_send`, `reset_mixer` |
 | Automation | `create_automation` (any knob, fader, effect or instrument parameter, or the tempo), `get_automation`, `update_automation`, `remove_automation` |
-| Hear & see | `render_audio` (offline render + analysis: peak/RMS/crest, clipping, loudness per bar, spectral balance, warnings; optional WAV file; optionally one channel soloed; `stems` per-channel breakdown), `screenshot`, `show_window`, `set_selection` |
+| Hear & see | `render_audio` (offline render + analysis: peak/RMS/crest, clipping, loudness per bar, spectral balance, warnings; optional WAV file; optionally one channel soloed; `stems` per-channel breakdown), `export_stems` (one WAV per mixer track + master), `screenshot`, `show_window`, `set_selection` |
 
 ### Instruments
 

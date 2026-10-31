@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('studioAPI', {
   openSamples: () => ipcRenderer.invoke('sample:open'),
   flpSamples: (paths) => ipcRenderer.invoke('flp:samples', paths),
   writeFile: (opts) => ipcRenderer.invoke('file:write', opts),
+  pickFolder: (opts) => ipcRenderer.invoke('dir:pick', opts),
+  writeInFolder: (opts) => ipcRenderer.invoke('dir:write', opts),
   readAsset: (rel) => ipcRenderer.invoke('asset:read', rel),
   devWrite: (file, data) => ipcRenderer.invoke('dev:write', file, data),
   updates: {

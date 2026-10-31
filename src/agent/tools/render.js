@@ -1,7 +1,7 @@
 import { bool, choice, int, num, obj, ref, str } from '../schema.js';
 import { channelOf, fail, patternOf } from '../helpers.js';
 import { analyze, BANDS } from '../analysis.js';
-import { renderSteps } from '../../audio/render.js';
+import { renderSteps, renderStems } from '../../audio/render.js';
 import { encodeWav } from '../../audio/wav.js';
 import { STEPS_PER_BAR } from '../../state.js';
 import { roleOf } from '../music/roles.js';
@@ -39,6 +39,31 @@ async function stemReport(app, a, steps, channels) {
 }
 
 export const tools = [
+  {
+    name: 'export_stems',
+    title: 'Export stems',
+    description: 'Write one 16-bit WAV per used mixer track (post-fader, every insert that a channel, playlist track or send feeds, or that has effects) plus the master into a folder — like FL Studio\'s "split mixer tracks" export. Renders the song (or the pattern in pattern mode) once per 15 tracks. Returns the files written.',
+    inputSchema: obj({
+      dir: str('Absolute path of an existing folder'),
+      tail: num('Seconds of release/reverb tail after the last step (default 2)', { minimum: 0, maximum: 20 }),
+    }, ['dir']),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, title: 'Export stems' },
+    async run(a, app) {
+      const { store } = app;
+      const proj = store.project;
+      const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
+      if (steps <= 0) fail('Nothing to export — the playlist has no clips (or switch to pattern mode)');
+      const tracks = app.actions.stemTracks();
+      if (!tracks.length) fail('Nothing is routed to a mixer insert, so there are no stems — route channels to their own tracks first (update_channel mixer, or manage_channel)');
+      if (app.transport.secondsAt(steps) > MAX_SECONDS) fail(`The song is longer than ${MAX_SECONDS} s`);
+      const res = await renderStems(store, steps, tracks, { tail: a.tail ?? 2 });
+      const dir = a.dir.replace(/[\\/]+$/, '');
+      const safe = (s) => s.replace(/[\\/:*?"<>|]/g, '_');
+      const files = [await app.files.write(`${dir}/${safe(proj.name)} - Master.wav`, encodeWav(res.master))];
+      for (const [i, buf] of res.stems) files.push(await app.files.write(`${dir}/${safe(proj.name)} - ${String(i).padStart(2, '0')} ${safe(proj.mixer[i].name)}.wav`, encodeWav(buf)));
+      return { tracks, files, seconds: Math.round(res.master.duration * 100) / 100 };
+    },
+  },
   {
     name: 'render_audio',
     title: 'Render and analyse audio',

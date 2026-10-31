@@ -13,7 +13,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 - Time-stretch and pitch-shift for audio clips.
 - More built-in instruments (wavetable, sample-based pianos / strings); vocoder and pitch effects.
 - Track meters with peak hold in the mixer; track grouping and insert routing UI.
-- Stem export (per track) and MP3/FLAC export.
+- MP3/FLAC export.
 - Theming and a keyboard-shortcut editor; accessibility pass.
 
 ## Long term

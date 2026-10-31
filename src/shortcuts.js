@@ -29,7 +29,7 @@ export function installShortcuts(app) {
         s: () => actions.saveProject(e.shiftKey),
         o: actions.openProject,
         n: actions.newProject,
-        r: actions.exportWav,
+        r: () => (e.shiftKey ? actions.exportStems() : actions.exportWav()),
         m: () => transport.setMetronome(!transport.metronome),
         l: () => transport.toggleMode(),
         p: () => { if (e.shiftKey) store.addPattern(); },

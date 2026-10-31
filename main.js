@@ -181,6 +181,25 @@ ipcMain.handle('file:write', async (_e, { suggestedName, data, filters }) => {
   return res.filePath;
 });
 
+// Exports that produce several files (stems): the renderer may only write plain file names into the folder the user
+// picked last, never anywhere else.
+let exportDir = null;
+ipcMain.handle('dir:pick', async (_e, { title } = {}) => {
+  const res = await dialog.showOpenDialog(mainWindow, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] });
+  if (res.canceled || !res.filePaths[0]) return null;
+  exportDir = res.filePaths[0];
+  return exportDir;
+});
+ipcMain.handle('dir:write', async (_e, { dir, name, data }) => {
+  if (!exportDir || dir !== exportDir) throw new Error('Pick the export folder first');
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what must not reach a file name
+  const base = String(name).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 120);
+  if (!/\.(wav|mid)$/i.test(base) || base.startsWith('.')) throw new Error('Invalid file name');
+  const file = path.join(exportDir, base);
+  await fs.promises.writeFile(file, Buffer.from(data));
+  return file;
+});
+
 ipcMain.handle('asset:read', async (_e, rel) => {
   const root = path.join(__dirname, 'assets');
   const file = path.normalize(path.join(root, rel));
