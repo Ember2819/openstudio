@@ -10,6 +10,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - Autosave stores samples as raw buffers instead of re-encoding every sample to base64 every 30 seconds.
 
 ### Fixed
+- Dropping a file on a part of the window that doesn't take it no longer navigates the app away (losing the session);
+  links open in the web browser.
 - The master's safety limiter added ~1.1 dB of hidden gain to everything; playback and exports now match the master
   fader (about 1 dB quieter than before).
 - The Compressor added up to ~10 dB of hidden gain (Web Audio's automatic makeup) on top of its Makeup knob; it is now
@@ -59,6 +61,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **Drop files anywhere**: a project (.osp or FL Studio .flp) opens, a MIDI file is imported, audio becomes sampler
+  channels. Dropping a MIDI file on the piano roll writes its notes into the channel being edited, where you drop it.
 - **File → New from template**: twelve styles (house, techno, trance, trap, hip-hop, lo-fi, pop, rock, drum & bass,
   synthwave, funk, ambient), each with a matching set of instruments on their own mixer tracks, reverb and delay
   buses, a master chain, tempo and swing.

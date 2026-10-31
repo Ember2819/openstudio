@@ -33,6 +33,13 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('index.html');
+  // the window only ever shows the app: a dropped file or a stray link must not navigate it away (and lose the
+  // session); links open in the browser instead
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   const shot = argOf('screenshot');
   if (shot) {
@@ -118,6 +125,8 @@ ipcMain.handle('recent:list', async () => {
   for (const f of await recentList()) if (await fs.promises.stat(f).then((st) => st.isFile(), () => false)) out.push(f);
   return out;
 });
+// a project file dropped on the window (the renderer only gets here through a real drop)
+ipcMain.handle('project:openPath', async (_e, file) => (typeof file === 'string' && /\.(osp|flp|json)$/i.test(file) ? readProject(file) : null));
 // only paths that are already on the list can be opened this way
 ipcMain.handle('recent:open', async (_e, file) => ((await recentList()).includes(file) ? readProject(file) : null));
 ipcMain.handle('recent:clear', async () => { recent = []; await fs.promises.writeFile(recentFile(), '[]').catch(() => {}); return []; });

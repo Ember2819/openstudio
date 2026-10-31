@@ -151,6 +151,8 @@ export function createChannelRack(app) {
   scroll.addEventListener('dragover', (e) => { if (dropTypes.some((t) => e.dataTransfer.types.includes(t))) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   scroll.addEventListener('drop', async (e) => {
     if (!dropTypes.some((t) => e.dataTransfer.types.includes(t))) return;
+    const files = [...e.dataTransfer.files];
+    if (files.length && !files.some((f) => /^audio\//.test(f.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(f.name))) return; // left to the window
     e.preventDefault();
     const target = store.channel(Number(e.target.closest?.('.cr-row')?.dataset.ch));
     const samples = [];

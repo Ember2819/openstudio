@@ -822,6 +822,9 @@ export function createPlaylist(app) {
   scroller.addEventListener('dragover', (e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   scroller.addEventListener('drop', async (e) => {
     if (!accepts(e)) return;
+    // desktop files the playlist can't place (a project, say) are left to the window
+    const files = [...e.dataTransfer.files];
+    if (files.length && !files.some((f) => /\.(mid|midi|rmi|wav|mp3|ogg|flac|aiff?|aac|m4a)$/i.test(f.name) || /^audio\//.test(f.type))) return;
     e.preventDefault();
     const w = world(e);
     const sz = snap();

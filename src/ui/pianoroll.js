@@ -10,6 +10,7 @@ import { barSteps, beatSteps } from '../state.js';
 import { kitKeyNames, isKitChannel } from '../audio/catalog.js';
 import { formDialog, messageDialog } from './dialog.js';
 import { hint } from './knob.js';
+import { parseMidi } from '../midiimport.js';
 import { arpeggiate, strum, chop, flam, snapToScale, velocityRamp, articulate, limitRange } from '../notetools.js';
 
 const KEYS_W = 84;
@@ -892,6 +893,33 @@ export function createPianoRoll(app) {
     for (const n of sel) S.selection.add(store.addNote(pat(), chan().id, { ...n, s: n.s + span }));
     updateSpacer(); emitNotes(); invalidate();
   }
+
+  // ---------------------------------------------------------------- MIDI file drop
+  // like FL Studio: a .mid dropped on the piano roll becomes notes of the channel being edited (all its tracks merged,
+  // drums left out unless that is all there is), placed where it was dropped
+  scroller.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  scroller.addEventListener('drop', async (e) => {
+    const file = [...e.dataTransfer.files].find((f) => /\.(mid|midi|rmi)$/i.test(f.name));
+    if (!file || !chan()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    let midi;
+    try { midi = parseMidi(await file.arrayBuffer()); } catch (err) { messageDialog('Could not read MIDI file', err.message); return; }
+    const all = midi.tracks.flatMap((t) => t.notes);
+    const tonal = all.filter((n) => n.ch !== 9);
+    const list = tonal.length ? tonal : all;
+    if (!list.length) { messageDialog('Could not read MIDI file', 'The file contains no notes.'); return; }
+    const at = Math.max(0, snapFloor(world(e).x / S.px, snap() || BAR()));
+    const toStep = (tick) => (tick / midi.division) * 4;
+    store.checkpoint();
+    S.selection.clear();
+    for (const n of list) {
+      const st = toStep(n.tick);
+      const made = store.addNote(pat(), chan().id, { p: n.key, s: Math.round((at + st) * 1000) / 1000, l: Math.max(0.0625, Math.round((toStep(n.tick + n.dur) - st) * 1000) / 1000), v: Math.max(0.02, n.vel / 127) });
+      S.selection.add(made);
+    }
+    updateSpacer(); emitNotes(); invalidate();
+  });
 
   // ---------------------------------------------------------------- keyboard
   root.addEventListener('keydown', (e) => {

@@ -139,9 +139,10 @@ export function createActions(app) {
       return true;
     },
 
-    async openProject(recentPath = null) {
+    async openProject(recentPath = null, droppedPath = null) {
       if (!(await confirmDiscard())) return;
-      const res = recentPath ? await window.studioAPI.recent.open(recentPath) : await window.studioAPI.openProject();
+      const res = droppedPath ? await window.studioAPI.openProjectPath(droppedPath)
+        : recentPath ? await window.studioAPI.recent.open(recentPath) : await window.studioAPI.openProject();
       if (!res) { if (recentPath) messageDialog('Could not open project', `${recentPath} is no longer there.`); return; }
       if (res.kind === 'flp') { await a.importFlpData(res.data, res.path); return; }
       try {
@@ -533,6 +534,25 @@ export function createActions(app) {
         files.push(await window.studioAPI.writeInFolder({ dir, name: `${safe(proj.name)} - ${String(i).padStart(2, '0')} ${safe(proj.mixer[i].name)}.wav`, data: encodeWav(buf) }));
       }
       return files;
+    },
+
+    /** Files dropped anywhere a window did not take them: projects open, MIDI imports, audio becomes samplers. */
+    async dropFiles(files) {
+      for (const file of files) {
+        if (/\.(osp|flp|json)$/i.test(file.name)) {
+          const path = window.studioAPI.pathForFile?.(file);
+          if (path) await a.openProject(null, path);
+          else if (/\.flp$/i.test(file.name)) await a.importFlpData(await file.arrayBuffer(), file.name);
+          return;
+        }
+      }
+      for (const file of files) {
+        if (/\.(mid|midi|rmi)$/i.test(file.name)) await a.importMidiFile(file);
+        else if (/^audio\//.test(file.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(file.name)) {
+          const id = store.addSample(file.name, await file.arrayBuffer());
+          store.addChannel({ name: file.name.replace(/\.[^.]+$/, ''), type: 'sampler', sampleId: id });
+        }
+      }
     },
 
     async exportWav() { return a.exportAudio('wav'); },

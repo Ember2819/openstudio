@@ -79,6 +79,13 @@ app.effectWindow = createEffectWindow(app);
 app.actions.openEffect = (track, slot) => app.effectWindow.open(track, slot);
 installShortcuts(app);
 installAudioRecording(app);
+// files dropped outside the windows that take them (playlist, channel rack, piano roll, settings)
+window.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+window.addEventListener('drop', (e) => {
+  if (e.defaultPrevented || !e.dataTransfer?.files?.length) return;
+  e.preventDefault();
+  app.actions.dropFiles([...e.dataTransfer.files]);
+});
 app.tiler = new Tiler(app);
 const prefs = createPreferences(app);
 app.prefs = prefs;

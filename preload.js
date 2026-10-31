@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // automated / screenshot runs (see main.js) must not be interrupted by the first-launch welcome (--welcome forces it)
 const testRun = process.argv.some((a) => a.startsWith('--screenshot=')) && !process.argv.includes('--welcome');
@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('studioAPI', {
   testRun,
   saveProject: (opts) => ipcRenderer.invoke('project:save', opts),
   openProject: () => ipcRenderer.invoke('project:open'),
+  openProjectPath: (file) => ipcRenderer.invoke('project:openPath', file),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
   recent: {
     list: () => ipcRenderer.invoke('recent:list'),
     open: (file) => ipcRenderer.invoke('recent:open', file),
