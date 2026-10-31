@@ -55,8 +55,25 @@ export function createMixer(app) {
     });
     name.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      select(i);
+      // like FL Studio: with another track selected, right-click a track to route the selected one into it
+      const from = store.project.selected.mixer;
+      const src = mixer()[from];
+      const canRoute = from > 0 && from !== i && !store.wouldCycle(from, i);
+      const route = (only) => {
+        store.checkpoint();
+        if (only && i === 0) { src.sends = {}; delete src.master; } else if (only) { src.sends = { [i]: 0.8 }; src.master = false; }
+        else if (i === 0) delete src.master;
+        else src.sends[i] = src.sends[i] ?? 0.8;
+        store.emit('mixer');
+        renderFx();
+        refreshActive();
+      };
       showMenu([
+        ...(canRoute ? [
+          { label: `Route “${src.name}” to this track only`, action: () => route(true) },
+          ...(i > 0 ? [{ label: `Send “${src.name}” to this track too`, disabled: src.sends[i] != null, action: () => route(false) }] : []),
+          { separator: true },
+        ] : []),
         { label: 'Rename…', action: () => name.dispatchEvent(new MouseEvent('dblclick')) },
         { label: 'Color', submenu: COLORS.map((c) => ({ label: ' ', swatch: c, action: () => { store.checkpoint(); m().color = c; refreshLabels(); } })) },
         { label: 'Reset', action: () => { store.checkpoint(); Object.assign(m(), { vol: 0.8, pan: 0, mute: false, solo: false, fx: m().fx.map(() => null), sends: {} }); engine.syncFx(i); store.emit('mixer'); renderFx(); } },
@@ -120,7 +137,9 @@ export function createMixer(app) {
       faderWrap, db);
     el.addEventListener('pointerdown', () => { if (store.project.selected.mixer !== i) select(i); });
 
-    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), mw: 0, mh: 0, level: [0, 0], hold: [0, 0], setFaderUi, active: false };
+    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), mw: 0, mh: 0, level: [0, 0], hold: [0, 0], holdAt: [0, 0], clip: false, setFaderUi, active: false };
+    meter.addEventListener('click', (e) => { e.stopPropagation(); s.clip = false; s.hold = [0, 0]; drawMeter(s, [0, 0]); });
+    meter.dataset.hint = 'Level with peak hold — a red top means it clipped; click to reset';
     const refresh = () => {
       const mm = m();
       s.pan.setValue(mm.pan);
@@ -319,25 +338,33 @@ export function createMixer(app) {
       const lin = levels[c];
       const target = Math.min(1.25, lin);
       s.level[c] = target > s.level[c] ? target : s.level[c] * 0.88;
-      s.hold[c] = Math.max(s.hold[c] * 0.995, s.level[c]);
-      const dbv = 20 * Math.log10(Math.max(s.level[c], 0.00001));
-      const frac = clamp((dbv + 60) / 66, 0, 1);
-      const hh = frac * METER_H;
+      // peak hold: stays put for 1.5 s, then falls
+      const now = performance.now();
+      if (lin >= s.hold[c]) { s.hold[c] = lin; s.holdAt[c] = now; } else if (now - s.holdAt[c] > 1500) s.hold[c] *= 0.94;
+      if (lin > 1) s.clip = true;
+      const toY = (v) => METER_H - clamp((20 * Math.log10(Math.max(v, 0.00001)) + 60) / 66, 0, 1) * METER_H;
+      const top = toY(s.level[c]);
       const x = 1 + c * (bw + 1);
       const grad = ctx.createLinearGradient(0, METER_H, 0, 0);
       grad.addColorStop(0, T.meter1); grad.addColorStop(0.65, T.meter2); grad.addColorStop(0.88, T.meter3); grad.addColorStop(1, T.meter4);
       ctx.fillStyle = grad;
-      ctx.fillRect(x, METER_H - hh, bw, hh);
+      ctx.fillRect(x, top, bw, METER_H - top);
       ctx.fillStyle = 'rgba(0,0,0,.35)';
       for (let y = 0; y < METER_H; y += 3) ctx.fillRect(x, y, bw, 1);
+      if (s.hold[c] > 0.001) {
+        ctx.fillStyle = s.hold[c] > 1 ? T.meter4 : T.text;
+        ctx.fillRect(x, Math.round(toY(s.hold[c])), bw, 2);
+      }
     }
+    // clip indicator: latched until the meter is clicked
+    if (s.clip) { ctx.fillStyle = T.meter4; ctx.fillRect(0, 0, w, 4); }
   };
 
   function update() {
     if (!win.visible) return;
     for (const s of strips) {
       if (!s.active && s.i !== store.project.selected.mixer) {
-        if (s.level[0] > 0.0005 || s.level[1] > 0.0005) { s.level = [0, 0]; drawMeter(s, [0, 0]); }
+        if (s.level[0] > 0.0005 || s.level[1] > 0.0005 || s.hold[0] > 0.001 || s.hold[1] > 0.001) { s.level = [0, 0]; drawMeter(s, [0, 0]); }
         continue;
       }
       drawMeter(s, engine.readLevels(s.i));

@@ -12,7 +12,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 ## Mid term
 - Time-stretch and pitch-shift for audio clips.
 - More built-in instruments (wavetable, sample-based pianos / strings); vocoder and pitch effects.
-- Track meters with peak hold in the mixer; track grouping and insert routing UI.
+- Mixer track grouping.
 - MP3/FLAC export.
 - Theming and a keyboard-shortcut editor; accessibility pass.
 
