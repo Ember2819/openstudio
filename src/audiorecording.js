@@ -33,10 +33,10 @@ export function installAudioRecording(app) {
       }
       await arming;
       if (!rec.armed) return;
-      // audio takes go into the playlist, so they record against the song
-      if (transport.recording && transport.recordAudio && transport.mode !== 'song') transport.setMode('song');
     }
     const taking = transport.recording && transport.recordAudio;
+    // audio takes go into the playlist, so they record against the song
+    if (taking && rec.armed && transport.mode !== 'song') transport.setMode('song');
     if (taking && transport.playing && rec.armed && !rec.capturing) startTake();
     if (rec.capturing && !(taking && transport.playing)) busy = busy.then(finishTake);
     if (!wanted() && rec.armed && !rec.capturing) { await busy; if (!wanted() && !rec.capturing) rec.disarm(); }
