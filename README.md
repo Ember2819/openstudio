@@ -17,10 +17,11 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - 261 General MIDI instruments and 13 drum kits (TR-808/909, Electronic, Jazz, Orchestral, …) from the
   [GeneralUser GS](assets/CREDITS.md) SoundFont, played by a built-in sampler engine (velocity, loops, envelopes,
   filters, vibrato, hi-hat choke).
-- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO,
-  mono / legato with glide for 808 slides), a wavetable synth (morphing tables with position envelope / LFO), an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound
-  FX generator (risers, impacts, sweeps, textures); 26 synthesized drum voices (808, punchy, acoustic-style); and a
-  sampler for your own audio (root note, start / end, loop region, and Slicex-style slicing at the hits).
+- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter,
+  LFO, mono / legato with glide for 808 slides), a wavetable synth (morphing tables with position envelope / LFO), an
+  FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps,
+  textures); 26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio (root note,
+  start / end, loop region, and Slicex-style slicing at the hits).
 - Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
   delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
   multiband compressor, sidechain compressor, volume shaper (tempo-synced pumps and gates), gate, limiter, stereo width.
