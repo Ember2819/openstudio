@@ -1,5 +1,6 @@
 import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed } from './instruments.js';
 import { SoundFont } from './sf2.js';
+import { wsola } from './stretch.js';
 import { playSoundfont } from './soundfont.js';
 import { createEffect, loadEffectWorklets, compressorMakeupDb } from './effects.js';
 import { faderToGain, channelGain, ROOT_NOTE } from '../util.js';
@@ -362,9 +363,11 @@ export class Engine {
     if (offset >= buffer.duration) return null;
     const ctx = this.ctx;
     const t = Math.max(when, ctx.currentTime);
-    const length = Math.min(dur, buffer.duration - offset);
+    const rate = opts.rate || 1; // resampling: speed and pitch together
+    const length = Math.min(dur, (buffer.duration - offset) / rate);
     const src = ctx.createBufferSource();
     src.buffer = opts.reverse ? reversed(ctx, buffer) : buffer;
+    src.playbackRate.value = rate;
     const g = ctx.createGain();
     const into = opts.into || 0;
     const fi = opts.fadeIn || 0;
@@ -383,10 +386,30 @@ export class Engine {
       g.gain.linearRampToValueAtTime(0, t + length);
     }
     src.connect(g).connect(this.track(mixer in this.store.project.mixer ? mixer : 0).input);
-    src.start(t, offset, length);
+    src.start(t, offset, length * rate);
     const v = { nodes: [src], out: g, end: t + length + 0.02, release() {} };
     this.voices.add(v);
     return v;
+  }
+
+  /**
+   * A sample time-stretched to play `speed` times faster at the same pitch (WSOLA), computed once per speed and kept
+   * with the sample. Speeds are rounded to 0.1 % so small tempo wobbles reuse the same buffer.
+   */
+  stretchedBuffer(sample, speed) {
+    const key = (Math.round(speed * 1000) / 1000).toFixed(3);
+    if (key === '1.000') return sample.buffer;
+    sample.stretched ??= new Map();
+    let buf = sample.stretched.get(key);
+    if (!buf) {
+      const src = sample.buffer;
+      const chans = wsola(Array.from({ length: src.numberOfChannels }, (_, c) => src.getChannelData(c)), Number(key));
+      buf = new AudioBuffer({ numberOfChannels: chans.length, length: chans[0].length, sampleRate: src.sampleRate });
+      chans.forEach((d, c) => buf.copyToChannel(d, c));
+      sample.stretched.set(key, buf);
+      if (sample.stretched.size > 4) sample.stretched.delete(sample.stretched.keys().next().value);
+    }
+    return buf;
   }
 
   // ------------------------------------------------------------------ notes

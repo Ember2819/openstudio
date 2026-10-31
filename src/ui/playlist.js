@@ -3,6 +3,7 @@ import { icon } from './icons.js';
 import { showMenu } from './menu.js';
 import { promptDialog, formDialog } from './dialog.js';
 import { markers, addMarker, removeMarker, splitByChannel } from '../playlistops.js';
+import { guessLoopBpm } from '../audio/stretch.js';
 import { createSnapSelect } from './snapselect.js';
 import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
@@ -320,7 +321,9 @@ export function createPlaylist(app) {
           ctx.translate(2 * x + w, 0);
           ctx.scale(-1, 1);
         }
-        drawWaveform(ctx, look.sample.buffer, x, bodyY, w, bodyH, c.offset * sd, (c.offset + c.len) * sd, 0, gw);
+        // a tempo-following clip covers more (or less) of the sample than its length at the project tempo
+        const k = c.stretch?.bpm > 0 ? store.project.bpm / c.stretch.bpm : 1;
+        drawWaveform(ctx, look.sample.buffer, x, bodyY, w, bodyH, c.offset * sd * k, (c.offset + c.len) * sd * k, 0, gw);
         if (c.reverse) ctx.restore();
       }
       // fades: shade the faded corners
@@ -757,6 +760,11 @@ export function createPlaylist(app) {
         { label: 'Fade in', submenu: fades('fadeIn') },
         { label: 'Fade out', submenu: fades('fadeOut') },
         { label: 'Reverse', checked: !!c.reverse, action: () => { store.checkpoint(); if (c.reverse) delete c.reverse; else c.reverse = true; store.emit('playlist'); } },
+        { label: 'Follow the project tempo', submenu: [
+          { label: 'Off (play as recorded)', checked: !c.stretch, action: () => { store.checkpoint(); delete c.stretch; store.emit('playlist'); } },
+          { label: 'Stretch (keep the pitch)…', checked: c.stretch?.mode === 'stretch', action: () => tempoFollow(c, 'stretch') },
+          { label: 'Resample (pitch follows)…', checked: c.stretch?.mode === 'resample', action: () => tempoFollow(c, 'resample') },
+        ] },
         { separator: true },
       );
     }
@@ -767,6 +775,24 @@ export function createPlaylist(app) {
       { label: 'Delete', shortcut: 'Del', action: () => { store.checkpoint(); store.project.playlist.clips = clips().filter((x) => x !== c); S.selection.delete(c.id); store.emit('playlist'); } },
     );
     showMenu(items, x, y);
+  }
+
+  /** Make an audio clip follow the project tempo: ask the loop's own tempo (guessed from its length) and fit the clip. */
+  async function tempoFollow(c, mode) {
+    const buf = store.samples.get(c.sampleId)?.buffer;
+    if (!buf) return;
+    const guess = c.stretch?.bpm ?? guessLoopBpm(buf.duration, BAR() / 4, store.project.bpm);
+    const v = await formDialog(mode === 'stretch' ? 'Stretch to the project tempo' : 'Resample to the project tempo', [
+      { key: 'bpm', label: 'The loop\'s own tempo (BPM)', value: guess, min: 20, max: 400, step: 0.01 },
+    ], 'Apply', `At ${store.project.bpm} BPM the clip will play ${mode === 'stretch' ? 'at its own pitch' : 'faster or slower, and higher or lower'}. The tempo is guessed from the length of the sample; correct it if the loop drifts.`);
+    if (!v) return;
+    store.checkpoint();
+    c.stretch = { mode, bpm: v.bpm };
+    // the clip covers the whole loop at the new speed (whole steps where it is close)
+    const steps = (buf.duration * v.bpm * 4) / 60;
+    c.len = Math.abs(steps - Math.round(steps)) < 0.05 ? Math.round(steps) : Math.round(steps * 4) / 4;
+    c.offset = 0;
+    store.emit('playlist');
   }
 
   /** Clone the clip's pattern and point the clip at the clone so it can be edited independently. */

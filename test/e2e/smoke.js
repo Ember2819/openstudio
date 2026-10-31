@@ -309,6 +309,28 @@
     ok('render to audio is one undo step', !drums.mute || !s.project.playlist.clips.find((c) => c.id === drums.id)?.mute);
   }
 
+  // tempo-following audio clips: a 120 BPM loop played at 150 BPM
+  {
+    s.resetToDefault();
+    s.project.bpm = 150;
+    s.project.mode = 'song';
+    const SR = 44100;
+    const loop = new AudioBuffer({ numberOfChannels: 1, length: SR * 2, sampleRate: SR }); // one bar at 120
+    const d0 = loop.getChannelData(0);
+    for (let i = 0; i < d0.length; i++) d0[i] = 0.4 * Math.sin((2 * Math.PI * 220 * i) / SR) * (i % 22050 < 4000 ? 1 : 0.2); // 4 pulses
+    const { encodeWav } = await import('./src/audio/wav.js');
+    const id = s.addSample('loop.wav', encodeWav(loop, { float: true }));
+    await a.engine.ensureSample(id);
+    const clip = s.addClip({ type: 'audio', sampleId: id, track: 0, start: 0, len: 16, stretch: { mode: 'stretch', bpm: 120 } });
+    const hz = (b, from, to) => { const d = b.getChannelData(0); let z = 0; const i0 = Math.round(from * SR), i1 = Math.round(to * SR); for (let i = i0 + 1; i < i1; i++) if (d[i - 1] < 0 && d[i] >= 0) z++; return z / (to - from); };
+    const lastPulse = (b) => { const d = b.getChannelData(0); let last = 0; for (let i = 1; i < d.length; i += 64) if (Math.abs(d[i]) > 0.3) last = i / SR; return last; };
+    const st = await renderSteps(s, 16, { tail: 0 });
+    ok(`stretch: a bar at 120 fits a bar at 150 and keeps its pitch (${hz(st, 0.1, 0.9).toFixed(0)} Hz, last pulse ${lastPulse(st).toFixed(2)} s)`, Math.abs(hz(st, 0.1, 0.9) - 220) < 6 && Math.abs(lastPulse(st) - 1.2 - 0.07) < 0.08);
+    clip.stretch = { mode: 'resample', bpm: 120 };
+    const rs = await renderSteps(s, 16, { tail: 0 });
+    ok(`resample: it plays faster and higher (${hz(rs, 0.1, 0.9).toFixed(0)} Hz)`, Math.abs(hz(rs, 0.1, 0.9) - 275) < 8 && Math.abs(lastPulse(rs) - lastPulse(st)) < 0.08);
+  }
+
   // stems: each mixer track rendered into its own pair of channels, in one pass
   {
     a.actions.loadDemo();

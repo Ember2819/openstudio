@@ -63,8 +63,15 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       const sample = store.samples.get(clip.sampleId);
       if (!sample?.buffer) continue;
       const into = step - clip.start;
-      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1,
-        { reverse: clip.reverse, fadeIn: (clip.fadeIn || 0) * sd, fadeOut: (clip.fadeOut || 0) * sd, into: into * sd });
+      // tempo-following clips: `stretch` keeps the pitch, `resample` speeds up / slows down like a record
+      const st = clip.stretch;
+      const speed = st?.bpm > 0 ? 60 / (sd * 4) / st.bpm : 1;
+      let buffer = sample.buffer;
+      let rate = 1;
+      if (st?.mode === 'stretch' && engine.stretchedBuffer) buffer = engine.stretchedBuffer(sample, speed);
+      else if (st?.mode === 'resample') rate = speed;
+      engine.playAudio(buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd * rate, (clip.len - into) * sd, clip.gain ?? 1,
+        { reverse: clip.reverse, fadeIn: (clip.fadeIn || 0) * sd, fadeOut: (clip.fadeOut || 0) * sd, into: into * sd, rate });
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
       if (!auto || auto.target?.kind === 'tempo' || !targetValid(store, auto.target)) continue; // tempo: see tempo.js

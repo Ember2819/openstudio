@@ -40,6 +40,7 @@ export function clipInfo(c) {
     if (c.fadeIn) out.fadeIn = c.fadeIn;
     if (c.fadeOut) out.fadeOut = c.fadeOut;
     if (c.reverse) out.reverse = true;
+    if (c.stretch) out.stretch = c.stretch;
   } else out.automation = c.autoId;
   return out;
 }

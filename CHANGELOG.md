@@ -61,6 +61,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **Audio clips can follow the project tempo** (right-click → Follow the project tempo): *Stretch* keeps the pitch
+  (WSOLA time-stretching), *Resample* speeds up and pitches up like a record. The loop's own tempo is guessed from
+  its length; tempo automation is followed too. Agents: `update_clips` `stretch`.
 - **Drop files anywhere**: a project (.osp or FL Studio .flp) opens, a MIDI file is imported, audio becomes sampler
   channels. Dropping a MIDI file on the piano roll writes its notes into the channel being edited, where you drop it.
 - **File → New from template**: twelve styles (house, techno, trance, trap, hip-hop, lo-fi, pop, rock, drum & bass,

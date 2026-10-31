@@ -34,7 +34,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **Piano roll** with draw / select / delete / mute / slice tools, scale highlighting, chord stamps, ghost notes,
   velocity / pan / fine-pitch lanes, quantize, legato, arpeggiate, strum, chop, flam, articulate, scale snap and limit.
 - **Playlist** with pattern, audio and automation clips, time markers, loop region, split by channel, audio-clip fades,
-  gain and reverse, and drag-and-drop of patterns, samples and audio files.
+  gain, reverse and tempo-following (stretch or resample), and drag-and-drop of patterns, samples and audio files.
 - **Mixer** with 125 inserts, routing (to the master, to buses, or both — feedback-protected), sidechain, 10 effect
   slots per track and stereo meters with peak hold.
 - **Automation** of any knob, fader, effect parameter or the **tempo**; **time signatures**; **MIDI controller links**
@@ -120,7 +120,7 @@ For a tour of the code read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limitations
 
-Plugin (VST/CLAP) hosting, time-stretching audio, plugin settings and automation clips in imported FL Studio
+Plugin (VST/CLAP) hosting, plugin settings and automation clips in imported FL Studio
 projects, and most of the commercial DAWs' bundled instruments and effects are not implemented. OpenStudio is an independent project and is not affiliated with, endorsed by, or derived
 from any commercial DAW; product names mentioned in this repository belong to their respective owners.
 
