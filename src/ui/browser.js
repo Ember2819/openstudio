@@ -135,7 +135,6 @@ export function createBrowser(app) {
   function nodes() {
     const proj = store.project;
     return [
-      ...(libApi ? [libraryNode()] : []),
       {
         label: 'Current project', icon: 'file',
         children: [
@@ -162,6 +161,7 @@ export function createBrowser(app) {
           },
         ],
       },
+      ...(libApi ? [libraryNode()] : []),
       ...soundfontNodes(),
       ...Object.entries(ENGINE_PRESETS).map(([type, cats]) => ({
         label: type === 'synth' ? 'Synth presets' : `${ENGINES[type].label} presets`, icon: 'folder',
