@@ -1,6 +1,7 @@
 import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDialog } from './ui/dialog.js';
 import { renderSteps, renderStems } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
+import { encodeFlac } from './audio/flac.js';
 import { STEPS_PER_BAR, validTimeSig } from './state.js';
 import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
@@ -451,7 +452,11 @@ export function createActions(app) {
       return files;
     },
 
-    async exportWav() {
+    async exportWav() { return a.exportAudio('wav'); },
+    async exportFlac() { return a.exportAudio('flac'); },
+
+    /** Render the song (or pattern) and save it as WAV or FLAC. */
+    async exportAudio(format = 'wav') {
       const proj = store.project;
       const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
       if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return; }
@@ -473,7 +478,13 @@ export function createActions(app) {
         dlg.close();
         app.toolbar?.setBusy?.(null);
       }
-      await window.studioAPI.writeFile({ suggestedName: `${proj.name}.wav`, data: encodeWav(rendered), filters: [{ name: 'WAV audio', extensions: ['wav'] }] });
+      let data;
+      if (format === 'flac') {
+        const enc = progressDialog('Exporting audio', 'Encoding FLAC…');
+        try { data = await encodeFlac(rendered, { onProgress: (f) => enc.set(f, `Encoding FLAC… ${Math.round(f * 100)}%`) }); } finally { enc.close(); }
+      } else data = encodeWav(rendered);
+      const filters = format === 'flac' ? [{ name: 'FLAC audio (lossless)', extensions: ['flac'] }] : [{ name: 'WAV audio', extensions: ['wav'] }];
+      await window.studioAPI.writeFile({ suggestedName: `${proj.name}.${format}`, data, filters });
     },
 
   };

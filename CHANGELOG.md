@@ -43,6 +43,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **FLAC export** (File → Export audio (FLAC, lossless)…): about half the size of WAV, bit-identical audio. Agents
+  can write `.flac` from `render_audio`.
 - **File → Open recent**: the last 12 projects you opened or saved (also FL Studio projects); missing files are hidden.
 - **Sample folders in the browser**: add the folders where your samples live (Browser → Sample folders → Add a
   folder…), browse them, click a file to hear it, double-click to make a sampler channel, or drag it into the playlist

@@ -35,7 +35,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
 - **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL plugins.
-- Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live note and audio recording.
+- Undo/redo, `.osp` project files, WAV, FLAC, stem and MIDI export, computer-keyboard and MIDI-keyboard input, live note and audio recording.
 
 ## Getting started
 

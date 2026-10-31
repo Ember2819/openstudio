@@ -130,6 +130,17 @@
   for (let i = 0; i < d.length; i += 11) rp = Math.max(rp, Math.abs(d[i]));
   ok('offline render has signal and no NaN', rp > 0.01 && !Number.isNaN(rp));
 
+  // FLAC export decodes back to the same 16-bit samples
+  {
+    const { encodeFlac } = await import('./src/audio/flac.js');
+    const flac = await encodeFlac(rendered);
+    const back = await new OfflineAudioContext(2, 1, rendered.sampleRate).decodeAudioData(flac.slice(0));
+    let maxErr = 0;
+    const a0 = rendered.getChannelData(0), b0 = back.getChannelData(0);
+    for (let i = 0; i < rendered.length; i += 13) maxErr = Math.max(maxErr, Math.abs(Math.max(-1, Math.min(1, a0[i])) - b0[i]));
+    ok(`FLAC export decodes losslessly (${flac.byteLength} bytes, max error ${maxErr.toExponential(1)})`, back.length === rendered.length && maxErr < 1 / 32768 + 1e-6);
+  }
+
   // export progress: monotonic, ends at 1; an abort rejects instead of hanging
   const prog = [];
   await renderSteps(s, 32, { tail: 1, onProgress: (f) => prog.push(f) });
