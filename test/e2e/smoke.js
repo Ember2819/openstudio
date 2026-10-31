@@ -196,6 +196,25 @@
     ok('…but reaches the master through a send', l3 > l * 0.5);
   }
 
+  // mono / glide synth: overlapping notes slide without retriggering (808 glides)
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'pattern';
+    for (const c of s.project.channels) c.mute = true;
+    const bass = s._addChannel({ name: '808', type: 'synth', preset: { wave1: 'sine', wave2: 'sine', mix: 0, sub: 0, cutoff: 18000, envAmt: 0, keytrack: 0, attack: 0.002, decay: 0.05, sustain: 1, release: 0.05, mono: true, glide: 0.1 } });
+    // A2 (110 Hz) for 2 beats, then A3 (220 Hz) overlapping by a step
+    s.currentPattern.notes = { [bass.id]: [{ p: 45, s: 0, l: 9, v: 0.9 }, { p: 57, s: 8, l: 8, v: 0.9 }] };
+    const out = await renderSteps(s, 16, { tail: 0 });
+    const d = out.getChannelData(0);
+    const freqAt = (from, to) => { let z = 0; const i0 = Math.round(from * 44100), i1 = Math.round(to * 44100); for (let i = i0 + 1; i < i1; i++) if (d[i - 1] < 0 && d[i] >= 0) z++; return z / (to - from); };
+    const rmsAt = (from, to) => { let x = 0; const i0 = Math.round(from * 44100), i1 = Math.round(to * 44100); for (let i = i0; i < i1; i++) x += d[i] * d[i]; return Math.sqrt(x / (i1 - i0)); };
+    const f1 = freqAt(0.5, 0.95), mid = freqAt(1.0, 1.06), f2 = freqAt(1.3, 1.9);
+    ok(`glide: 110 Hz → slides → 220 Hz (${f1.toFixed(0)}, ${mid.toFixed(0)}, ${f2.toFixed(0)})`, Math.abs(f1 - 110) < 4 && mid > 115 && mid < 215 && Math.abs(f2 - 220) < 4);
+    const dip = Math.min(...[0.99, 1.0, 1.01, 1.02].map((t0) => rmsAt(t0, t0 + 0.01)));
+    ok('mono legato: no gap or retrigger where the notes overlap', dip > rmsAt(0.8, 0.9) * 0.7);
+  }
+
   // sidechain: a kick on one insert ducks a pad on another
   {
     s.resetToDefault();

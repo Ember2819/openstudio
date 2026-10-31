@@ -44,6 +44,8 @@ const SYNTH_PARAMS = [
   { key: 'vibrato', label: 'Vibrato', min: 0, max: 1, def: 0, fmt: pct },
   { key: 'wobble', label: 'Filter LFO', min: 0, max: 1, def: 0, fmt: pct },
   { key: 'lfoRate', label: 'LFO rate', min: 0.1, max: 12, def: 5, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+  { key: 'mono', label: 'Mono / legato', type: 'toggle', def: false },
+  { key: 'glide', label: 'Glide', min: 0, max: 1, def: 0, fmt: (v) => (v < 0.001 ? 'Off' : `${(v * 1000).toFixed(0)} ms`) },
 ];
 
 const FM_PARAMS = [
@@ -163,6 +165,7 @@ export const DRUM_KIT = [
 
 export const SYNTH_PRESETS = {
   Bass: [
+    { name: '808 Glide', params: { wave1: 'sine', wave2: 'triangle', mix: 0.12, detune: 0, octave2: 0, sub: 0.35, cutoff: 900, res: 0.7, envAmt: 0.15, drive: 0.35, attack: 0.002, decay: 1.2, sustain: 0.55, release: 0.25, mono: true, glide: 0.07 } },
     { name: 'Sub Bass', params: { wave1: 'sine', wave2: 'triangle', mix: 0.25, detune: 0, octave2: -1, cutoff: 1400, res: 0.7, envAmt: 0.1, attack: 0.005, decay: 0.2, sustain: 0.9, release: 0.1 } },
     { name: 'Saw Bass', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.5, detune: 12, octave2: -1, cutoff: 900, res: 4, envAmt: 0.65, attack: 0.004, decay: 0.22, sustain: 0.35, release: 0.1 } },
     { name: 'Pluck Bass', params: { wave1: 'square', wave2: 'sawtooth', mix: 0.3, detune: 5, octave2: 0, cutoff: 700, res: 6, envAmt: 0.9, attack: 0.002, decay: 0.14, sustain: 0.0, release: 0.08 } },

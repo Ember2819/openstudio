@@ -35,6 +35,7 @@ export class Engine {
     this.presetCache = new Map();
     this.fxInstances = new Map(); // `${track}:${slot}` -> {type, fx}
     this.sendNodes = new Map(); // `${from}:${to}` -> GainNode
+    this.lastNote = new Map(); // channel id -> { voice, pitch, until } for glide / mono synths
     this.meterBuf = new Float32Array(512);
     this.clickBuffer = null;
 
@@ -396,7 +397,21 @@ export class Engine {
     }
     let v = null;
     if (ch.type === 'drum') v = playDrum(this.ctx, dest, ch.voice, t, vel, pitch - ROOT_NOTE + semis, ch.params);
-    else if (ch.type === 'synth') v = playSynth(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'synth') {
+      // portamento and mono / legato (808 glides): the channel remembers its last note
+      const p = ch.params;
+      const last = this.lastNote.get(ch.id);
+      const abs = pitch + semis;
+      if (p.mono && last?.voice?.legato && last.until > t + 0.002 && last.voice.end > t) {
+        last.voice.legato(abs, t, dur, p.glide || 0);
+        last.pitch = abs;
+        last.until = t + dur;
+        return last.voice;
+      }
+      if (p.mono && last?.voice && last.voice.end > t) last.voice.cut?.(t);
+      v = playSynth(this.ctx, dest, pitch, t, dur, vel, semis, p, p.glide > 0 && last ? last.pitch : null);
+      if (p.mono || p.glide > 0) this.lastNote.set(ch.id, { voice: v, pitch: abs, until: t + dur });
+    }
     else if (ch.type === 'fm') v = playFm(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'organ') v = playOrgan(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'pluck') v = playPluck(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
@@ -468,6 +483,7 @@ export class Engine {
 
   killAll(fade = 0.03) {
     const now = this.ctx.currentTime;
+    this.lastNote.clear();
     for (const v of this.voices) {
       try {
         v.out.gain.cancelScheduledValues(now);

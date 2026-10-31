@@ -43,6 +43,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- The synth has **Mono / legato** and **Glide** (portamento): overlapping notes slide into each other without
+  retriggering — 808 glides — with a new "808 Glide" preset.
 - **Link to controller** (MIDI learn): right-click any knob, fader, effect parameter or the tempo → "Link to
   controller…", then move a knob or fader on your MIDI controller. Links are saved with the project, each gesture is
   one undo step, and Options → MIDI controller links lists and removes them.
