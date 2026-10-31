@@ -23,7 +23,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
   sampler for your own audio (root note, start / end, loop region, and Slicex-style slicing at the hits).
 - Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
   delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
-  multiband compressor, sidechain compressor, gate, limiter, stereo width.
+  multiband compressor, sidechain compressor, volume shaper (tempo-synced pumps and gates), gate, limiter, stereo width.
 
 **Workflow**
 - **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL

@@ -250,6 +250,23 @@
     ok('sidechain keyed from its own track is ignored', pk > 0.01 && Number.isFinite(pk));
   }
 
+  // volume shaper: a held pad through "Gate 1/8" is on for a step and off for a step, locked to the song
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'pattern';
+    for (const c of s.project.channels) c.mute = true;
+    const pad = s._addChannel({ name: 'Pad', type: 'synth', mixer: 3, preset: { wave1: 'sine', wave2: 'sine', attack: 0.001, sustain: 1, release: 0.01 } });
+    s.currentPattern.notes = { [pad.id]: [{ p: 69, s: 0, l: 16, v: 0.8 }] };
+    s.project.mixer[3].fx[0] = { type: 'shaper', params: { shape: 'Gate 1/8', depth: 1, smooth: 0.002 }, on: true };
+    const out = await renderSteps(s, 16, { tail: 0 });
+    const d = out.getChannelData(0);
+    const rms = (from, to) => { let x = 0; const i0 = Math.round(from * 44100), i1 = Math.round(to * 44100); for (let i = i0; i < i1; i++) x += d[i] * d[i]; return Math.sqrt(x / (i1 - i0)); };
+    const sd = 0.125; // a step at 120 BPM
+    const on = rms(4 * sd + 0.01, 5 * sd - 0.01), off = rms(5 * sd + 0.01, 6 * sd - 0.01);
+    ok(`volume shaper gates in time (${(20 * Math.log10(off / on)).toFixed(0)} dB)`, on > 0.05 && off < on * 0.05);
+  }
+
   // audio clip fades and reverse
   {
     s.resetToDefault();

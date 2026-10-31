@@ -195,6 +195,26 @@ EFFECT_DEFS.sidechain = {
   create: (ctx, p) => createSidechain(ctx, p),
 };
 
+// Volume shaper shapes: cycle length in steps and the level (0..1) across one cycle (phase 0..1)
+export const SHAPES = {
+  'Pump 1/4': { steps: 4, level: (x) => Math.min(1, Math.pow(Math.min(1, x * 1.5), 0.6)) },
+  'Pump 1/2': { steps: 8, level: (x) => Math.min(1, Math.pow(Math.min(1, x * 1.5), 0.6)) },
+  'Gate 1/8': { steps: 2, level: (x) => (x < 0.5 ? 1 : 0) },
+  'Gate 1/16': { steps: 1, level: (x) => (x < 0.6 ? 1 : 0) },
+  'Offbeat': { steps: 4, level: (x) => (x >= 0.5 ? 1 : 0) },
+  'Trance 3+3+2': { steps: 8, level: (x) => ([0, 3, 6].some((s) => x * 8 >= s && x * 8 < s + 1.6) ? 1 : 0) },
+  'Stutter 1/32': { steps: 0.5, level: (x) => (x < 0.5 ? 1 : 0) },
+};
+EFFECT_DEFS.shaper = {
+  name: 'Volume shaper',
+  params: [
+    { key: 'shape', label: 'Shape', type: 'select', options: Object.keys(SHAPES), def: 'Pump 1/4' },
+    { key: 'depth', label: 'Depth', min: 0, max: 1, def: 0.8, fmt: pct },
+    { key: 'smooth', label: 'Smoothing', min: 0.001, max: 0.05, def: 0.006, log: true, fmt: (v) => `${(v * 1000).toFixed(1)} ms` },
+  ],
+  create: (ctx, p) => createShaper(ctx, p),
+};
+
 export const defaultEffectParams = (type) => Object.fromEntries(EFFECT_DEFS[type].params.map((m) => [m.key, m.def]));
 
 /**
@@ -684,6 +704,30 @@ function createSidechain(ctx, p) {
     mode: 0, threshold: Math.pow(10, p.threshold / 20), ratio: p.ratio, floor: Math.pow(10, -p.depth / 20), attack: 0.001, release: p.release,
   }));
   return { input, output: vca, key, set(k, v) { p[k] = v; if (k !== 'source') f.update(); }, dispose() { f.dispose(); } };
+}
+
+/**
+ * Tempo-synced volume envelope (FL's Kickstart / Gross Beat-style pumps and gates). It has no clock of its own: the
+ * scheduler calls onStep() for every step it schedules, so the shape stays locked to the song; reset() when stopped.
+ */
+function createShaper(ctx, p) {
+  const vca = ctx.createGain();
+  const level = (pos) => {
+    const shape = SHAPES[p.shape] ?? SHAPES['Pump 1/4'];
+    const phase = ((pos % shape.steps) + shape.steps) % shape.steps / shape.steps;
+    return 1 - p.depth * (1 - shape.level(phase));
+  };
+  return {
+    input: vca, output: vca,
+    onStep(step, t, sd) {
+      const g = vca.gain;
+      // eight points per step, each reached through a short glide (the smoothing) so gates don't click
+      for (let k = 0; k < 8; k++) g.setTargetAtTime(level(step + k / 8), t + (k * sd) / 8, p.smooth / 3);
+    },
+    reset() { vca.gain.cancelScheduledValues(0); vca.gain.setValueAtTime(1, ctx.currentTime); },
+    set(k, v) { p[k] = v; },
+    dispose() {},
+  };
 }
 
 /** Three bands split by Linkwitz-Riley crossovers, each through its own compressor, then summed. */

@@ -16,6 +16,7 @@ const TICK_MS = 25;
 export function scheduleStep(store, engine, step, time, sd, opts = {}) {
   const proj = store.project;
   if (opts.metronome && step % beatSteps(proj) === 0) engine.click(time, step % barSteps(proj) === 0);
+  if (engine.stepped?.size) engine.stepEffects(step, time, sd);
 
   const anySolo = proj.channels.some((c) => c.solo);
   const swing = proj.swing || 0;

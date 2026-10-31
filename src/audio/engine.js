@@ -36,6 +36,7 @@ export class Engine {
     this.fxInstances = new Map(); // `${track}:${slot}` -> {type, fx}
     this.sendNodes = new Map(); // `${from}:${to}` -> GainNode
     this.lastNote = new Map(); // channel id -> { voice, pitch, until } for glide / mono synths
+    this.stepped = new Map(); // effects that follow the song step by step (volume shaper): slot key -> instance
     this.meterBuf = new Float32Array(512);
     this.clickBuffer = null;
 
@@ -162,7 +163,8 @@ export class Engine {
         }
       }
       if (inst.fx.key) this._wireKey(i, inst);
-      if (!slot.on) return; // bypassed
+      if (inst.fx.onStep) this.stepped.set(key, inst); else this.stepped.delete(key);
+      if (!slot.on) { this.stepped.delete(key); return; } // bypassed
       tail.connect(inst.fx.input);
       tail = inst.fx.output;
       t.fxNodes.push(inst.fx);
@@ -190,6 +192,14 @@ export class Engine {
     if (inst.keyFrom != null) { try { this.tracks[inst.keyFrom]?.gate.disconnect(inst.fx.key); } catch { /* already gone */ } }
     inst.keyFrom = want;
     if (want != null) this.track(want).gate.connect(inst.fx.key);
+  }
+
+  /** Called by the scheduler for every step: tempo-synced effects schedule their envelopes. */
+  stepEffects(step, time, stepDur) {
+    for (const [key, inst] of this.stepped) {
+      if (this.fxInstances.get(key) !== inst) { this.stepped.delete(key); continue; }
+      inst.fx.onStep(step, time, stepDur);
+    }
   }
 
   _dropFx(inst) {
@@ -484,6 +494,7 @@ export class Engine {
   killAll(fade = 0.03) {
     const now = this.ctx.currentTime;
     this.lastNote.clear();
+    for (const inst of this.stepped.values()) inst.fx.reset?.();
     for (const v of this.voices) {
       try {
         v.out.gain.cancelScheduledValues(now);

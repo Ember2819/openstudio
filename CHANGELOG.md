@@ -57,6 +57,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **Volume shaper**: tempo-synced pumps and gates (Pump 1/4 and 1/2, Gate 1/8 and 1/16, Offbeat, Trance 3+3+2,
+  Stutter 1/32) with depth and smoothing — locked to the song by the scheduler, in playback and export alike.
 - **Sidechain compressor**: duck a track from another mixer track's output (the kick pumping the bass and pads):
   pick the key input in its effect window; threshold, ratio, maximum reduction and release. The **Gate** now has a
   real envelope follower (instant open, hold, release) instead of a smoothed average.
