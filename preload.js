@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('studioAPI', {
   testRun,
   saveProject: (opts) => ipcRenderer.invoke('project:save', opts),
   openProject: () => ipcRenderer.invoke('project:open'),
+  recent: {
+    list: () => ipcRenderer.invoke('recent:list'),
+    open: (file) => ipcRenderer.invoke('recent:open', file),
+    clear: () => ipcRenderer.invoke('recent:clear'),
+  },
   openSamples: () => ipcRenderer.invoke('sample:open'),
   flpSamples: (paths) => ipcRenderer.invoke('flp:samples', paths),
   writeFile: (opts) => ipcRenderer.invoke('file:write', opts),

@@ -11,6 +11,12 @@ import { controllerLinks, describeLink, unlink } from '../controllers.js';
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
   /** What Record captures (FL asks the same when you arm it). */
+  // recent projects, kept fresh for the (synchronously built) File menu
+  let recentFiles = [];
+  const refreshRecent = () => window.studioAPI?.recent?.list().then((l) => { recentFiles = l; }).catch(() => {});
+  refreshRecent();
+  store.on('project', refreshRecent);
+  store.on('project-saved', refreshRecent);
   const recordMenu = () => [
     { label: 'Record on / off', checked: app.transport.recording, action: () => app.transport.setRecording(!app.transport.recording) },
     { separator: true },
@@ -23,7 +29,12 @@ export function createToolbar(app) {
   const menus = {
     FILE: () => [
       { label: 'New project', shortcut: 'Ctrl+N', action: actions.newProject },
-      { label: 'Open…', shortcut: 'Ctrl+O', action: actions.openProject },
+      { label: 'Open…', shortcut: 'Ctrl+O', action: () => actions.openProject() },
+      { label: 'Open recent', submenu: () => (recentFiles.length ? [
+        ...recentFiles.map((f) => ({ label: f.split(/[\\/]/).pop(), hint: f, action: () => actions.openProject(f) })),
+        { separator: true },
+        { label: 'Clear the list', action: async () => { recentFiles = await window.studioAPI.recent.clear(); } },
+      ] : [{ label: 'No recent projects', disabled: true }]) },
       { separator: true },
       { label: 'Save', shortcut: 'Ctrl+S', action: () => actions.saveProject(false) },
       { label: 'Save as…', shortcut: 'Ctrl+Shift+S', action: () => actions.saveProject(true) },

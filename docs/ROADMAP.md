@@ -6,7 +6,6 @@ Rough priorities, not promises. Pick something and open an issue before starting
 - Audio recording: loop takes, input monitoring through a mixer insert.
 - Per-note cutoff and slide (portamento) notes in the piano roll.
 - Sampler: multi-sample zones.
-- Recent files.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 
 ## Mid term

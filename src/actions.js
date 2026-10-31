@@ -104,10 +104,10 @@ export function createActions(app) {
       app.autosave?.discard();
     },
 
-    async openProject() {
+    async openProject(recentPath = null) {
       if (!(await confirmDiscard())) return;
-      const res = await window.studioAPI.openProject();
-      if (!res) return;
+      const res = recentPath ? await window.studioAPI.recent.open(recentPath) : await window.studioAPI.openProject();
+      if (!res) { if (recentPath) messageDialog('Could not open project', `${recentPath} is no longer there.`); return; }
       if (res.kind === 'flp') { await a.importFlpData(res.data, res.path); return; }
       try {
         transport.stop();

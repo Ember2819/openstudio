@@ -83,8 +83,44 @@ ipcMain.handle('project:save', async (_e, { suggestedName, text, forceDialog, kn
     target = res.filePath;
   }
   await fs.promises.writeFile(target, text, 'utf8');
+  await rememberRecent(target);
   return target;
 });
+
+// ------------------------------------------------------------------ recent projects (File → Open recent)
+const recentFile = () => path.join(app.getPath('userData'), 'recent.json');
+let recent = null;
+async function recentList() {
+  if (!recent) {
+    try { recent = JSON.parse(await fs.promises.readFile(recentFile(), 'utf8')).filter((f) => typeof f === 'string'); } catch { recent = []; }
+  }
+  return recent;
+}
+async function rememberRecent(file) {
+  const list = (await recentList()).filter((f) => f !== file);
+  list.unshift(file);
+  recent = list.slice(0, 12);
+  await fs.promises.writeFile(recentFile(), JSON.stringify(recent)).catch(() => {});
+  try { app.addRecentDocument(file); } catch { /* not on every platform */ }
+}
+/** Read a project file for the renderer (.flp as bytes, anything else as text). */
+async function readProject(file) {
+  await rememberRecent(file);
+  if (/\.flp$/i.test(file)) {
+    const buf = await fs.promises.readFile(file);
+    lastFlp = file;
+    return { path: file, kind: 'flp', data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
+  }
+  return { path: file, text: await fs.promises.readFile(file, 'utf8') };
+}
+ipcMain.handle('recent:list', async () => {
+  const out = [];
+  for (const f of await recentList()) if (await fs.promises.stat(f).then((st) => st.isFile(), () => false)) out.push(f);
+  return out;
+});
+// only paths that are already on the list can be opened this way
+ipcMain.handle('recent:open', async (_e, file) => ((await recentList()).includes(file) ? readProject(file) : null));
+ipcMain.handle('recent:clear', async () => { recent = []; await fs.promises.writeFile(recentFile(), '[]').catch(() => {}); return []; });
 
 // The FL Studio project the user last opened: only its sample references may be read (see flp:samples).
 let lastFlp = null;
@@ -99,13 +135,7 @@ ipcMain.handle('project:open', async () => {
     ],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  const file = res.filePaths[0];
-  if (/\.flp$/i.test(file)) {
-    const buf = await fs.promises.readFile(file);
-    lastFlp = file;
-    return { path: file, kind: 'flp', data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
-  }
-  return { path: file, text: await fs.promises.readFile(file, 'utf8') };
+  return readProject(res.filePaths[0]);
 });
 
 const AUDIO_EXT = /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i;
