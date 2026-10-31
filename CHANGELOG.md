@@ -51,6 +51,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
   becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
+- **Keyboard shortcuts you can change**: Settings → Keys lists every app-wide command (transport, file, windows,
+  patterns …) with its keys; add, remove or reset them, with clashes flagged. Menus and Help → Keyboard shortcuts show
+  your keys. New bindable commands without a default: Record, Loop, Export MP3.
 - **Mixer groups**: right-click a track → Group → 1-8. Grouped faders move together (by the same amount), and mute
   and solo switch the whole group; hold Alt to adjust one track alone. Agents: `update_mixer_track` `group`.
 - **Pitch shifter** (±24 semitones and cents, adjustable grain), **pitch correction** (snaps a voice to the nearest

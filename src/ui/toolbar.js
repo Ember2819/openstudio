@@ -1,3 +1,4 @@
+import { keymap } from '../keymap.js';
 import { h } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob, hint, showAutomationMenu } from './knob.js';
@@ -29,37 +30,37 @@ export function createToolbar(app) {
   // ------------------------------------------------------------------ menus
   const menus = {
     FILE: () => [
-      { label: 'New project', shortcut: 'Ctrl+N', action: actions.newProject },
+      { label: 'New project', shortcut: keymap.label('new'), action: actions.newProject },
       { label: 'New from template', submenu: () => Object.entries(STYLES).map(([id, st]) => ({ label: st.name, hint: st.blurb, action: () => actions.newFromTemplate(id) })) },
-      { label: 'Open…', shortcut: 'Ctrl+O', action: () => actions.openProject() },
+      { label: 'Open…', shortcut: keymap.label('open'), action: () => actions.openProject() },
       { label: 'Open recent', submenu: () => (recentFiles.length ? [
         ...recentFiles.map((f) => ({ label: f.split(/[\\/]/).pop(), hint: f, action: () => actions.openProject(f) })),
         { separator: true },
         { label: 'Clear the list', action: async () => { recentFiles = await window.studioAPI.recent.clear(); } },
       ] : [{ label: 'No recent projects', disabled: true }]) },
       { separator: true },
-      { label: 'Save', shortcut: 'Ctrl+S', action: () => actions.saveProject(false) },
-      { label: 'Save as…', shortcut: 'Ctrl+Shift+S', action: () => actions.saveProject(true) },
+      { label: 'Save', shortcut: keymap.label('save'), action: () => actions.saveProject(false) },
+      { label: 'Save as…', shortcut: keymap.label('save-as'), action: () => actions.saveProject(true) },
       { separator: true },
       { label: 'Open demo project', action: actions.loadDemo },
       { label: 'Import sample…', action: actions.addSamplerFromFile },
       { label: 'Import MIDI file…', action: () => actions.importMidiFile() },
       { separator: true },
-      { label: 'Export audio (WAV)…', shortcut: 'Ctrl+R', action: actions.exportWav },
+      { label: 'Export audio (WAV)…', shortcut: keymap.label('export-wav'), action: actions.exportWav },
       { label: 'Export audio (FLAC, lossless)…', action: actions.exportFlac },
-      { label: 'Export audio (MP3)', submenu: [320, 256, 192].map((kbps) => ({ label: `${kbps} kbps…`, action: () => actions.exportMp3(kbps) })) },
-      { label: 'Export stems (one WAV per mixer track)…', shortcut: 'Ctrl+Shift+R', action: actions.exportStems },
+      { label: 'Export audio (MP3)', submenu: [320, 256, 192].map((kbps) => ({ label: `${kbps} kbps…`, shortcut: kbps === 320 ? keymap.label('export-mp3') : '', action: () => actions.exportMp3(kbps) })) },
+      { label: 'Export stems (one WAV per mixer track)…', shortcut: keymap.label('export-stems'), action: actions.exportStems },
       { label: 'Export MIDI…', action: actions.exportMidi },
     ],
     EDIT: () => [
-      { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !store.undoStack.length, action: actions.undo },
-      { label: 'Redo', shortcut: 'Ctrl+Y', disabled: !store.redoStack.length, action: actions.redo },
+      { label: 'Undo', shortcut: keymap.label('undo'), disabled: !store.undoStack.length, action: actions.undo },
+      { label: 'Redo', shortcut: keymap.label('redo'), disabled: !store.redoStack.length, action: actions.redo },
       { separator: true },
       { label: 'Clear current pattern', action: actions.clearPattern },
     ],
     ADD: () => [
       { label: 'One more channel', submenu: () => actions.channelMenuItems() },
-      { label: 'New pattern', shortcut: 'Ctrl+Shift+P', action: () => store.addPattern() },
+      { label: 'New pattern', shortcut: keymap.label('new-pattern'), action: () => store.addPattern() },
     ],
     PATTERNS: () => [
       { label: 'New pattern', action: () => store.addPattern() },
@@ -67,22 +68,22 @@ export function createToolbar(app) {
       { label: 'Rename pattern…', action: actions.renamePattern },
       { label: 'Delete pattern', disabled: store.project.patterns.length < 2, action: () => store.removePattern(store.project.selected.pattern) },
       { separator: true },
-      { label: 'Next pattern', shortcut: '+', action: () => store.stepPattern(1) },
-      { label: 'Previous pattern', shortcut: '-', action: () => store.stepPattern(-1) },
+      { label: 'Next pattern', shortcut: keymap.label('next-pattern'), action: () => store.stepPattern(1) },
+      { label: 'Previous pattern', shortcut: keymap.label('prev-pattern'), action: () => store.stepPattern(-1) },
       { separator: true },
       ...store.project.patterns.map((p) => ({ label: p.name, swatch: p.color, checked: p.id === store.project.selected.pattern, action: () => store.selectPattern(p.id) })),
     ],
     VIEW: () => [
-      { label: 'Browser', shortcut: 'Alt+F8', checked: app.browserVisible(), action: actions.toggleBrowser },
-      { label: 'Channel rack', shortcut: 'F6', checked: wm.get('rack').visible, action: () => wm.get('rack').toggle() },
-      { label: 'Piano roll', shortcut: 'F7', checked: wm.get('piano').visible, action: () => wm.get('piano').toggle() },
-      { label: 'Playlist', shortcut: 'F5', checked: wm.get('playlist').visible, action: () => wm.get('playlist').toggle() },
-      { label: 'Mixer', shortcut: 'F9', checked: wm.get('mixer').visible, action: () => wm.get('mixer').toggle() },
+      { label: 'Browser', shortcut: keymap.label('browser'), checked: app.browserVisible(), action: actions.toggleBrowser },
+      { label: 'Channel rack', shortcut: keymap.label('rack'), checked: wm.get('rack').visible, action: () => wm.get('rack').toggle() },
+      { label: 'Piano roll', shortcut: keymap.label('piano'), checked: wm.get('piano').visible, action: () => wm.get('piano').toggle() },
+      { label: 'Playlist', shortcut: keymap.label('playlist'), checked: wm.get('playlist').visible, action: () => wm.get('playlist').toggle() },
+      { label: 'Mixer', shortcut: keymap.label('mixer'), checked: wm.get('mixer').visible, action: () => wm.get('mixer').toggle() },
       { separator: true },
       { label: 'Reset window layout', action: () => wm.resetLayout() },
     ],
     OPTIONS: () => [
-      { label: 'Metronome', shortcut: 'Ctrl+M', checked: transport.metronome, action: () => transport.setMetronome(!transport.metronome) },
+      { label: 'Metronome', shortcut: keymap.label('metronome'), checked: transport.metronome, action: () => transport.setMetronome(!transport.metronome) },
       { label: 'Record', submenu: recordMenu },
       { label: 'Audio input', submenu: () => {
         const rec = app.recorder;
@@ -116,14 +117,14 @@ export function createToolbar(app) {
       { label: 'Pattern mode', checked: transport.mode === 'pattern', action: () => transport.setMode('pattern') },
     ],
     TOOLS: () => [
-      { label: 'Settings…', shortcut: 'Ctrl+,', action: () => actions.togglePreferences() },
+      { label: 'Settings…', shortcut: keymap.label('preferences'), action: () => actions.togglePreferences() },
       { separator: true },
-      { label: 'Channel settings…', shortcut: 'F10', action: () => actions.openChannelSettings(store.selectedChannel?.id) },
+      { label: 'Channel settings…', shortcut: keymap.label('channel-settings'), action: () => actions.openChannelSettings(store.selectedChannel?.id) },
       { label: 'Clear current pattern', action: actions.clearPattern },
       { label: 'Reset mixer', action: actions.resetMixer },
     ],
     HELP: () => [
-      { label: 'Keyboard shortcuts', shortcut: 'F1', action: actions.showShortcuts },
+      { label: 'Keyboard shortcuts', shortcut: keymap.label('help'), action: actions.showShortcuts },
       { label: 'Agents (MCP server)…', action: actions.showAgents },
       { separator: true },
       { label: 'Check for updates…', action: () => actions.checkForUpdates() },

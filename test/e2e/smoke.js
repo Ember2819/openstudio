@@ -542,6 +542,26 @@
     a.wm.get('mixer').hide();
   }
 
+  // rebindable shortcuts: a new key works, the old one is free, menus and Settings → Keys follow
+  {
+    const { keymap } = await import('./src/keymap.js');
+    const press = (code, mods = {}) => window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code.replace(/^Key/, '').toLowerCase(), bubbles: true, cancelable: true, ...mods }));
+    const before = a.transport.metronome;
+    keymap.set('metronome', ['Ctrl+K']);
+    press('KeyK', { ctrlKey: true });
+    const toggled = a.transport.metronome !== before;
+    press('KeyM', { ctrlKey: true });
+    ok('a rebound shortcut works and the old key is free', toggled && a.transport.metronome !== before);
+    a.actions.togglePreferences();
+    document.querySelector('.prefs-tab[data-tab="keys"]').click();
+    const rows = document.querySelectorAll('.prefs-bind').length;
+    const shown = [...document.querySelectorAll('.prefs-bind')].some((r) => r.textContent.includes('Metronome') && r.textContent.includes('K'));
+    ok(`Settings → Keys lists the commands with their keys (${rows} rows)`, rows > 20 && shown);
+    keymap.reset();
+    a.actions.togglePreferences();
+    a.transport.setMetronome(before);
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

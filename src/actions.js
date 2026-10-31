@@ -15,38 +15,10 @@ import { tools as produceTools } from './agent/tools/produce.js';
 import { STYLES } from './agent/music/styles.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 import { ACTIONS, resolveCombo } from './ui/tiling.js';
+import { keymap, COMMANDS, comboLabel } from './keymap.js';
 
-/** Help → Keyboard shortcuts. Keys: alternatives separated by " / ", combos joined with "+". */
+/** Help → Keyboard shortcuts inside the editors (the app-wide ones come from the keymap). Keys: alternatives separated by " / ", combos joined with "+". */
 const SHORTCUTS = [
-  ['General', [
-    ['Space', 'Play / pause'],
-    ['Home', 'Jump to the start'],
-    ['Ctrl+L', 'Switch pattern / song mode'],
-    ['Ctrl+M', 'Metronome'],
-    ['Ctrl+Z', 'Undo'],
-    ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
-    ['Ctrl+N', 'New project'],
-    ['Ctrl+O', 'Open project'],
-    ['Ctrl+S', 'Save'],
-    ['Ctrl+Shift+S', 'Save as'],
-    ['Ctrl+R', 'Export audio'],
-    ['Ctrl+Shift+R', 'Export stems'],
-    ['Ctrl+,', 'Settings (themes, wallpaper)'],
-    ['F1', 'This list'],
-  ]],
-  ['Windows', [
-    ['F5', 'Playlist'],
-    ['F6', 'Channel rack'],
-    ['F7', 'Piano roll'],
-    ['F9', 'Mixer'],
-    ['Alt+F8', 'Browser'],
-    ['F10', 'Channel settings'],
-    ['F2', 'Rename the selected channel'],
-  ]],
-  ['Patterns', [
-    ['F4 / Ctrl+Shift+P', 'New pattern'],
-    ['+ / −', 'Next / previous pattern'],
-  ]],
   ['Play from the computer keyboard', [
     ['Z S X D C V G B H N J M', 'Lower octave'],
     ['Q 2 W 3 E R 5 T 6 Y 7 U', 'Upper octave'],
@@ -310,12 +282,18 @@ export function createActions(app) {
     },
 
     showShortcuts() {
-      const groups = [...SHORTCUTS];
+      // the app-wide commands as currently bound (Settings → Keys), then the editors' own keys
+      const byGroup = new Map();
+      for (const [id, label, group] of COMMANDS) {
+        const keys = keymap.binds(id).map(comboLabel).filter((k, i, all) => all.indexOf(k) === i);
+        if (keys.length) (byGroup.get(group) ?? byGroup.set(group, []).get(group)).push([keys.join(' / '), label]);
+      }
+      const groups = [...byGroup.entries(), ...SHORTCUTS];
       const t = app.tiler;
       if (t) {
         const rows = ACTIONS.filter(([id]) => t.cfg.binds[id]?.length)
           .map(([id, label]) => [t.cfg.binds[id].map((b) => resolveCombo(b, t.cfg.mod)).join(' / '), label]);
-        groups.splice(2, 0, [`Tiling windows${t.active ? '' : ' (off — first one turns it on)'}`, rows]);
+        groups.splice(byGroup.size, 0, [`Tiling windows${t.active ? '' : ' (off — first one turns it on)'}`, rows]);
       }
       shortcutsDialog('Keyboard shortcuts', groups);
     },
