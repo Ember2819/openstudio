@@ -51,7 +51,7 @@
 
   // effects measured offline: a 440 Hz tone through one effect
   {
-    const { createEffect } = await import('./src/audio/effects.js');
+    const { createEffect, loadEffectWorklets } = await import('./src/audio/effects.js');
     const run = async (type, params, amp = 0.5, secs = 1.2, stereoIn = false) => {
       const ctx = new OfflineAudioContext(2, Math.round(44100 * secs), 44100);
       const fx = createEffect(ctx, type, params);
@@ -64,6 +64,7 @@
       osc.connect(g).connect(fx.input);
       fx.output.connect(ctx.destination);
       osc.start();
+      await loadEffectWorklets(ctx);
       const out = await ctx.startRendering();
       const rms = (c, from = 0, to = out.length) => { const d = out.getChannelData(c); let x = 0; for (let i = from; i < to; i++) x += d[i] * d[i]; return Math.sqrt(x / Math.max(1, to - from)); };
       return { out, rms };
@@ -193,6 +194,30 @@
     s.project.mixer[5].sends[6] = 0.8;
     const [l3] = await lr();
     ok('…but reaches the master through a send', l3 > l * 0.5);
+  }
+
+  // sidechain: a kick on one insert ducks a pad on another
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'pattern';
+    const kick = s._addChannel({ name: 'K', type: 'drum', voice: 'kick', mixer: 1 });
+    const pad = s._addChannel({ name: 'P', type: 'synth', mixer: 2, preset: { wave1: 'sine', wave2: 'sine', attack: 0.001, sustain: 1, release: 0.01 } });
+    for (const c of s.project.channels) if (c !== kick && c !== pad) c.mute = true;
+    const pat = s.currentPattern;
+    pat.notes = { [kick.id]: [0, 4, 8, 12].map((st) => ({ p: 60, s: st, l: 1, v: 1 })), [pad.id]: [{ p: 69, s: 0, l: 16, v: 0.8 }] };
+    s.project.mixer[2].fx[0] = { type: 'sidechain', params: { source: 1, threshold: -30, ratio: 8, depth: 24, release: 0.1 }, on: true };
+    const { renderStems } = await import('./src/audio/render.js');
+    const res = await renderStems(s, 16, [2], { tail: 0 });
+    const padOut = res.stems.get(2);
+    const rms = (from, to) => { const d = padOut.getChannelData(0); let x = 0; const i0 = Math.round(from * 44100), i1 = Math.round(to * 44100); for (let i = i0; i < i1; i++) x += d[i] * d[i]; return Math.sqrt(x / (i1 - i0)); };
+    const onKick = rms(0.52, 0.6); // right after the second kick
+    const between = rms(0.38, 0.48); // just before it, after the first has decayed
+    ok(`sidechain: the pad ducks under the kick (${(20 * Math.log10(onKick / between)).toFixed(1)} dB)`, onKick < between * 0.4);
+    s.project.mixer[2].fx[0].params.source = 2; // keyed from itself: ignored, no loop
+    const self = await renderSteps(s, 4, { tail: 0 });
+    let pk = 0; { const d = self.getChannelData(0); for (let i = 0; i < d.length; i += 5) pk = Math.max(pk, Math.abs(d[i])); }
+    ok('sidechain keyed from its own track is ignored', pk > 0.01 && Number.isFinite(pk));
   }
 
   // audio clip fades and reverse

@@ -183,6 +183,18 @@ EFFECT_DEFS.multiband = {
   create: (ctx, p) => createMultiband(ctx, p),
 };
 
+EFFECT_DEFS.sidechain = {
+  name: 'Sidechain compressor',
+  params: [
+    { key: 'source', label: 'Key input', type: 'track', min: 1, max: 125, def: 1, step: 1, fmt: (v) => `Insert ${v}` },
+    { key: 'threshold', label: 'Threshold', min: -60, max: 0, def: -30, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'ratio', label: 'Ratio', min: 1, max: 20, def: 6, fmt: (v) => `${v.toFixed(1)}:1` },
+    { key: 'depth', label: 'Max reduction', min: 0, max: 48, def: 18, fmt: (v) => `−${v.toFixed(0)} dB` },
+    { key: 'release', label: 'Release', min: 0.01, max: 1, def: 0.12, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+  ],
+  create: (ctx, p) => createSidechain(ctx, p),
+};
+
 export const defaultEffectParams = (type) => Object.fromEntries(EFFECT_DEFS[type].params.map((m) => [m.key, m.def]));
 
 /**
@@ -613,45 +625,65 @@ function createAnalyzer(ctx, p) {
   return { input: node, output: node, analyser, params: p, set(k, v) { p[k] = v; }, dispose() {} };
 }
 
+// ---------------------------------------------------------------- envelope-follower effects (AudioWorklet)
+const worklets = new WeakMap(); // context -> Promise (module loaded)
+
+/** Load the dynamics worklet into a context (once). Engines call it at start; offline renders await it. */
+export function loadEffectWorklets(ctx) {
+  if (!worklets.has(ctx)) {
+    const p = ctx.audioWorklet ? ctx.audioWorklet.addModule(new URL('./dynamics-worklet.js', import.meta.url)).then(() => true, (err) => { console.error('Effect worklet failed to load', err); return false; }) : Promise.resolve(false);
+    worklets.set(ctx, p);
+  }
+  return worklets.get(ctx);
+}
+
 /**
- * Noise gate without a worklet: the level is rectified and smoothed (release), pushed through a steep curve around
- * the threshold, and that control signal opens the gain.
+ * A gain stage driven by a follower of `key`: input → vca (gain from the follower). The follower is built as soon as
+ * the worklet is loaded; until then the signal passes unchanged.
  */
+function follower(ctx, key, vca, params) {
+  const state = { node: null, set: () => {} };
+  vca.gain.value = 1;
+  loadEffectWorklets(ctx).then((ok) => {
+    if (!ok || state.disposed) return;
+    const node = new AudioWorkletNode(ctx, 'openstudio-dynamics', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    key.connect(node);
+    vca.gain.value = 0;
+    node.connect(vca.gain);
+    state.node = node;
+    state.set = (values) => { for (const [k, v] of Object.entries(values)) node.parameters.get(k).setValueAtTime(v, ctx.currentTime); };
+    state.set(params());
+  });
+  state.update = () => state.set(params());
+  state.dispose = () => { state.disposed = true; if (state.node) { state.node.port.postMessage('close'); state.node.disconnect(); } };
+  return state;
+}
+
+/** Noise gate: opens when the signal passes the threshold, closes with the release after a short hold. */
 function createGate(ctx, p) {
   const input = ctx.createGain();
   const vca = ctx.createGain();
-  vca.gain.value = 0;
-  const rect = ctx.createWaveShaper();
-  const N = 2048;
-  const abs = new Float32Array(N);
-  for (let i = 0; i < N; i++) abs[i] = Math.abs((i / (N - 1)) * 2 - 1);
-  rect.curve = abs;
-  const smooth = ctx.createBiquadFilter();
-  smooth.type = 'lowpass';
-  smooth.Q.value = 0.5;
-  const shape = ctx.createWaveShaper();
-  const floor = ctx.createConstantSource();
-  floor.start();
-  const floorGain = ctx.createGain();
-  floor.connect(floorGain).connect(vca.gain);
   input.connect(vca);
-  input.connect(rect).connect(smooth).connect(shape).connect(vca.gain);
-  const apply = () => {
-    // the smoothed rectified level averages ~0.64 of the peak for a sine, so open a little below the threshold
-    const thr = Math.pow(10, p.threshold / 20) * 0.64;
-    const floorLin = Math.pow(10, -p.range / 20);
-    const curve = new Float32Array(N);
-    for (let i = 0; i < N; i++) {
-      const x = Math.abs((i / (N - 1)) * 2 - 1);
-      const t = Math.min(1, Math.max(0, (x - thr * 0.7) / (thr * 0.3 + 1e-6))); // 3 dB-ish knee below the threshold
-      curve[i] = (t * t * (3 - 2 * t)) * (1 - floorLin);
-    }
-    shape.curve = curve;
-    floorGain.gain.value = floorLin;
-    smooth.frequency.value = Math.max(1, 1 / (2 * Math.PI * p.release));
-  };
-  apply();
-  return { input, output: vca, set(k, v) { p[k] = v; apply(); }, dispose() { floor.stop(); } };
+  const f = follower(ctx, input, vca, () => ({
+    mode: 1, threshold: Math.pow(10, p.threshold / 20), floor: Math.pow(10, -p.range / 20), attack: 0.0005, release: p.release, hold: 0.015,
+  }));
+  return { input, output: vca, set(k, v) { p[k] = v; f.update(); }, dispose() { f.dispose(); } };
+}
+
+/**
+ * Compressor keyed by another signal (`key`, wired by the engine from another mixer track): the key's envelope
+ * (fast attack, set release) drives the gain of the input through the static compression curve — the classic
+ * kick-ducks-the-bass pump.
+ */
+function createSidechain(ctx, p) {
+  const input = ctx.createGain();
+  const vca = ctx.createGain();
+  const key = ctx.createGain();
+  input.connect(vca);
+  const f = follower(ctx, key, vca, () => ({
+    mode: 0, threshold: Math.pow(10, p.threshold / 20), ratio: p.ratio, floor: Math.pow(10, -p.depth / 20), attack: 0.001, release: p.release,
+  }));
+  return { input, output: vca, key, set(k, v) { p[k] = v; if (k !== 'source') f.update(); }, dispose() { f.dispose(); } };
 }
 
 /** Three bands split by Linkwitz-Riley crossovers, each through its own compressor, then summed. */

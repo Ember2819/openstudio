@@ -19,6 +19,7 @@ export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, 
   const ctx = new OfflineAudioContext(channels, Math.ceil(seconds * sampleRate), sampleRate);
   const engine = new Engine(store, ctx);
   configure?.(engine);
+  await engine.ready; // worklet-based effects must be running before the first sample
   // decode audio clips / sampler samples for this context before scheduling anything
   const ids = new Set();
   for (const c of store.project.playlist.clips) if (c.type === 'audio') ids.add(c.sampleId);

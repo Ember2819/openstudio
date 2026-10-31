@@ -25,7 +25,8 @@ function range(store, t) {
     case 'fx': {
       const slot = store.project.mixer[t.track]?.fx[t.slot];
       const meta = slot && EFFECT_DEFS[slot.type].params.find((p) => p.key === t.key);
-      return meta ? { min: meta.min, max: meta.max, log: meta.log } : null;
+      // only continuous parameters can be automated (not choices or the sidechain's key input)
+      return meta && meta.min != null && !meta.type ? { min: meta.min, max: meta.max, log: meta.log } : null;
     }
     case 'chparam': {
       const ch = store.channel(t.id);

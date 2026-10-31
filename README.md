@@ -22,7 +22,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
   26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio files.
 - Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
   delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
-  multiband compressor, gate, limiter, stereo width.
+  multiband compressor, sidechain compressor, gate, limiter, stereo width.
 
 **Workflow**
 - **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo and mixer routing.

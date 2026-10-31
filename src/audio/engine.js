@@ -1,7 +1,7 @@
 import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, reversed } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { playSoundfont } from './soundfont.js';
-import { createEffect } from './effects.js';
+import { createEffect, loadEffectWorklets } from './effects.js';
 import { faderToGain, channelGain, ROOT_NOTE } from '../util.js';
 import { MIXER_TRACKS } from '../state.js';
 
@@ -38,6 +38,8 @@ export class Engine {
     this.meterBuf = new Float32Array(512);
     this.clickBuffer = null;
 
+    // effects built on AudioWorklets (gate, sidechain) come alive once their module is loaded
+    this.ready = loadEffectWorklets(ctx);
     this._buildMaster();
     this.syncAll();
 
@@ -145,11 +147,11 @@ export class Engine {
       const key = `${i}:${k}`;
       let inst = this.fxInstances.get(key);
       if (!slot) {
-        if (inst) { inst.fx.dispose(); this.fxInstances.delete(key); }
+        if (inst) { this._dropFx(inst); this.fxInstances.delete(key); }
         return;
       }
       if (!inst || inst.type !== slot.type) {
-        inst?.fx.dispose();
+        if (inst) this._dropFx(inst);
         inst = { type: slot.type, fx: createEffect(this.ctx, slot.type, slot.params), applied: { ...slot.params } };
         this.fxInstances.set(key, inst);
       } else {
@@ -158,6 +160,7 @@ export class Engine {
           if (inst.applied[name] !== value) { inst.fx.set(name, value); inst.applied[name] = value; }
         }
       }
+      if (inst.fx.key) this._wireKey(i, inst);
       if (!slot.on) return; // bypassed
       tail.connect(inst.fx.input);
       tail = inst.fx.output;
@@ -171,6 +174,26 @@ export class Engine {
     if (!inst) return;
     inst.fx.set(key, value);
     inst.applied[key] = value;
+    if (key === 'source' && inst.fx.key) this._wireKey(track, inst);
+  }
+
+  /**
+   * Feed a sidechain effect's key input from the mixer track named by its `source` parameter (that track's output,
+   * after its fader). Skipped when it would make a loop (the keyed track feeding its own key source).
+   */
+  _wireKey(track, inst) {
+    const src = Math.round(inst.applied.source ?? 0);
+    const ok = src > 0 && src < MIXER_TRACKS && src !== track && !this.store.wouldCycle(src, track);
+    const want = ok ? src : null;
+    if (inst.keyFrom === want) return;
+    if (inst.keyFrom != null) { try { this.tracks[inst.keyFrom]?.gate.disconnect(inst.fx.key); } catch { /* already gone */ } }
+    inst.keyFrom = want;
+    if (want != null) this.track(want).gate.connect(inst.fx.key);
+  }
+
+  _dropFx(inst) {
+    if (inst.keyFrom != null) { try { this.tracks[inst.keyFrom]?.gate.disconnect(inst.fx.key); } catch { /* already gone */ } }
+    inst.fx.dispose();
   }
 
   syncAll() {
@@ -237,7 +260,8 @@ export class Engine {
   resetFx(track) {
     for (let k = 0; k < this.store.project.mixer[track].fx.length; k++) {
       const key = `${track}:${k}`;
-      this.fxInstances.get(key)?.fx.dispose();
+      const inst = this.fxInstances.get(key);
+      if (inst) this._dropFx(inst);
       this.fxInstances.delete(key);
     }
     this._rebuildFxChain(track);

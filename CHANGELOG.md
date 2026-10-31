@@ -39,6 +39,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **Sidechain compressor**: duck a track from another mixer track's output (the kick pumping the bass and pads):
+  pick the key input in its effect window; threshold, ratio, maximum reduction and release. The **Gate** now has a
+  real envelope follower (instant open, hold, release) instead of a smoothed average.
 - **Playlist**: named **time markers** (right-click the ruler: add, jump to, loop between markers; click a marker to
   jump, double-click to rename), **Split by channel** for pattern clips, and audio-clip **gain, fade in / out and
   reverse** (right-click an audio clip). Agents: `markers`, `edit_clips` split_by_channel, `update_clips` fades.

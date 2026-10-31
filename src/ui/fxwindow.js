@@ -253,6 +253,24 @@ export function createEffectWindow(app) {
   function knobFor(meta, size = 34) {
     const slot = slotOf();
     const { track, slot: k } = cur;
+    if (meta.type === 'track') {
+      // a mixer track picker (sidechain key input)
+      const name = (v) => `${v}. ${store.project.mixer[v]?.name ?? ''}`;
+      const sel = h('button', { class: 'dd', 'data-hint': meta.label }, h('span', {}, name(slot.params[meta.key] ?? meta.def)), h('span', { class: 'caret' }, '▼'));
+      sel.addEventListener('click', () => {
+        const r = sel.getBoundingClientRect();
+        const used = new Set(store.project.channels.map((c) => c.mixer));
+        const items = [];
+        for (let v = meta.min; v <= meta.max; v++) {
+          if (v === track) continue;
+          const m = store.project.mixer[v];
+          if (!used.has(v) && /^Insert \d+$/.test(m.name) && v !== slot.params[meta.key]) continue; // unused inserts
+          items.push({ label: name(v), checked: slot.params[meta.key] === v, action: () => { store.checkpoint(); setParam(meta.key, v); render(); } });
+        }
+        showMenu(items.length ? items : [{ label: 'No other mixer tracks in use', disabled: true }], r.left, r.bottom);
+      });
+      return h('div', { class: 'mx-fx-param' }, sel, h('span', {}, meta.label));
+    }
     if (meta.type === 'select') {
       const sel = h('button', { class: 'dd', 'data-hint': meta.label }, h('span', {}, slot.params[meta.key] ?? meta.def), h('span', { class: 'caret' }, '▼'));
       sel.addEventListener('click', () => {
