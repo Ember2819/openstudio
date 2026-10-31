@@ -1,4 +1,4 @@
-import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed } from './instruments.js';
+import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed, PARAM_META } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { wsola } from './stretch.js';
 import { playSoundfont } from './soundfont.js';
@@ -23,6 +23,28 @@ export function loadSoundfont() {
 
 const MAX_VOICES = 160;
 const SILENT = Object.freeze([0, 0]);
+
+/**
+ * Per-note Mod X / Mod Y. Instruments with a cutoff (and resonance) control get those moved (X: up to four octaves
+ * either way; Y: up to half the resonance range); the rest get a per-note low-pass when X closes it or Y adds
+ * resonance.
+ */
+export function modParams(ch, mx, my) {
+  const meta = PARAM_META[ch.type] || [];
+  const cut = meta.find((m) => m.key === 'cutoff');
+  const res = meta.find((m) => m.key === 'res');
+  const out = {};
+  let freq = 20000 * 2 ** (Math.min(0, mx) * 8); // no cutoff control: X only closes a per-note filter
+  if (cut || res) {
+    const p = { ...ch.params };
+    if (cut && mx) p.cutoff = Math.max(cut.min, Math.min(cut.max, (p.cutoff ?? cut.def) * 2 ** (mx * 4)));
+    if (res && my) p.res = Math.max(res.min, Math.min(res.max, (p.res ?? res.def) + (my * (res.max - res.min)) / 2));
+    if (cut && !res && my > 0) { freq = p.cutoff ?? cut.def; p.cutoff = cut.max; } // the per-note filter takes over
+    out.params = p;
+  }
+  if ((!cut && mx < 0) || (!res && my > 0)) out.filter = { freq: Math.min(20000, freq), q: 0.7 + Math.max(0, my) * 12 };
+  return out;
+}
 
 export class Engine {
   constructor(store, ctx = new AudioContext({ latencyHint: 'interactive' })) {
@@ -418,19 +440,34 @@ export class Engine {
    * Returns the voice (or null).
    */
   /**
-   * `note` (optional) carries per-note properties: `pan` (-1..1) and `fine` (cents).
+   * `note` (optional) carries per-note properties: `pan` (-1..1), `fine` (cents), `mx` / `my` (FL's Mod X / Mod Y,
+   * -1..1: filter cutoff and resonance) and `sl` (a slide note: it bends the notes already sounding on the channel to
+   * its pitch over its length instead of playing a note of its own).
    */
   playNote(ch, pitch, vel, when, dur, note = null) {
     const node = this._channelNode(ch);
     const fine = note?.fine ? note.fine / 100 : 0;
     const semis = (this.store.project.masterPitch || 0) + fine;
     const t = Math.max(when, this.ctx.currentTime);
+    if (note?.sl) return this._slide(ch, pitch + semis, t, dur);
     let dest = node.gain;
     if (note?.pan) {
       const p = this.ctx.createStereoPanner();
       p.pan.value = Math.max(-1, Math.min(1, note.pan));
       p.connect(node.gain);
       dest = p;
+    }
+    if (note && (note.mx || note.my)) {
+      const mod = modParams(ch, note.mx || 0, note.my || 0);
+      if (mod.params) ch = { ...ch, params: mod.params };
+      if (mod.filter) {
+        const f = this.ctx.createBiquadFilter();
+        f.type = 'lowpass';
+        f.frequency.value = mod.filter.freq;
+        f.Q.value = mod.filter.q;
+        f.connect(dest);
+        dest = f;
+      }
     }
     let v = null;
     if (ch.type === 'drum') v = playDrum(this.ctx, dest, ch.voice, t, vel, pitch - ROOT_NOTE + semis, ch.params);
@@ -468,10 +505,50 @@ export class Engine {
     }
     if (v) {
       v.channelId = ch.id;
+      v.t0 = t;
+      v.noteEnd = t + dur;
+      v.pitchAbs = pitch + semis;
       this.voices.add(v);
       if (this.voices.size > MAX_VOICES) this._stealVoices();
     }
     return v;
+  }
+
+  /**
+   * A slide note: every voice of the channel sounding at `t` glides by the same interval (so chords keep their shape),
+   * taking the most recent one to `target` (absolute pitch) over `dur` seconds. The pitch stays there afterwards.
+   */
+  _slide(ch, target, t, dur) {
+    let latest = null;
+    const active = [];
+    for (const v of this.voices) {
+      if (v.channelId !== ch.id || !v.pitchParams?.length || v.t0 > t + 1e-4 || v.noteEnd <= t + 1e-4) continue;
+      active.push(v);
+      if (!latest || v.t0 >= latest.t0) latest = v;
+    }
+    if (!latest) return null;
+    const delta = target - (latest.pitchAbs + (latest.bend || 0));
+    const end = t + Math.max(0.005, Number.isFinite(dur) ? dur : 0.1);
+    for (const v of active) {
+      if (!v.bendSrc) {
+        const src = this.ctx.createConstantSource();
+        src.offset.value = 0;
+        for (const param of v.pitchParams) src.connect(param);
+        src.start(t);
+        v.bendSrc = src;
+        v.bend = 0;
+        const stop = () => { if (Number.isFinite(v.end)) { try { src.stop(v.end + 0.05); } catch { /* stopped */ } } };
+        stop();
+        const release = v.release;
+        v.release = (when) => { release(when); stop(); };
+        if (v.kill) { const kill = v.kill; v.kill = (when) => { kill(when); stop(); }; }
+      }
+      const from = v.bend * 100;
+      v.bend += delta;
+      v.bendSrc.offset.setValueAtTime(from, t);
+      v.bendSrc.offset.linearRampToValueAtTime(v.bend * 100, end);
+    }
+    return latest;
   }
 
   _preset(ch) {

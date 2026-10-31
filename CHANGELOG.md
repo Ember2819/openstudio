@@ -18,6 +18,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   unity below the threshold and Makeup is the real makeup. Projects that relied on it will play quieter — raise
   Makeup. The Limiter now holds its ceiling exactly instead of overshooting by up to 1 dB.
 - Duplicating, copying and pasting notes keeps their mute state (and the new per-note pan and fine pitch).
+- MIDI export left muted notes in.
 
 ### Added
 - **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
@@ -28,6 +29,11 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   audio clips whose file is missing are played by the stand-in. A report lists what was substituted. Agents can do the
   same with `open_project`.
 - Notes can carry their own **pan** and **fine pitch** (cents).
+- **Mod X / Mod Y** per note (event-lane choices in the piano roll): X moves the instrument's filter cutoff up to four
+  octaves either way, Y its resonance; instruments without a filter get a per-note low-pass. Imported from FL projects.
+- **Slide notes** (the slide button in the piano roll, or Tools → Toggle slide): instead of playing, a slide note
+  glides the notes already sounding on its channel to its pitch over its length — chords keep their shape. Works on the
+  synth, FM, organ, wavetable, plucked string, sampler and SoundFont instruments; FL slide notes import as slide notes.
 - **Tempo automation**: right-click the tempo display → Create automation clip (or an agent's `create_automation` with
   target `{ kind: "tempo" }`). Playback, export, the song clock and the position slider all follow the tempo curve, and
   the tempo display shows the current tempo while the song plays. After a tempo clip ends the song keeps its last tempo.

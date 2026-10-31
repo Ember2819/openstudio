@@ -140,6 +140,7 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p, from = null) 
 
   sources.push(bend);
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = [bend.offset]; // slide notes bend every oscillator through the shared bend
   sources.forEach((o) => o.start(t));
   let bendTarget = 0;
   // mono / legato: glide the sounding voice to a new note and hold it until that note ends
@@ -192,6 +193,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
     g.gain.setTargetAtTime(dev * p.indexSus, t, Math.max(p.indexDecay, 0.01) / 3);
   };
   shape(m1g, p.index, freq * p.ratio);
+  const pitched = [carrier.detune, m1.detune];
   if (p.index2 > 0.005) {
     const m2 = ctx.createOscillator();
     m2.frequency.value = freq * p.ratio2;
@@ -199,6 +201,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
     m2.connect(m2g).connect(m1.frequency);
     shape(m2g, p.index2, freq * p.ratio2);
     sources.push(m2);
+    pitched.push(m2.detune);
   }
 
   let tail = carrier;
@@ -230,6 +233,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.exponentialRampToValueAtTime(Math.max(peak * sus, 0.0001), t + p.attack + p.decay);
 
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = pitched;
   sources.forEach((o) => o.start(t));
   if (Number.isFinite(dur)) voice.release(t + dur);
   return voice;
@@ -271,6 +275,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
   o.setPeriodicWave(harmonicWave(ctx, weights.map((x) => x.toFixed(3)).join(','), weights));
   o.frequency.value = freq / 2; // the 16' pitch; the weights place everything else on its harmonics
   const sources = [o];
+  const pitched = [o.detune];
   o.connect(out);
 
   if (p.perc !== 'off') { // percussion: a decaying 2nd or 3rd harmonic at the front of the note
@@ -281,6 +286,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
     pg.gain.setTargetAtTime(0, t, 0.09);
     po.connect(pg).connect(out);
     sources.push(po);
+    pitched.push(po.detune);
   }
   if (p.click > 0.005) {
     const n = noise(ctx);
@@ -319,6 +325,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.linearRampToValueAtTime(peak, t + attack);
 
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = pitched;
   sources.forEach((s) => s.start(t));
   if (Number.isFinite(dur)) voice.release(t + dur);
   return voice;
@@ -409,7 +416,7 @@ export function playPluck(ctx, dest, pitch, t, dur, vel, semis, p) {
   }
   tail.connect(out).connect(dest);
   src.start(t);
-  const voice = { nodes: [src], out, end: t + buf.duration + 0.05, released: false };
+  const voice = { nodes: [src], out, end: t + buf.duration + 0.05, released: false, pitchParams: [src.detune] };
   voice.release = (when) => { // the string is damped when the note ends, like a muted or lifted finger
     if (voice.released) return;
     voice.released = true;

@@ -404,7 +404,7 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p, root
   }
   const gated = p.gate || looping; // a loop plays until the note ends
   const natural = looping ? Infinity : (len * (to - from)) / src.playbackRate.value;
-  const voice = { nodes: [src], out: g, end: t + natural + 0.05, released: false };
+  const voice = { nodes: [src], out: g, end: t + natural + 0.05, released: false, pitchParams: [src.detune] };
   voice.release = (when) => {
     if (voice.released || !gated) return;
     voice.released = true;

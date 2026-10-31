@@ -38,6 +38,8 @@ const ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const LANES = {
   v: { label: 'Velocity', min: 0.02, max: 1, get: (n) => n.v, set: (n, x) => { n.v = x; }, fmt: (x) => `${Math.round(x * 100)}%` },
   pan: { label: 'Pan', min: -1, max: 1, center: true, get: (n) => n.pan || 0, set: (n, x) => { if (Math.abs(x) < 0.03) delete n.pan; else n.pan = Math.round(x * 100) / 100; }, fmt: (x) => (Math.abs(x) < 0.03 ? 'C' : `${Math.round(Math.abs(x) * 100)}% ${x < 0 ? 'L' : 'R'}`) },
+  mx: { label: 'Mod X (cutoff)', min: -1, max: 1, center: true, get: (n) => n.mx || 0, set: (n, x) => { if (Math.abs(x) < 0.03) delete n.mx; else n.mx = Math.round(x * 100) / 100; }, fmt: (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)}%` },
+  my: { label: 'Mod Y (resonance)', min: -1, max: 1, center: true, get: (n) => n.my || 0, set: (n, x) => { if (Math.abs(x) < 0.03) delete n.my; else n.my = Math.round(x * 100) / 100; }, fmt: (x) => `${x > 0 ? '+' : ''}${Math.round(x * 100)}%` },
   fine: { label: 'Fine pitch', min: -120, max: 120, center: true, get: (n) => n.fine || 0, set: (n, x) => { const c = Math.round(x); if (Math.abs(c) < 3) delete n.fine; else n.fine = c; }, fmt: (x) => `${x > 0 ? '+' : ''}${Math.round(x)} ct` },
 };
 
@@ -58,7 +60,7 @@ export function createPianoRoll(app) {
     visible: false,
   });
 
-  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */, chord: null, lane: 'v' };
+  const S = { tool: 'draw', px: 24, rowH: 16, selection: new Set(), lastLen: null, clipboard: [], ghosts: true, band: null, pressed: new Set(), scale: null /* {root, name} */, chord: null, lane: 'v', slide: false };
 
   // ---------------------------------------------------------------- layout
   const toolBtns = TOOLS.map(([id, ico, tip]) => {
@@ -127,12 +129,15 @@ export function createPianoRoll(app) {
       { label: 'Scale velocity to 100%', action: () => edit((list) => { const max = Math.max(...list.map((n) => n.v)); for (const n of list) n.v = clamp(n.v / max, 0.02, 1); }) },
       { label: 'Fade in (velocity)', action: () => transform((list) => velocityRamp(list, 0.15, Math.max(...list.map((n) => n.v)))) },
       { label: 'Fade out (velocity)', action: () => transform((list) => velocityRamp(list, Math.max(...list.map((n) => n.v)), 0.15)) },
-      { label: 'Reset pan and fine pitch', action: () => edit((list) => { for (const n of list) { delete n.pan; delete n.fine; } }) },
+      { label: 'Toggle slide', action: () => edit((list) => { const on = !list.every((n) => n.sl); for (const n of list) { if (on) n.sl = true; else delete n.sl; } }) },
+      { label: 'Reset pan, fine pitch and mod X / Y', action: () => edit((list) => { for (const n of list) { delete n.pan; delete n.fine; delete n.mx; delete n.my; } }) },
       { separator: true },
       { label: 'Select all', shortcut: 'Ctrl+A', action: () => { S.selection = new Set(notes()); invalidate(); } },
       { label: 'Deselect', shortcut: 'Ctrl+D', action: () => { S.selection.clear(); invalidate(); } },
     ]);
   });
+  // slide mode: new notes are slide notes (they bend the notes under them instead of playing)
+  const slideBtn = h('button', { class: 'tbtn', 'data-hint': 'Slide — new notes glide the notes already playing to their pitch (FL slide notes)', onClick: () => { S.slide = !S.slide; slideBtn.classList.toggle('on', S.slide); } }, icon('slide'));
   const ghostBtn = h('button', { class: 'tbtn on', 'data-hint': 'Show notes of other channels as ghosts', onClick: () => { S.ghosts = !S.ghosts; ghostBtn.classList.toggle('on', S.ghosts); invalidate(); } }, icon('note'));
   const zoomOut = h('button', { class: 'tbtn', 'data-hint': 'Zoom out (Ctrl+wheel)', onClick: () => zoom(1 / 1.25) }, '−');
   const zoomIn = h('button', { class: 'tbtn', 'data-hint': 'Zoom in (Ctrl+wheel)', onClick: () => zoom(1.25) }, '+');
@@ -146,6 +151,7 @@ export function createPianoRoll(app) {
     scaleBtn,
     chordBtn,
     toolsBtn,
+    slideBtn,
     ghostBtn,
     h('div', { class: 'tb-flex' }),
     h('div', { class: 'tb-group' }, zoomOut, zoomIn));
@@ -161,7 +167,7 @@ export function createPianoRoll(app) {
   scrollingToolbar(toolbar);
   const playhead = h('div', { class: 'pr-playhead' });
   const overlay = h('div', { class: 'pr-overlay' }, playhead);
-  const velLabel = h('button', { class: 'pr-vel-label', 'data-hint': 'Note property shown in the event lane — click to switch (velocity, pan, fine pitch)' }, LANES.v.label, h('span', { class: 'caret' }, ' ▾'));
+  const velLabel = h('button', { class: 'pr-vel-label', 'data-hint': 'Note property shown in the event lane — click to switch (velocity, pan, mod X / Y, fine pitch)' }, LANES.v.label, h('span', { class: 'caret' }, ' ▾'));
   velLabel.addEventListener('click', () => {
     showMenuBelow(velLabel, Object.entries(LANES).map(([id, lane]) => ({ label: lane.label, checked: S.lane === id, action: () => {
       S.lane = id;
@@ -339,9 +345,21 @@ export function createPianoRoll(app) {
         ctx.lineWidth = sel ? 1.5 : 1;
         roundRect(ctx, x + 0.5, y + 1.5, w - 1, rh - 3, 2);
         ctx.stroke();
+        let textX = x + 4;
+        if (n.sl) { // slide notes: a ramp glyph at the front
+          ctx.fillStyle = sel ? '#14202a' : 'rgba(255,255,255,.9)';
+          const gh = Math.min(rh - 5, 9);
+          ctx.beginPath();
+          ctx.moveTo(x + 3, y + rh / 2 + gh / 2);
+          ctx.lineTo(x + 3 + gh, y + rh / 2 - gh / 2);
+          ctx.lineTo(x + 3 + gh, y + rh / 2 + gh / 2);
+          ctx.closePath();
+          ctx.fill();
+          textX += gh + 3;
+        }
         if (w > 26 && rh >= 12) {
           ctx.fillStyle = sel ? '#14202a' : 'rgba(255,255,255,.85)';
-          ctx.fillText(kitLabels?.get(n.p) ?? noteName(n.p), x + 4, y + rh / 2 + 0.5);
+          ctx.fillText(kitLabels?.get(n.p) ?? noteName(n.p), textX, y + rh / 2 + 0.5);
         }
       }
     }
@@ -607,7 +625,7 @@ export function createPianoRoll(app) {
     const len = S.lastLen ?? (snap() || 1);
     const start = Math.max(0, snapFloor(step, sz));
     const pitches = (S.chord ? CHORDS[S.chord] : [0]).map((i) => pitch + i).filter((p) => p < PITCHES);
-    const made = pitches.map((p) => store.addNote(pat(), ch.id, { p, s: start, l: len, v: 0.78 }));
+    const made = pitches.map((p) => store.addNote(pat(), ch.id, { p, s: start, l: len, v: 0.78, sl: S.slide }));
     made.forEach((n) => S.selection.add(n));
     drag = { type: 'resize', anchor: step, orig: made.map((n) => ({ n, l: n.l })), primary: made[0], created: true };
     for (const p of pitches) playPreview(ch, p, 0.78, true);

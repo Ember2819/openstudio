@@ -31,12 +31,16 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       if (ch.mute || (anySolo && !ch.solo)) continue;
       const notes = pat.notes[ch.id];
       if (!notes) continue;
+      let slides = null;
       for (const n of notes) {
         if (n.m) continue;
         if (n.s >= local - 1e-6 && n.s < local + 1 - 1e-6) {
-          engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n.pan || n.fine ? n : null);
+          // slide notes bend what is sounding, so they go after the notes that start with them
+          if (n.sl) (slides ??= []).push(n);
+          else engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n.pan || n.fine || n.mx || n.my ? n : null);
         }
       }
+      if (slides) for (const n of slides) engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n);
     }
   };
 

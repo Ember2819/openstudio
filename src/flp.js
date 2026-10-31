@@ -204,6 +204,8 @@ function readNotes(d) {
       release: d[i + 18],
       pan: d[i + 20], // 0..128, 64 = centre
       vel: d[i + 21], // 0..128, 100 = FL default
+      modX: d[i + 22], // 0..255, 128 = centre (filter cutoff for most plugins)
+      modY: d[i + 23], // resonance
     });
   }
   return notes;
@@ -439,6 +441,9 @@ export function importFlp(store, flp, { name = '', samples = new Map() } = {}) {
         const note = { p: Math.max(0, Math.min(131, n.key)), s, l: Math.max(0.0625, l), v: Math.max(0.02, Math.min(1, n.vel / 128)) };
         if (n.pan != null && n.pan !== 64) note.pan = round((n.pan - 64) / 64);
         if (n.fine != null && n.fine !== 120) note.fine = n.fine - 120; // cents
+        if (n.modX != null && n.modX !== 128) note.mx = round((n.modX - 128) / 128);
+        if (n.modY != null && n.modY !== 128) note.my = round((n.modY - 128) / 128);
+        if (n.flags & 0x08) note.sl = true; // slide note
         store.notesOf(pat, ch.id).push(note);
         endStep = Math.max(endStep, s + note.l);
       }

@@ -14,6 +14,9 @@ const NOTE = obj({
   muted: bool('Note is muted'),
   pan: num('Per-note pan -1 (left) .. 1 (right), default 0', { minimum: -1, maximum: 1 }),
   fine: num('Per-note fine pitch in cents, -120..120, default 0', { minimum: -120, maximum: 120 }),
+  modX: num('Per-note Mod X -1..1 (moves the filter cutoff up to 4 octaves), default 0', { minimum: -1, maximum: 1 }),
+  modY: num('Per-note Mod Y -1..1 (filter resonance), default 0', { minimum: -1, maximum: 1 }),
+  slide: bool('Slide note: instead of playing, it glides the notes already sounding on the channel to its pitch over its length'),
 }, ['pitch', 'start', 'length']);
 
 const FILTER = obj({

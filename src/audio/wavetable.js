@@ -116,6 +116,7 @@ export function playWavetable(ctx, dest, pitch, t, dur, vel, semis, p) {
   const voices = Math.max(1, Math.round(p.unison || 1));
   const bus = ctx.createGain();
   bus.gain.value = 1 / Math.sqrt(voices);
+  const pitched = [];
   for (let k = 0; k < FRAMES; k++) {
     const shaper = ctx.createWaveShaper();
     shaper.curve = windowCurve(k);
@@ -130,6 +131,7 @@ export function playWavetable(ctx, dest, pitch, t, dur, vel, semis, p) {
       o.detune.value = voices === 1 ? 0 : ((u / (voices - 1)) * 2 - 1) * (p.spread ?? 12);
       o.connect(amp);
       sources.push(o);
+      pitched.push(o.detune);
     }
     amp.connect(bus);
   }
@@ -146,7 +148,7 @@ export function playWavetable(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.linearRampToValueAtTime(peak, t + p.attack);
   out.gain.exponentialRampToValueAtTime(Math.max(peak * sus, 0.0001), t + p.attack + p.decay);
 
-  const voice = { nodes: sources, out, end: Infinity, released: false };
+  const voice = { nodes: sources, out, end: Infinity, released: false, pitchParams: pitched };
   voice.release = (when) => {
     if (voice.released) return;
     voice.released = true;

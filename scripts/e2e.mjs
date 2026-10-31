@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const electron = join(root, 'node_modules', '.bin', 'electron');
 // every test/e2e/*.js script is run in its own app launch; a script is one IIFE that resolves to "ok …"/"FAIL …" lines
-const scripts = readdirSync(join(root, 'test/e2e')).filter((f) => f.endsWith('.js')).sort();
+// `npm run test:e2e -- voices` runs only the scripts whose names contain one of the arguments
+const only = process.argv.slice(2);
+const scripts = readdirSync(join(root, 'test/e2e')).filter((f) => f.endsWith('.js') && (!only.length || only.some((o) => f.includes(o)))).sort();
 const shot = join(mkdtempSync(join(tmpdir(), 'openstudio-e2e-')), 'screenshot.png');
 
 if (!existsSync(join(root, 'assets/soundfonts/GeneralUser-GS.sf2'))) {

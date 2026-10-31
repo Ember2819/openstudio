@@ -399,6 +399,9 @@ export class Store extends Emitter {
     if (note.pan) n.pan = note.pan;
     if (note.fine) n.fine = note.fine;
     if (note.m) n.m = true;
+    if (note.mx) n.mx = note.mx;
+    if (note.my) n.my = note.my;
+    if (note.sl) n.sl = true;
     this.notesOf(pat, chId).push(n);
     this.normalizePattern(pat);
     return n;

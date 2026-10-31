@@ -36,6 +36,7 @@ const ICONS = {
   folder: L('<path d="M2 12V4a1 1 0 0 1 1-1h3l1.5 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/>'),
   file: L('<path d="M4 2.5h5l3 3V13a.5.5 0 0 1-.5.5h-7A.5.5 0 0 1 4 13z"/><path d="M9 2.5v3h3"/>'),
   wave: L('<path d="M1.5 8h1.5l1.3-4 1.7 8 1.7-9 1.4 7 1.2-4h2.2"/>'),
+  slide: L('<path d="M2 12.5c3 0 4.5-9 9-9h3"/><path d="m11.5 1.5 2.5 2-2.5 2"/>'),
   note: L('<path d="M6 11.5V3.5l7-1.5v8"/><circle cx="4.3" cy="11.7" r="1.8"/><circle cx="11.3" cy="10" r="1.8"/>'),
   keys: L('<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5.3 13V9M8 13V9M10.7 13V9M5.3 3v4M10.7 3v4"/>'),
   channelrack: L('<rect x="2" y="2.5" width="3" height="3" rx=".7"/><rect x="6.5" y="2.5" width="3" height="3" rx=".7"/><rect x="11" y="2.5" width="3" height="3" rx=".7"/><rect x="2" y="6.5" width="3" height="3" rx=".7"/><rect x="6.5" y="6.5" width="3" height="3" rx=".7"/><rect x="11" y="6.5" width="3" height="3" rx=".7"/><rect x="2" y="10.5" width="3" height="3" rx=".7"/><rect x="6.5" y="10.5" width="3" height="3" rx=".7"/><rect x="11" y="10.5" width="3" height="3" rx=".7"/>'),

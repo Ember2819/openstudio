@@ -20,12 +20,12 @@ function chunk(id, data) {
   return [...text(id), ...u32(data.length), ...data];
 }
 
-/** Notes of one channel across the song (or the current pattern), in steps. */
+/** Notes of one channel across the song (or the current pattern), in steps. Muted and slide notes are left out. */
 function collectNotes(store, ch, song) {
   const out = [];
   const proj = store.project;
   if (!song) {
-    for (const n of store.currentPattern.notes[ch.id] || []) out.push({ s: n.s, l: n.l, p: n.p, v: n.v });
+    for (const n of store.currentPattern.notes[ch.id] || []) if (!n.m && !n.sl) out.push({ s: n.s, l: n.l, p: n.p, v: n.v });
     return out;
   }
   for (const clip of proj.playlist.clips) {
@@ -37,6 +37,7 @@ function collectNotes(store, ch, song) {
     const loops = Math.ceil((clip.len + clip.offset) / len) + 1;
     for (let k = 0; k < loops; k++) {
       for (const n of list) {
+        if (n.m || n.sl) continue; // muted notes don't sound; slide notes only bend others
         const t = n.s - clip.offset + k * len;
         if (t < 0 || t >= clip.len) continue;
         out.push({ s: clip.start + t, l: Math.min(n.l, clip.len - t), p: n.p, v: n.v });

@@ -87,7 +87,7 @@ export function edit(store, fn) {
 }
 
 /** Notes as the agent sees them. */
-export const noteOut = (n) => ({ pitch: n.p, name: noteName(n.p), start: n.s, length: n.l, velocity: round(n.v), ...(n.m ? { muted: true } : {}), ...(n.pan ? { pan: n.pan } : {}), ...(n.fine ? { fine: n.fine } : {}) });
+export const noteOut = (n) => ({ pitch: n.p, name: noteName(n.p), start: n.s, length: n.l, velocity: round(n.v), ...(n.m ? { muted: true } : {}), ...(n.pan ? { pan: n.pan } : {}), ...(n.fine ? { fine: n.fine } : {}), ...(n.mx ? { modX: n.mx } : {}), ...(n.my ? { modY: n.my } : {}), ...(n.sl ? { slide: true } : {}) });
 
 /** Notes as the agent sends them -> project notes. */
 export function noteIn(n, i = 0) {
@@ -97,6 +97,9 @@ export function noteIn(n, i = 0) {
   if (n.muted) out.m = true;
   if (n.pan) out.pan = Math.max(-1, Math.min(1, n.pan));
   if (n.fine) out.fine = Math.round(Math.max(-120, Math.min(120, n.fine)));
+  if (n.modX) out.mx = Math.max(-1, Math.min(1, n.modX));
+  if (n.modY) out.my = Math.max(-1, Math.min(1, n.modY));
+  if (n.slide) out.sl = true;
   return out;
 }
 

@@ -100,5 +100,47 @@
   ok('a strip is built when it is touched', !!eng.tracks[90]);
   eng.dispose();
 
+  // slide notes bend the sounding note; Mod X closes the filter
+  const engineRender = async (seconds, fn) => {
+    const ctx = new OfflineAudioContext(1, Math.ceil(SR * seconds), SR);
+    const e = new Engine(app.store, ctx);
+    await e.ready;
+    const play = (spec, ...args) => {
+      const node = e._channelNode(spec);
+      if (node.mixer !== 'test') { node.mute.disconnect(); node.mute.connect(ctx.destination); node.mixer = 'test'; }
+      return e.playNote(spec, ...args);
+    };
+    fn(play);
+    const buf = await ctx.startRendering();
+    e.dispose();
+    return buf.getChannelData(0);
+  };
+  const steady = { attack: 0.001, sustain: 1, decay: 0.05, release: 0.05, envAmt: 0 };
+  for (const type of ['synth', 'fm', 'wavetable', 'organ']) {
+    const spec = { id: -40, type, params: { ...inst.defaultParams(type), ...steady, wave1: 'sawtooth', mix: 0, cutoff: 9000, ratio: 1, index: 0.3, indexSus: 1, d16: 0, d513: 0, table: 'Basic shapes', position: 0.66 } };
+    const d = await engineRender(1.2, (play) => {
+      play(spec, 57, 0.8, 0, 1.1);
+      play(spec, 69, 0.8, 0.35, 0.2, { p: 69, sl: true });
+    });
+    const before = hzOf(d, 0.1, 0.2), after = hzOf(d, 0.7, 0.2);
+    ok(`${type} slide note glides 220 → 440 Hz and stays`, Math.abs(before / 220 - 1) < 0.02 && Math.abs(after / 440 - 1) < 0.02, `${before.toFixed(1)} → ${after.toFixed(1)}`);
+  }
+  {
+    const spec = { id: -41, type: 'sampler', sampleId: null, params: inst.defaultParams('sampler') };
+    const silent = await engineRender(0.4, (play) => { play(spec, 60, 0.8, 0, 0.3, { p: 60, sl: true }); });
+    ok('a slide note with nothing under it is silent', stats(silent).peak === 0);
+  }
+  {
+    const spec = { id: -42, type: 'synth', params: { ...inst.defaultParams('synth'), ...steady, wave1: 'sawtooth', mix: 0, cutoff: 6000, res: 0.7 } };
+    const bright = await engineRender(0.5, (play) => { play(spec, 57, 0.8, 0, 0.4); });
+    const dark = await engineRender(0.5, (play) => { play(spec, 57, 0.8, 0, 0.4, { p: 57, mx: -0.8 }); });
+    const hf = (d, from = 4411, to = 15000) => { let s = 0; for (let i = from; i < to; i++) s += (d[i] - d[i - 1]) ** 2; return s; };
+    ok('Mod X closes the cutoff of the note', hf(dark) < hf(bright) * 0.2, `${hf(dark).toFixed(3)} vs ${hf(bright).toFixed(3)}`);
+    const drum = { id: -43, type: 'drum', voice: 'hat', params: inst.defaultParams('drum') };
+    const hat = await engineRender(0.3, (play) => { play(drum, 60, 0.9, 0, 0.1); });
+    const dull = await engineRender(0.3, (play) => { play(drum, 60, 0.9, 0, 0.1, { p: 60, mx: -1 }); });
+    ok('Mod X filters instruments without a cutoff control', hf(dull, 1, 6000) < hf(hat, 1, 6000) * 0.2, `${hf(dull, 1, 6000).toFixed(4)} vs ${hf(hat, 1, 6000).toFixed(4)}`);
+  }
+
   return log.join('\n');
 })()

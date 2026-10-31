@@ -18,8 +18,8 @@ function ev(id, value) {
   return [id, ...varint(value.length), ...value];
 }
 
-function note({ pos, len, key, ch, vel = 100, pan = 64, fine = 120 }) {
-  return [...u32(pos), ...u16(0x4000), ...u16(ch), ...u32(len), ...u16(key), ...u16(0), fine, 0, 64, 0, pan, vel, 128, 128];
+function note({ pos, len, key, ch, vel = 100, pan = 64, fine = 120, flags = 0x4000, modX = 128, modY = 128 }) {
+  return [...u32(pos), ...u16(flags), ...u16(ch), ...u32(len), ...u16(key), ...u16(0), fine, 0, 64, 0, pan, vel, modX, modY];
 }
 
 /** A 60-byte (FL 21) playlist item. */
@@ -45,7 +45,7 @@ function buildFlp() {
     ...note({ pos: 0, len: 0, key: 60, ch: 1 }),
     ...note({ pos: 96, len: 0, key: 60, ch: 1, vel: 128 }),
     ...note({ pos: 0, len: 192, key: 72, ch: 0, pan: 0, fine: 170 }),
-    ...note({ pos: 192, len: 96, key: 67, ch: 2 }),
+    ...note({ pos: 192, len: 96, key: 67, ch: 2, flags: 0x4008, modX: 64, modY: 192 }),
   ]));
   e.push(...ev(193, utf16('Verse')), ...ev(150, 0x0000ff));
   e.push(...ev(65, 2), ...ev(193, utf16('Empty but named')));
@@ -142,6 +142,8 @@ test('importFlp builds a playable OpenStudio project', () => {
   assert.deepEqual(leadNotes.map((n) => [n.p, n.s, n.l]), [[72, 0, 8], [67, 8, 4]], 'the layer note reaches the lead');
   assert.equal(leadNotes[0].pan, -1);
   assert.equal(leadNotes[0].fine, 50);
+  assert.equal(leadNotes[0].mx, undefined, 'centred mod X is left out');
+  assert.deepEqual([leadNotes[1].mx, leadNotes[1].my, leadNotes[1].sl], [-0.5, 0.5, true], 'mod X / Y and the slide flag');
   assert.deepEqual(verse.notes[pad.id].map((n) => n.p), [67], 'and the other layer child');
   assert.equal(p.patterns[1].name, 'Empty but named');
 
