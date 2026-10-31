@@ -129,8 +129,8 @@ test('importFlp builds a playable OpenStudio project', () => {
   assert.equal(lead.pan, -0.5);
   assert.equal(kick.type, 'drum', 'missing sample falls back to a drum voice');
   assert.equal(kick.voice, 'kick');
-  assert.equal(pad.type, 'sf');
-  assert.equal(pad.program, 89);
+  assert.equal(pad.type, 'wavetable', 'a Serum VST becomes the wavetable synth');
+  assert.equal(pad.params.posLfo, 0.35, 'with the Morph Pad preset');
   assert.deepEqual(report.missingSamples, ['C:\\Samples\\Kicks\\Big Kick.wav', 'D:\\Loops\\Clap.wav']);
   assert.ok(report.substituted.some((s) => s.includes('Serum Pad')));
   assert.deepEqual(report.skipped, ['Gross Beat (insert 1)']);
@@ -192,9 +192,12 @@ test('parseFlp rejects other files', () => {
 
 test('channel and effect mapping', () => {
   assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Sytrus', name: 'Bells' }), { type: 'fm' });
+  assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Fruity Wrapper', name: 'Serum Reese' }), { type: 'wavetable', preset: 'Growl Bass' });
+  assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Harmor', name: 'Harmor' }), { type: 'wavetable', preset: 'Digital Lead' });
   assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Fruity Wrapper', name: 'Nexus Piano' }), { type: 'sf', program: 0 });
   assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'FLEX', name: 'Open Hat' }), { type: 'drum', voice: 'openhat' });
-  assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Harmor', name: '808 Bass' }), { type: 'sf', program: 38 });
+  assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'Harmor', name: '808 Bass' }), { type: 'wavetable', preset: 'Growl Bass' });
+  assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'FLEX', name: '808 Bass' }), { type: 'sf', program: 38 });
   assert.deepEqual(mapChannel({ kind: 'generator', plugin: 'FPC', name: 'FPC' }), { type: 'sf', bank: 128, program: 0, kit: true });
   assert.deepEqual(mapChannel({ kind: 'sampler', plugin: '', name: 'Snare 3', sample: '' }), { type: 'drum', voice: 'snare' });
   assert.equal(mapEffect('Fruity parametric EQ 2'), 'eq');

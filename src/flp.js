@@ -7,6 +7,7 @@
 // This reader was written from observing files saved by FL Studio 11-21; anything it does not understand is skipped.
 import { STEPS_PER_BEAT, PLAYLIST_TRACKS, MIXER_TRACKS, blankProject, validTimeSig } from './state.js';
 import { defaultEffectParams } from './audio/effects.js';
+import { ENGINE_PRESETS } from './audio/instruments.js';
 
 const EV = {
   // byte
@@ -312,6 +313,11 @@ export function mapChannel(ch) {
   if (known?.type === 'drum' && drum) return { type: 'drum', voice: drum };
   if (drum && !/bass|pad|lead|key|piano|string/i.test(name)) return { type: 'drum', voice: drum };
   if (known) return { ...known };
+  // wavetable synths (often VSTs, named after the plugin): a pad / bass / lead from the wavetable engine
+  if (/serum|vital|massive|harmor|harmless|wavetable|pigments|ana ?2|phase plant/i.test(`${plugin} ${name}`)) {
+    const role = /bass|sub|808|reese/i.test(name) ? 'Growl Bass' : /pad|atmos|chord/i.test(name) ? 'Morph Pad' : /pluck|key/i.test(name) ? 'Drawbar Keys' : 'Digital Lead';
+    return { type: 'wavetable', preset: role };
+  }
   const gm = firstMatch(GM_WORDS, name);
   if (gm === 'pluck') return { type: 'pluck' };
   if (gm === 'sfx') return { type: 'sfx' };
@@ -397,6 +403,8 @@ export function importFlp(store, flp, { name = '', samples = new Map() } = {}) {
     } else if (spec.type === 'sf') {
       opts.bank = spec.bank ?? 0;
       opts.program = spec.program ?? 0;
+    } else if (spec.preset && ENGINE_PRESETS[spec.type]) {
+      opts.preset = Object.values(ENGINE_PRESETS[spec.type]).flat().find((x) => x.name === spec.preset)?.params ?? null;
     }
     if (ch.kind === 'generator' && !PLUGIN_ENGINE[(ch.plugin || '').toLowerCase()] && ch.plugin) {
       report.substituted.push(`${label} (${ch.plugin === 'Fruity Wrapper' ? 'VST plugin' : ch.plugin}) → ${describeSpec(opts)}`);
