@@ -3,7 +3,6 @@
 Rough priorities, not promises. Pick something and open an issue before starting large work.
 
 ## Near term
-- Sampler: multi-sample zones.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 
 ## Mid term

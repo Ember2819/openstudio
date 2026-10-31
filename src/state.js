@@ -1,4 +1,5 @@
 import { Emitter, COLORS, ROOT_NOTE, arrayBufferToBase64, base64ToArrayBuffer } from './util.js';
+import { validZones } from './audio/zones.js';
 import { defaultParams } from './audio/instruments.js';
 
 export const STEPS_PER_BEAT = 4;
@@ -181,6 +182,7 @@ export class Store extends Emitter {
       ch.rootPitch ??= ROOT_NOTE;
       if (!(ch.mixer >= 0 && ch.mixer < MIXER_TRACKS)) ch.mixer = 0;
       // sampler slices: sorted fractions starting at 0
+      if (ch.zones !== undefined && !(validZones(ch.zones) && ch.zones.every((z) => sampleIds.includes(z.sampleId)))) delete ch.zones;
       if (ch.slices !== undefined && !(Array.isArray(ch.slices) && ch.slices.length && ch.slices.every((x, i) => Number.isFinite(x) && x >= 0 && x < 1 && (i === 0 || x > ch.slices[i - 1])))) delete ch.slices;
     }
     if (!p.patterns.length) this._addPattern();

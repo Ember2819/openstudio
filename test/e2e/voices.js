@@ -142,5 +142,30 @@
     ok('Mod X filters instruments without a cutoff control', hf(dull, 1, 6000) < hf(hat, 1, 6000) * 0.2, `${hf(dull, 1, 6000).toFixed(4)} vs ${hf(hat, 1, 6000).toFixed(4)}`);
   }
 
+  // multi-sample zones: each key plays the nearest zone's sample from that zone's root
+  {
+    const sine = (hz) => {
+      const b = new AudioBuffer({ numberOfChannels: 1, length: SR, sampleRate: SR });
+      const d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * hz * i) / SR);
+      return b;
+    };
+    const ids = [9001, 9002];
+    app.store.samples.set(ids[0], { name: 'low A2.wav', data: new ArrayBuffer(0), buffer: sine(110) });
+    app.store.samples.set(ids[1], { name: 'high A4.wav', data: new ArrayBuffer(0), buffer: sine(440) });
+    const spec = { id: -44, type: 'sampler', sampleId: ids[0], params: inst.defaultParams('sampler'), zones: [{ sampleId: ids[0], root: 45, lo: 0, hi: 56 }, { sampleId: ids[1], root: 69, lo: 57, hi: 127 }] };
+    for (const [key, want] of [[45, 110], [47, 123.47], [69, 440], [64, 329.63]]) {
+      const d = await engineRender(0.5, (play) => { play(spec, key, 0.8, 0, 0.4); });
+      const hz = hzOf(d, 0.1, 0.2);
+      ok(`zone for key ${key} plays ${want} Hz`, Math.abs(hz / want - 1) < 0.01, `got ${hz.toFixed(1)}`);
+    }
+    // velocity layers: both zones on the same keys, split by velocity
+    const layered = { ...spec, id: -45, zones: [{ sampleId: ids[0], root: 57, lo: 0, hi: 127, vlo: 0, vhi: 0.5 }, { sampleId: ids[1], root: 57, lo: 0, hi: 127, vlo: 0.5, vhi: 1 }] };
+    const soft = hzOf(await engineRender(0.5, (play) => { play(layered, 57, 0.3, 0, 0.4); }), 0.1, 0.2);
+    const hard = hzOf(await engineRender(0.5, (play) => { play(layered, 57, 0.9, 0, 0.4); }), 0.1, 0.2);
+    ok('velocity layers pick the sample by velocity', Math.abs(soft / 110 - 1) < 0.01 && Math.abs(hard / 440 - 1) < 0.01, `${soft.toFixed(1)} / ${hard.toFixed(1)}`);
+    ids.forEach((id) => app.store.samples.delete(id));
+  }
+
   return log.join('\n');
 })()

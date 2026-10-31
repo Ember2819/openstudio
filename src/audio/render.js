@@ -24,7 +24,11 @@ export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, 
   // decode audio clips / sampler samples for this context before scheduling anything
   const ids = new Set();
   for (const c of store.project.playlist.clips) if (c.type === 'audio') ids.add(c.sampleId);
-  for (const ch of store.project.channels) if (ch.type === 'sampler' && ch.sampleId != null) ids.add(ch.sampleId);
+  for (const ch of store.project.channels) {
+    if (ch.type !== 'sampler') continue;
+    if (ch.sampleId != null) ids.add(ch.sampleId);
+    for (const z of ch.zones ?? []) ids.add(z.sampleId);
+  }
   await Promise.all([...ids].map((id) => engine.ensureSample(id)));
 
   const AHEAD = 4; // steps scheduled ahead of the render position

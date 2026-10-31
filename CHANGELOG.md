@@ -50,6 +50,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
   becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
+- **Sampler zones (multi-sample)**: Zones → "Add samples as zones…" maps several samples across the keyboard, each
+  played from its own root key — the root is read from the file name ("Piano C4.wav") with its octave checked against
+  the detected pitch, and key ranges meet halfway between roots. Right-click a zone on the key map to change its root,
+  make it a soft / hard velocity layer, or remove it. Agents: `set_zones`.
 - **Sampler**: root note, end point and a loop region (all draggable on the waveform), and **slicing** like FL Studio's
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.

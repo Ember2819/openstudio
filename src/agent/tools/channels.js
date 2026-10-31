@@ -1,6 +1,7 @@
 import { COLOR, PITCH, bool, choice, int, num, obj, ref, str, arr } from '../schema.js';
 import { channelOf, checkParam, edit, fail, noteName, parsePitch, pickByName, round } from '../helpers.js';
 import { detectOnsets, equalSlices } from '../../audio/slicing.js';
+import { guessRoot, spreadZones, validZones } from '../../audio/zones.js';
 import { channelInfo } from '../describe.js';
 import { DRUM_KIT, PARAM_META, ENGINE_PRESETS, ENGINES, DRUM_VOICES, defaultParams } from '../../audio/instruments.js';
 import { ROLES } from '../music/styles.js';
@@ -291,6 +292,60 @@ export const tools = [
         if (!app.actions.slicesToPattern(ch.id)) fail('Could not write the slices into the pattern (is the sample decoded?)');
       }
       return { channel: ch.id, slices: (ch.slices ?? []).map((x) => round(x, 4)), keys: ch.slices ? `${noteName(ch.rootPitch ?? 60)} and up` : null };
+    },
+  },
+  {
+    name: 'set_zones',
+    title: 'Set sampler zones',
+    description: 'Make a sampler channel multi-sample (sampled pianos, strings, kits): each zone plays its own sample from its own root key over a key range, optionally only within a velocity range (layers). Leave root out to take it from the file name (checked against the detected pitch); leave lo / hi out and the ranges meet halfway between roots. Replaces the zones; clear removes them.',
+    inputSchema: obj({
+      channel: ref('Sampler channel'),
+      zones: arr(obj({
+        sample: int('Sample id from import_sample'),
+        path: str('…or an audio file to import'),
+        root: PITCH,
+        lo: PITCH,
+        hi: PITCH,
+        velocityMin: num('Lowest velocity 0-1 this zone plays', { minimum: 0, maximum: 1 }),
+        velocityMax: num('Highest velocity 0-1', { minimum: 0, maximum: 1 }),
+      }), 'The zones'),
+      clear: bool('Remove the zones (back to one sample)'),
+    }, ['channel']),
+    annotations: { ...WRITE, destructiveHint: true, title: 'Set sampler zones' },
+    async run(a, app) {
+      const { store } = app;
+      const ch = channelOf(store, a.channel);
+      if (ch.type !== 'sampler') fail('Zones are for sampler channels');
+      let zones = null;
+      if (!a.clear) {
+        if (!a.zones?.length) fail('Give zones, or clear');
+        zones = [];
+        for (const [i, z] of a.zones.entries()) {
+          const id = z.path ? (await importSample(app, z.path)).id : z.sample;
+          if (id === undefined || !store.samples.has(id)) fail(`zones[${i}] needs sample (an id from import_sample) or path`);
+          let root = z.root === undefined ? null : parsePitch(z.root);
+          if (root == null) {
+            const buf = await app.engine.ensureSample(id);
+            root = guessRoot(store.samples.get(id).name, buf?.getChannelData ? buf.getChannelData(0) : null, buf?.sampleRate ?? 44100, 60);
+          }
+          const zone = { sampleId: id, root };
+          if (z.lo !== undefined) zone.lo = parsePitch(z.lo);
+          if (z.hi !== undefined) zone.hi = parsePitch(z.hi);
+          if (z.velocityMin !== undefined) zone.vlo = z.velocityMin;
+          if (z.velocityMax !== undefined) zone.vhi = z.velocityMax;
+          zones.push(zone);
+        }
+        // ranges that weren't given meet halfway between roots
+        const spread = new Map(spreadZones(zones).map((z) => [z.sampleId + ':' + z.root, z]));
+        zones = zones.map((z) => { const s = spread.get(z.sampleId + ':' + z.root); return { ...z, lo: z.lo ?? s.lo, hi: z.hi ?? s.hi }; });
+        if (!validZones(zones)) fail('Each zone needs lo <= hi, keys 0-127 and velocities 0-1');
+      }
+      edit(store, () => {
+        if (zones) { ch.zones = zones; ch.sampleId = zones[0].sampleId; delete ch.slices; } else delete ch.zones;
+        store.emit('channelParams', ch.id);
+        store.emit('channels');
+      });
+      return { channel: ch.id, zones: (ch.zones ?? []).map((z) => ({ sample: z.sampleId, root: noteName(z.root), keys: `${noteName(z.lo)}-${noteName(z.hi)}`, ...(z.vlo != null || z.vhi != null ? { velocity: [z.vlo ?? 0, z.vhi ?? 1] } : {}) })) };
     },
   },
   {

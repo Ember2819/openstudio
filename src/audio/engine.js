@@ -1,6 +1,7 @@
 import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed, PARAM_META } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { wsola } from './stretch.js';
+import { pickZones } from './zones.js';
 import { playSoundfont } from './soundfont.js';
 import { createEffect, loadEffectWorklets, compressorMakeupDb } from './effects.js';
 import { faderToGain, channelGain, ROOT_NOTE } from '../util.js';
@@ -23,6 +24,18 @@ export function loadSoundfont() {
 
 const MAX_VOICES = 160;
 const SILENT = Object.freeze([0, 0]);
+
+/** Several voices that start and stop together (layered sampler zones) as one. */
+function layered(parts) {
+  const v = {
+    nodes: parts.flatMap((p) => p.nodes), out: parts[0].out, released: false,
+    pitchParams: parts.flatMap((p) => p.pitchParams ?? []),
+    get end() { return Math.max(...parts.map((p) => p.end)); },
+    set end(_) { /* each part keeps its own */ },
+    release: (when) => { v.released = true; for (const p of parts) p.release(when); },
+  };
+  return v;
+}
 
 /**
  * Per-note Mod X / Mod Y. Instruments with a cutoff (and resonance) control get those moved (X: up to four octaves
@@ -355,7 +368,9 @@ export class Engine {
 
   // ---------------------------------------------------------------- samples
   _decodeSampleFor(ch) {
-    if (ch?.type === 'sampler' && ch.sampleId != null) this.ensureSample(ch.sampleId);
+    if (ch?.type !== 'sampler') return;
+    if (ch.sampleId != null) this.ensureSample(ch.sampleId);
+    for (const z of ch.zones ?? []) this.ensureSample(z.sampleId);
   }
 
   /** Decode a stored sample (once). Resolves to its AudioBuffer. */
@@ -492,8 +507,18 @@ export class Engine {
     else if (ch.type === 'wavetable') v = playWavetable(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'sfx') v = playSfx(this.ctx, dest, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'sampler') {
-      const s = this.store.samples.get(ch.sampleId);
-      if (s?.buffer) v = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params, ch.rootPitch ?? ROOT_NOTE, ch.slices);
+      if (ch.zones?.length) {
+        // multi-sample: each zone that covers the key plays its own sample from its own root
+        const parts = [];
+        for (const z of pickZones(ch.zones, pitch, vel)) {
+          const s = this.store.samples.get(z.sampleId);
+          if (s?.buffer) { const p = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params, z.root); if (p) parts.push(p); }
+        }
+        v = parts.length > 1 ? layered(parts) : parts[0] ?? null;
+      } else {
+        const s = this.store.samples.get(ch.sampleId);
+        if (s?.buffer) v = playSample(this.ctx, dest, s.buffer, pitch, t, dur, vel, semis, ch.params, ch.rootPitch ?? ROOT_NOTE, ch.slices);
+      }
     } else if (ch.type === 'sf' && sharedSoundfont) {
       const preset = this._preset(ch);
       if (preset) {

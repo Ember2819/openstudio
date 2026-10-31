@@ -1,5 +1,6 @@
 import { h, noteName, rgba } from '../util.js';
 import { detectOnsets, equalSlices } from '../audio/slicing.js';
+import { guessRoot, spreadZones } from '../audio/zones.js';
 import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu } from './menu.js';
@@ -88,7 +89,7 @@ export function createSettings(app) {
     if (!wm.tiling) {
       const rows = Math.ceil(PARAM_META[ch.type].length / 6);
       const room = (document.getElementById('desktop')?.clientHeight ?? 700) - 24;
-      const want = Math.min(room, 170 + rows * 90 + (ch.type === 'sampler' ? 150 : 0));
+      const want = Math.min(room, 170 + rows * 90 + (ch.type === 'sampler' ? 150 + (ch.zones ? 42 : 0) : 0));
       if (win.h < want) win.setRect(win.x, Math.max(0, Math.min(win.y, room - want)), win.w, want);
     }
 
@@ -164,6 +165,7 @@ export function createSettings(app) {
       ch.sampleId = store.addSample(files[0].name, files[0].data);
       ch.name = files[0].name.replace(/\.[^.]+$/, '');
       delete ch.slices;
+      delete ch.zones; // a new single sample
       store.emit('channels');
       render();
     });
@@ -186,11 +188,120 @@ export function createSettings(app) {
         { label: 'Clear slices', disabled: !ch.slices?.length, action: () => setSlices(ch, null) },
       ], r.left, r.bottom);
     });
-    const tools = h('div', { class: 'cs-sampler-tools' }, load, root, sliceBtn);
+    const zoned = ch.zones?.length > 0;
+    const zonesBtn = h('button', { class: 'dd', 'data-hint': 'Multi-sample: map several samples across the keyboard, each from its own root key (sampled pianos, strings, kits)' }, h('span', {}, zoned ? `${ch.zones.length} zones` : 'Zones'), h('span', { class: 'caret' }, '▼'));
+    zonesBtn.addEventListener('click', () => {
+      const r = zonesBtn.getBoundingClientRect();
+      showMenu([
+        { label: 'Add samples as zones…', action: () => addZones(ch) },
+        { label: 'Re-map key ranges from the roots', disabled: !zoned, action: () => setZones(ch, spreadZones(ch.zones)) },
+        { label: 'Clear zones', disabled: !zoned, action: () => setZones(ch, null) },
+      ], r.left, r.bottom);
+    });
+    // with zones each sample has its own root, and slicing is for single samples
+    const tools = h('div', { class: 'cs-sampler-tools' }, load, ...(zoned ? [] : [root, sliceBtn]), zonesBtn);
     const wrap = h('div', { class: 'cs-sampler' }, canvas, tools);
     requestAnimationFrame(() => drawWave(canvas, s, ch));
     waveInteraction(canvas, s, ch);
+    if (zoned) {
+      const map = h('canvas', { class: 'cs-keymap', 'data-hint': 'Zones across the keyboard — click to hear a key, right-click a zone to change its root or velocity range or remove it' });
+      wrap.insertBefore(map, tools);
+      requestAnimationFrame(() => drawKeymap(map, ch));
+      keymapInteraction(map, ch);
+    }
     return wrap;
+  }
+
+  function setZones(ch, zones) {
+    store.checkpoint();
+    if (zones?.length) ch.zones = zones; else delete ch.zones;
+    if (zones?.length && !zones.some((z) => z.sampleId === ch.sampleId)) ch.sampleId = zones[0].sampleId; // the waveform shows a zone in use
+    touch();
+    store.emit('channels');
+    render();
+  }
+
+  const monoOf = (b) => {
+    const mono = new Float32Array(b.length);
+    for (let c = 0; c < b.numberOfChannels; c++) { const d = b.getChannelData(c); for (let i = 0; i < d.length; i++) mono[i] += d[i] / b.numberOfChannels; }
+    return mono;
+  };
+
+  /** Load samples as zones: roots come from the file names (checked by ear) and the key ranges meet halfway. */
+  async function addZones(ch) {
+    const files = await window.studioAPI.openSamples();
+    if (!files.length) return;
+    const zones = ch.zones?.map((z) => ({ ...z })) ?? [];
+    if (!zones.length && ch.sampleId != null) {
+      // the sample already loaded becomes the first zone
+      const s = store.samples.get(ch.sampleId);
+      const b = await engine.ensureSample(ch.sampleId).catch(() => null);
+      const root = (ch.rootPitch ?? 60) !== 60 || !s ? (ch.rootPitch ?? 60) : guessRoot(s.name, b && monoOf(b), b?.sampleRate ?? 44100, 60);
+      zones.push({ sampleId: ch.sampleId, root });
+    }
+    for (const f of files) {
+      const id = store.addSample(f.name, f.data);
+      const b = await engine.ensureSample(id).catch(() => null);
+      zones.push({ sampleId: id, root: guessRoot(f.name, b && monoOf(b), b?.sampleRate ?? 44100, 60) });
+    }
+    ch.sampleId ??= zones[0].sampleId;
+    if (!ch.zones && files.length > 1 && /^Sampler( \d+)?$/.test(ch.name)) ch.name = files[0].name.replace(/[\s_-]*[a-g](#|b)?-?\d?\.[^.]+$/i, '') || ch.name;
+    delete ch.slices;
+    setZones(ch, spreadZones(zones));
+  }
+
+  const KEY_LO = 21; // A0 .. C8: the piano range is what the strip shows
+  const KEY_HI = 108;
+  function drawKeymap(canvas, ch) {
+    const w = canvas.clientWidth || 560;
+    const hh = 34;
+    const ctx = canvas.getContext('2d');
+    sizeCanvas(canvas, ctx, w, hh);
+    const kw = w / (KEY_HI - KEY_LO + 1);
+    const xOf = (k) => (Math.max(KEY_LO, Math.min(KEY_HI + 1, k)) - KEY_LO) * kw;
+    ctx.fillStyle = T.waveBg;
+    ctx.fillRect(0, 0, w, hh);
+    // the keyboard along the bottom
+    for (let k = KEY_LO; k <= KEY_HI; k++) {
+      const black = [1, 3, 6, 8, 10].includes(k % 12);
+      ctx.fillStyle = black ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.75)';
+      ctx.fillRect(xOf(k) + 0.5, hh - 9, Math.max(1, kw - 1), 9);
+    }
+    ctx.font = '10px "Noto Sans", sans-serif';
+    ctx.textBaseline = 'top';
+    ch.zones.forEach((z, i) => {
+      const x0 = xOf(z.lo), x1 = xOf(z.hi + 1);
+      if (x1 <= x0) return;
+      const layered = z.vlo != null || z.vhi != null;
+      const top = layered ? 2 + (1 - (z.vhi ?? 1)) * 20 : 2;
+      const bottom = layered ? 2 + (1 - (z.vlo ?? 0)) * 20 : 22;
+      ctx.fillStyle = rgba(ch.color, i % 2 ? 0.45 : 0.7);
+      ctx.fillRect(x0 + 0.5, top, x1 - x0 - 1, bottom - top);
+      const rx = xOf(z.root) + kw / 2;
+      ctx.fillStyle = T.text;
+      ctx.fillRect(Math.round(rx), top, 1, bottom - top);
+      if (x1 - x0 > 28 && (z.vhi ?? 1) >= 1) ctx.fillText(noteName(z.root), x0 + 3, top + 1); // one label per stack of layers
+    });
+  }
+
+  function keymapInteraction(canvas, ch) {
+    const keyAt = (e) => { const r = canvas.getBoundingClientRect(); return Math.round(KEY_LO - 0.5 + ((e.clientX - r.left) / r.width) * (KEY_HI - KEY_LO + 1)); };
+    const zoneAt = (e) => { const k = keyAt(e); return ch.zones.find((z) => k >= z.lo && k <= z.hi); };
+    canvas.addEventListener('pointerdown', (e) => { if (e.button === 0) engine.preview(ch, keyAt(e), 0.85, 1.2); });
+    canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const z = zoneAt(e);
+      if (!z) return;
+      const i = ch.zones.indexOf(z);
+      const edit = (fn) => { const zones = ch.zones.map((x) => ({ ...x })); fn(zones[i], zones); setZones(ch, zones.filter(Boolean)); };
+      const name = store.samples.get(z.sampleId)?.name ?? 'Zone';
+      showMenu([
+        { label: name, disabled: true },
+        { label: 'Root note', submenu: [1, 2, 3, 4, 5, 6, 7].map((oct) => ({ label: `Octave ${oct}`, submenu: Array.from({ length: 12 }, (_, k) => oct * 12 + k).map((p) => ({ label: noteName(p), checked: z.root === p, action: () => edit((x) => { x.root = p; }) })) })) },
+        { label: 'Velocity', submenu: [['All velocities', null, null], ['Soft (0–50%)', 0, 0.5], ['Hard (50–100%)', 0.5, 1]].map(([label, lo, hi]) => ({ label, checked: (z.vlo ?? null) === lo && (z.vhi ?? null) === hi, action: () => edit((x) => { if (lo == null) { delete x.vlo; delete x.vhi; } else { x.vlo = lo; x.vhi = hi; } }) })) },
+        { label: 'Remove zone', disabled: ch.zones.length < 2, action: () => edit((_, zones) => { zones[i] = null; }) },
+      ], e.clientX, e.clientY);
+    });
   }
 
   function setSlices(ch, slices) {

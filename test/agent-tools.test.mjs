@@ -471,3 +471,21 @@ test('preview_note plays through the engine without touching the project', async
   assert.equal(app.calls.filter((c) => c[0] === 'preview').length, 2);
   assert.equal(app.store.snapshot(), before);
 });
+
+test('set_zones maps samples across the keyboard', async () => {
+  const app = makeApp();
+  const a = app.store.addSample('Piano C4.wav', new ArrayBuffer(8));
+  const b = app.store.addSample('Piano C5.wav', new ArrayBuffer(8));
+  const c = app.store.addSample('Piano C5 soft.wav', new ArrayBuffer(8));
+  const ch = app.store._addChannel({ name: 'Piano', type: 'sampler', sampleId: a });
+  const r = await call(app, 'set_zones', { channel: ch.id, zones: [{ sample: a }, { sample: b, velocityMin: 0.5 }, { sample: c, velocityMax: 0.5 }] });
+  assert.deepEqual(ch.zones.map((z) => [z.sampleId, z.root, z.lo, z.hi]), [[a, 60, 0, 66], [b, 72, 67, 127], [c, 72, 67, 127]]);
+  assert.equal(r.zones.length, 3);
+  assert.equal(ch.zones[1].vlo, 0.5);
+  await call(app, 'set_zones', { channel: ch.id, zones: [{ sample: b, root: 'C6', lo: 'C3', hi: 'C9' }] });
+  assert.deepEqual(ch.zones.map((z) => [z.root, z.lo, z.hi]), [[72, 36, 108]], 'roots are in FL naming (C5 = 60)');
+  await call(app, 'set_zones', { channel: ch.id, clear: true });
+  assert.equal(ch.zones, undefined);
+  assert.match(await callFails(app, 'set_zones', { channel: app.store.project.channels[0].id, zones: [{ sample: a }] }), /sampler/);
+  assert.match(await callFails(app, 'set_zones', { channel: ch.id, zones: [{ sample: 99 }] }), /needs sample/);
+});

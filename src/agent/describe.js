@@ -19,7 +19,10 @@ export function channelInfo(app, ch) {
       : cat?.families.flatMap((f) => f.presets).find((p) => p.bank === ch.bank && p.program === ch.program)?.name;
     if (name) out.instrument = name;
   }
-  if (ch.type === 'sampler') out.sampleId = ch.sampleId;
+  if (ch.type === 'sampler') {
+    out.sampleId = ch.sampleId;
+    if (ch.zones) out.zones = ch.zones.map((z) => ({ sample: z.sampleId, root: z.root, lo: z.lo, hi: z.hi, ...(z.vlo != null ? { velocityMin: z.vlo } : {}), ...(z.vhi != null ? { velocityMax: z.vhi } : {}) }));
+  }
   out.params = ch.params;
   return out;
 }
