@@ -47,6 +47,7 @@ export function createToolbar(app) {
       { separator: true },
       { label: 'Export audio (WAV)…', shortcut: 'Ctrl+R', action: actions.exportWav },
       { label: 'Export audio (FLAC, lossless)…', action: actions.exportFlac },
+      { label: 'Export audio (MP3)', submenu: [320, 256, 192].map((kbps) => ({ label: `${kbps} kbps…`, action: () => actions.exportMp3(kbps) })) },
       { label: 'Export stems (one WAV per mixer track)…', shortcut: 'Ctrl+Shift+R', action: actions.exportStems },
       { label: 'Export MIDI…', action: actions.exportMidi },
     ],

@@ -66,6 +66,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Agents get `slice_sample`.
 - **FLAC export** (File → Export audio (FLAC, lossless)…): about half the size of WAV, bit-identical audio. Agents
   can write `.flac` from `render_audio`.
+- **MP3 export** (File → Export audio (MP3) → 320 / 256 / 192 kbps): a built-in encoder (no dependencies), with a
+  gapless header so players trim the codec delay and the file is exactly as long as the song. Agents can write `.mp3`
+  from `render_audio`.
 - **File → Open recent**: the last 12 projects you opened or saved (also FL Studio projects); missing files are hidden.
 - **Sample folders in the browser**: add the folders where your samples live (Browser → Sample folders → Add a
   folder…), browse them, click a file to hear it, double-click to make a sampler channel, or drag it into the playlist

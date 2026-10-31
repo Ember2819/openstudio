@@ -2,6 +2,7 @@ import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDi
 import { renderSteps, renderStems } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
 import { encodeFlac } from './audio/flac.js';
+import { encodeMp3 } from './audio/mp3.js';
 import { STEPS_PER_BAR, validTimeSig } from './state.js';
 import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
@@ -568,9 +569,10 @@ export function createActions(app) {
 
     async exportWav() { return a.exportAudio('wav'); },
     async exportFlac() { return a.exportAudio('flac'); },
+    async exportMp3(bitrate = 320) { return a.exportAudio('mp3', { bitrate }); },
 
-    /** Render the song (or pattern) and save it as WAV or FLAC. */
-    async exportAudio(format = 'wav') {
+    /** Render the song (or pattern) and save it as WAV, FLAC or MP3 (`opts.bitrate` in kbps). */
+    async exportAudio(format = 'wav', opts = {}) {
       const proj = store.project;
       const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
       if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return; }
@@ -593,11 +595,18 @@ export function createActions(app) {
         app.toolbar?.setBusy?.(null);
       }
       let data;
-      if (format === 'flac') {
-        const enc = progressDialog('Exporting audio', 'Encoding FLAC…');
-        try { data = await encodeFlac(rendered, { onProgress: (f) => enc.set(f, `Encoding FLAC… ${Math.round(f * 100)}%`) }); } finally { enc.close(); }
+      if (format === 'flac' || format === 'mp3') {
+        const label = format === 'flac' ? 'FLAC' : `MP3 (${opts.bitrate ?? 320} kbps)`;
+        const enc = progressDialog('Exporting audio', `Encoding ${label}…`);
+        const onProgress = (f) => enc.set(f, `Encoding ${label}… ${Math.round(f * 100)}%`);
+        try {
+          data = format === 'flac' ? await encodeFlac(rendered, { onProgress }) : await encodeMp3(rendered, { bitrate: opts.bitrate ?? 320, onProgress });
+        } finally { enc.close(); }
       } else data = encodeWav(rendered);
-      const filters = format === 'flac' ? [{ name: 'FLAC audio (lossless)', extensions: ['flac'] }] : [{ name: 'WAV audio', extensions: ['wav'] }];
+      const filters = {
+        flac: [{ name: 'FLAC audio (lossless)', extensions: ['flac'] }],
+        mp3: [{ name: 'MP3 audio', extensions: ['mp3'] }],
+      }[format] ?? [{ name: 'WAV audio', extensions: ['wav'] }];
       await window.studioAPI.writeFile({ suggestedName: `${proj.name}.${format}`, data, filters });
     },
 

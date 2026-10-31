@@ -43,7 +43,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **Recording** of notes from the computer or a MIDI keyboard, and of **audio** from any input into the playlist,
   with loop takes and input monitoring.
 - **Browser** with your own sample folders (preview, drag in), every instrument, preset, drum voice and effect.
-- **Export** to WAV, FLAC, per-mixer-track stems and MIDI; `.osp` projects with autosave, recent files and undo/redo.
+- **Export** to WAV, FLAC, MP3 (192-320 kbps, gapless), per-mixer-track stems and MIDI; `.osp` projects with autosave, recent files and undo/redo.
 - **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.

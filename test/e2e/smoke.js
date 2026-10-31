@@ -188,6 +188,18 @@
     ok(`FLAC export decodes losslessly (${flac.byteLength} bytes, max error ${maxErr.toExponential(1)})`, back.length === rendered.length && maxErr < 1 / 32768 + 1e-6);
   }
 
+  // MP3 export: Chromium's own decoder takes it, gapless, close to the render
+  {
+    const { encodeMp3 } = await import('./src/audio/mp3.js');
+    const mp3 = await encodeMp3(rendered, { bitrate: 320 });
+    const back = await new OfflineAudioContext(2, 1, rendered.sampleRate).decodeAudioData(mp3.slice(0));
+    const a0 = rendered.getChannelData(0), b0 = back.getChannelData(0);
+    let err = 0, ref = 0;
+    for (let i = 0; i < Math.min(a0.length, b0.length); i++) { err += (a0[i] - b0[i]) ** 2; ref += a0[i] ** 2; }
+    const snr = 10 * Math.log10(ref / err);
+    ok(`MP3 export decodes in Chromium, gapless (${back.length} of ${rendered.length} samples, SNR ${snr.toFixed(1)} dB)`, back.length === rendered.length && snr > 30);
+  }
+
   // export progress: monotonic, ends at 1; an abort rejects instead of hanging
   const prog = [];
   await renderSteps(s, 32, { tail: 1, onProgress: (f) => prog.push(f) });

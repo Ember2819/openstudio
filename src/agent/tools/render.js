@@ -4,6 +4,7 @@ import { analyze, BANDS } from '../analysis.js';
 import { renderSteps, renderStems } from '../../audio/render.js';
 import { encodeWav } from '../../audio/wav.js';
 import { encodeFlac } from '../../audio/flac.js';
+import { encodeMp3 } from '../../audio/mp3.js';
 import { STEPS_PER_BAR } from '../../state.js';
 import { roleOf } from '../music/roles.js';
 import { flattenSong } from '../music/critique.js';
@@ -68,7 +69,7 @@ export const tools = [
   {
     name: 'render_audio',
     title: 'Render and analyse audio',
-    description: 'Render the project offline (the same engine as playback and Export audio) and analyse the result, since you cannot listen: peak / RMS / crest in dBFS, clipped samples, stereo correlation, a loudness timeline (one entry per bar, merged for long pieces), spectral balance (share of energy per band + centroid) and plain-language warnings. scope "pattern" renders the selected (or given) pattern, "song" the playlist, "auto" follows the project mode. Restrict to one channel to judge it in isolation. Optionally writes a 16-bit WAV or FLAC file. Playback is not affected.',
+    description: 'Render the project offline (the same engine as playback and Export audio) and analyse the result, since you cannot listen: peak / RMS / crest in dBFS, clipped samples, stereo correlation, a loudness timeline (one entry per bar, merged for long pieces), spectral balance (share of energy per band + centroid) and plain-language warnings. scope "pattern" renders the selected (or given) pattern, "song" the playlist, "auto" follows the project mode. Restrict to one channel to judge it in isolation. Optionally writes a 16-bit WAV, FLAC or 320 kbps MP3 file. Playback is not affected.',
     inputSchema: obj({
       scope: choice(['auto', 'pattern', 'song'], 'What to render (default auto)'),
       pattern: ref('Pattern (with scope "pattern"; default the selected one)'),
@@ -76,7 +77,7 @@ export const tools = [
       fromStep: num('Analyse from this step (default 0)', { minimum: 0 }),
       toStep: num('Analyse up to this step (default the end)', { minimum: 0 }),
       tail: num('Seconds of release/reverb tail to include after the last step (default 2)', { minimum: 0, maximum: 20 }),
-      path: str('Also write the render to this absolute path: .wav (16-bit) or .flac (lossless, smaller)'),
+      path: str('Also write the render to this absolute path: .wav (16-bit), .flac (lossless, smaller) or .mp3 (320 kbps)'),
       sampleRate: int('Sample rate for the render (default 44100)', { minimum: 8000, maximum: 96000 }),
       stems: bool('Also render every channel on its own (over the busiest 4 bars, or fromStep-toStep) and report its level, brightness and share of the mix, with warnings about channels that are inaudible, dominate, or fight for the same range'),
     }),
@@ -112,7 +113,7 @@ export const tools = [
             to: a.toStep === undefined ? undefined : at(a.toStep),
           }),
         };
-        if (a.path) result.path = await app.files.write(a.path, /\.flac$/i.test(a.path) ? await encodeFlac(rendered) : encodeWav(rendered));
+        if (a.path) result.path = await app.files.write(a.path, /\.flac$/i.test(a.path) ? await encodeFlac(rendered) : /\.mp3$/i.test(a.path) ? await encodeMp3(rendered, { bitrate: 320 }) : encodeWav(rendered));
         if (a.stems) result.stems = await stemReport(app, a, steps, store.project.channels);
         return result;
       } finally {
