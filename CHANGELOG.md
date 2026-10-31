@@ -5,6 +5,10 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Performance
+- Undo history is capped by memory (~190 MB) as well as by steps, so big projects can't exhaust memory.
+- Autosave stores samples as raw buffers instead of re-encoding every sample to base64 every 30 seconds.
+
 ### Fixed
 - The Compressor added up to ~10 dB of hidden gain (Web Audio's automatic makeup) on top of its Makeup knob; it is now
   unity below the threshold and Makeup is the real makeup. Projects that relied on it will play quieter — raise

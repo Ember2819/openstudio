@@ -332,6 +332,29 @@
     ok('a looped sample keeps sounding while the note is held', late > 0.05);
   }
 
+  // autosave keeps samples as raw buffers and recovers them
+  {
+    s.resetToDefault();
+    const bytes = new Uint8Array(4096).map((_, i) => i & 255);
+    const sid = s.addSample('keep.wav', bytes.buffer);
+    s.checkpoint(); // marks the project dirty
+    s.project.name = 'Autosaved';
+    await a.autosave.save();
+    s.resetToDefault();
+    const rec = a.autosave.offerRecovery();
+    let done = false;
+    rec.then(() => { done = true; });
+    for (let i = 0; i < 100 && !done; i++) {
+      const btn = [...document.querySelectorAll('.modal .btn.primary')].find((b) => b.textContent === 'Recover');
+      if (btn) { btn.click(); break; }
+      await wait(50);
+    }
+    await Promise.race([rec, wait(3000)]);
+    const back = s.samples.get(sid);
+    ok('autosave recovery restores the project and its samples', s.project.name === 'Autosaved' && back && new Uint8Array(back.data)[300] === (300 & 255));
+    a.autosave.discard();
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

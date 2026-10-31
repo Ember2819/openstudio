@@ -5,6 +5,7 @@ export const STEPS_PER_BEAT = 4;
 export const STEPS_PER_BAR = 16; // in 4/4; a project's bar length is barSteps(project)
 export const MIXER_TRACKS = 126; // 0 = master, 1..125 inserts
 export const PLAYLIST_TRACKS = 125;
+const UNDO_BUDGET = 96 * 1024 * 1024; // characters kept in the undo history (~190 MB of UTF-16)
 
 const makeMixer = () =>
   Array.from({ length: MIXER_TRACKS }, (_, i) => ({
@@ -98,7 +99,10 @@ export class Store extends Emitter {
     const snap = this.snapshot();
     // clicks that end up changing nothing (or double-clicks) would otherwise leave no-op undo steps
     if (this.undoStack[this.undoStack.length - 1] !== snap) this.undoStack.push(snap);
-    if (this.undoStack.length > 200) this.undoStack.shift();
+    // at most 200 steps, and at most UNDO_BUDGET characters: a big project's snapshot is several MB
+    let total = 0;
+    for (const x of this.undoStack) total += x.length;
+    while (this.undoStack.length > 200 || (total > UNDO_BUDGET && this.undoStack.length > 10)) total -= this.undoStack.shift().length;
     this.redoStack = [];
     this.dirty = true;
   }
@@ -125,15 +129,22 @@ export class Store extends Emitter {
     return JSON.stringify({ ...this.project, samples });
   }
 
-  load(text, filePath = null) {
+  /**
+   * Load a project from its JSON text. Samples come from the text (base64, as saved in .osp files) or, with
+   * `opts.samples` ([{ id, name, data: ArrayBuffer }]), as raw buffers (autosave recovery).
+   */
+  load(text, filePath = null, opts = {}) {
     const raw = JSON.parse(text);
     if (!raw || !Array.isArray(raw.channels) || !Array.isArray(raw.patterns)) throw new Error('Not an OpenStudio project');
     const { samples = {}, ...project } = raw;
+    const list = opts.samples
+      ? opts.samples.map((s) => [Number(s.id), s.name, s.data])
+      : Object.entries(samples).map(([id, s]) => [Number(id), s.name, base64ToArrayBuffer(s.data)]);
     const base = blankProject();
     this.project = { ...base, ...project, mixer: this._mergeMixer(base.mixer, project.mixer) };
-    this._normalizeLoaded(base, Object.keys(samples).map(Number));
+    this._normalizeLoaded(base, list.map(([id]) => id));
     this.samples.clear();
-    for (const [id, s] of Object.entries(samples)) this.samples.set(Number(id), { name: s.name, data: base64ToArrayBuffer(s.data), buffer: null });
+    for (const [id, name, data] of list) this.samples.set(id, { name, data, buffer: null });
     this.filePath = filePath;
     this.finishLoad();
   }
