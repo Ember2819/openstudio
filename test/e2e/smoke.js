@@ -421,6 +421,18 @@
     a.autosave.discard();
   }
 
+  // templates: every style builds a band with its mixer and nothing to undo
+  {
+    const { STYLES } = await import('./src/agent/music/styles.js');
+    let good = 0;
+    for (const id of Object.keys(STYLES)) {
+      s.dirty = false;
+      const done = await a.actions.newFromTemplate(id);
+      if (done && s.project.channels.length >= 4 && s.project.channels.every((c) => c.mixer > 0) && s.undoStack.length === 0 && !s.dirty) good++;
+    }
+    ok(`new from template works for every style (${good}/${Object.keys(STYLES).length})`, good === Object.keys(STYLES).length);
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

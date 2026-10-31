@@ -59,6 +59,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **File → New from template**: twelve styles (house, techno, trance, trap, hip-hop, lo-fi, pop, rock, drum & bass,
+  synthwave, funk, ambient), each with a matching set of instruments on their own mixer tracks, reverb and delay
+  buses, a master chain, tempo and swing.
 - **Render to audio clip** (right-click pattern or audio clips): renders them, through their mixer tracks, into one
   audio clip and mutes the originals — FL Studio's consolidate / freeze. Agents: `edit_clips` render_to_audio.
 - **Wavetable synth**: six morphing tables (basic shapes, pulse width, harmonic sweep, vowels, digital, organ drawbars)

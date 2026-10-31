@@ -10,6 +10,8 @@ import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
 import { parseFlp, importFlp, flpSamplePaths } from './flp.js';
 import { guessBars, slicesToNotes } from './audio/slicing.js';
+import { tools as produceTools } from './agent/tools/produce.js';
+import { STYLES } from './agent/music/styles.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 import { ACTIONS, resolveCombo } from './ui/tiling.js';
 
@@ -109,6 +111,32 @@ export function createActions(app) {
       store.resetToDefault();
       store.filePath = null;
       app.autosave?.discard();
+    },
+
+    /**
+     * Start a new project from a style template: the instruments, mixer routing, buses, master chain, tempo and swing
+     * the producer tools use for that style (agents' setup_song), with empty patterns.
+     */
+    async newFromTemplate(style) {
+      if (!(await confirmDiscard())) return false;
+      if (!a.catalog()) { messageDialog('New from template', 'The instrument bank is still loading — try again in a moment.'); return false; }
+      transport.stop();
+      store.resetToDefault();
+      store.filePath = null;
+      const setup = produceTools.find((t) => t.name === 'setup_song');
+      try {
+        setup.run({ style, clear: true, name: STYLES[style].name }, app);
+      } catch (err) {
+        messageDialog('New from template', err.message);
+        return false;
+      }
+      // a fresh start: nothing to undo, nothing unsaved
+      store.undoStack = [];
+      store.redoStack = [];
+      store.dirty = false;
+      store.emit('project');
+      app.autosave?.discard();
+      return true;
     },
 
     async openProject(recentPath = null) {

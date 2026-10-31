@@ -7,6 +7,7 @@ import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
 import { createScrub } from './scrub.js';
 import { controllerLinks, describeLink, unlink } from '../controllers.js';
+import { STYLES } from '../agent/music/styles.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
@@ -29,6 +30,7 @@ export function createToolbar(app) {
   const menus = {
     FILE: () => [
       { label: 'New project', shortcut: 'Ctrl+N', action: actions.newProject },
+      { label: 'New from template', submenu: () => Object.entries(STYLES).map(([id, st]) => ({ label: st.name, hint: st.blurb, action: () => actions.newFromTemplate(id) })) },
       { label: 'Open…', shortcut: 'Ctrl+O', action: () => actions.openProject() },
       { label: 'Open recent', submenu: () => (recentFiles.length ? [
         ...recentFiles.map((f) => ({ label: f.split(/[\\/]/).pop(), hint: f, action: () => actions.openProject(f) })),
