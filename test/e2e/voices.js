@@ -41,7 +41,7 @@
 
   // every preset of every engine
   const play = {
-    synth: inst.playSynth, fm: inst.playFm, organ: inst.playOrgan, pluck: inst.playPluck,
+    synth: inst.playSynth, fm: inst.playFm, organ: inst.playOrgan, pluck: inst.playPluck, wavetable: inst.playWavetable,
     sfx: (ctx, dest, pitch, t, dur, vel, semis, p) => inst.playSfx(ctx, dest, t, dur, vel, pitch - 60 + semis, p),
   };
   for (const [type, cats] of Object.entries(inst.ENGINE_PRESETS)) {
@@ -68,6 +68,20 @@
   await tune('FM synth', 'fm', { ratio: 1, index: 0.5, indexSus: 1, sustain: 1, decay: 2 });
   await tune('organ (8′ and up)', 'organ', { d16: 0, d513: 0 });
   await tune('plucked string', 'pluck', { decay: 3, bright: 0.5, damp: 0.3 });
+  for (const table of (await import('./src/audio/wavetable.js')).WAVETABLES) {
+    if (table === 'Digital' || table === 'Vowels') continue; // sparse / formant spectra: the fundamental is weak by design
+    await tune(`wavetable "${table}"`, 'wavetable', { table, position: 0.5, cutoff: 18000, envAmt: 0, attack: 0.001, sustain: 1 });
+  }
+
+  // the wavetable position morphs: sine (0) is dull, square (1) is bright
+  const bright = async (position) => {
+    const d = await render((ctx, dest) => inst.playWavetable(ctx, dest, 57, 0, Infinity, 0.8, 0, { ...inst.defaultParams('wavetable'), table: 'Basic shapes', position, cutoff: 18000, envAmt: 0, attack: 0.001, sustain: 1 }), 0.5);
+    let e = 0, de = 0;
+    for (let i = 2000; i < 20000; i++) { e += d[i] * d[i]; de += (d[i] - d[i - 1]) ** 2; }
+    return de / e;
+  };
+  const dull = await bright(0), sharp = await bright(1);
+  ok('wavetable position morphs from sine to square', sharp > dull * 5, `${dull.toFixed(4)} vs ${sharp.toFixed(4)}`);
 
   // the pluck cache must not hand back a buffer for a different pitch or setting
   const a = await render((ctx, dest) => inst.playPluck(ctx, dest, 57, 0, 0.5, 0.8, 0, { ...inst.defaultParams('pluck'), decay: 1 }), 0.6);

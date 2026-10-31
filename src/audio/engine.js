@@ -1,4 +1,4 @@
-import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, reversed } from './instruments.js';
+import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { playSoundfont } from './soundfont.js';
 import { createEffect, loadEffectWorklets } from './effects.js';
@@ -425,6 +425,7 @@ export class Engine {
     else if (ch.type === 'fm') v = playFm(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'organ') v = playOrgan(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'pluck') v = playPluck(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
+    else if (ch.type === 'wavetable') v = playWavetable(this.ctx, dest, pitch, t, dur, vel, semis, ch.params);
     else if (ch.type === 'sfx') v = playSfx(this.ctx, dest, t, dur, vel, pitch - ROOT_NOTE + semis, ch.params);
     else if (ch.type === 'sampler') {
       const s = this.store.samples.get(ch.sampleId);

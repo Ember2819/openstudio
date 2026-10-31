@@ -3,8 +3,9 @@ import { CUSTOM_WAVES } from './dsp.js';
 import { DRUMS, playDrum } from './drums.js';
 import { playSynth, playFm, playOrgan, playPluck, DRAWBARS } from './synths.js';
 import { playSfx, SFX, SFX_SOUNDS } from './sfx.js';
+import { playWavetable, WAVETABLES } from './wavetable.js';
 
-export { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx };
+export { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playWavetable };
 
 // ---------------------------------------------------------------------------
 // Parameter metadata (drives the channel settings window, defaults, automation and agent validation)
@@ -85,6 +86,24 @@ const PLUCK_PARAMS = [
   { key: 'release', label: 'Release', min: 0.02, max: 2, def: 0.35, log: true, fmt: ms },
 ];
 
+const WAVETABLE_PARAMS = [
+  { key: 'table', label: 'Wavetable', type: 'select', options: WAVETABLES, def: 'Basic shapes' },
+  { key: 'position', label: 'Position', min: 0, max: 1, def: 0.3, fmt: pct },
+  { key: 'posEnv', label: 'Position env', min: -1, max: 1, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%` },
+  { key: 'posDecay', label: 'Env decay', min: 0.01, max: 4, def: 0.6, log: true, fmt: ms },
+  { key: 'posLfo', label: 'Position LFO', min: 0, max: 1, def: 0, fmt: pct },
+  { key: 'lfoRate', label: 'LFO rate', min: 0.05, max: 12, def: 0.5, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+  { key: 'unison', label: 'Unison', min: 1, max: 5, def: 1, step: 1, fmt: (v) => `${v} voice${v > 1 ? 's' : ''}` },
+  { key: 'spread', label: 'Spread', min: 0, max: 50, def: 12, fmt: (v) => `${v.toFixed(0)} ct` },
+  { key: 'cutoff', label: 'Cutoff', min: 60, max: 18000, def: 9000, log: true, fmt: hz },
+  { key: 'res', label: 'Resonance', min: 0.1, max: 18, def: 0.8, fmt: (v) => v.toFixed(1) },
+  { key: 'envAmt', label: 'Filter env', min: 0, max: 1, def: 0.1, fmt: pct },
+  { key: 'attack', label: 'Attack', min: 0.001, max: 3, def: 0.01, log: true, fmt: ms },
+  { key: 'decay', label: 'Decay', min: 0.01, max: 4, def: 0.4, log: true, fmt: ms },
+  { key: 'sustain', label: 'Sustain', min: 0, max: 1, def: 0.7, fmt: pct },
+  { key: 'release', label: 'Release', min: 0.005, max: 5, def: 0.3, log: true, fmt: ms },
+];
+
 const SFX_PARAMS = [
   { key: 'sound', label: 'Sound', type: 'select', options: SFX_SOUNDS, labels: Object.fromEntries(Object.entries(SFX).map(([k, v]) => [k, v.label])), def: 'riser' },
   { key: 'length', label: 'Length', min: 0.2, max: 16, def: 3, log: true, fmt: (v) => `${v.toFixed(2)} s` },
@@ -114,7 +133,7 @@ const SF_PARAMS = [
   { key: 'cutoff', label: 'Low-pass', min: 200, max: 20000, def: 20000, log: true, fmt: (v) => (v >= 19999 ? 'Open' : hz(v)) },
 ];
 
-export const PARAM_META = { drum: DRUM_PARAMS, synth: SYNTH_PARAMS, fm: FM_PARAMS, organ: ORGAN_PARAMS, pluck: PLUCK_PARAMS, sfx: SFX_PARAMS, sampler: SAMPLER_PARAMS, sf: SF_PARAMS };
+export const PARAM_META = { drum: DRUM_PARAMS, synth: SYNTH_PARAMS, fm: FM_PARAMS, organ: ORGAN_PARAMS, pluck: PLUCK_PARAMS, sfx: SFX_PARAMS, wavetable: WAVETABLE_PARAMS, sampler: SAMPLER_PARAMS, sf: SF_PARAMS };
 
 export function defaultParams(type) {
   const out = {};
@@ -129,6 +148,7 @@ export const ENGINES = {
   organ: { label: 'Organ', icon: 'keys', blurb: 'Tonewheel organ with drawbars, percussion and rotary speaker' },
   pluck: { label: 'Plucked String', icon: 'wave', blurb: 'Physically modelled strings: guitar, harp, koto, banjo, bass' },
   sfx: { label: 'Sound FX', icon: 'wave', blurb: 'Risers, impacts, sweeps, textures and one-shot effects' },
+  wavetable: { label: 'Wavetable', icon: 'synth', blurb: 'Morphing wavetables with a position envelope and LFO: evolving pads, vowels, digital leads' },
 };
 
 // ---------------------------------------------------------------------------
@@ -319,7 +339,26 @@ export const SFX_PRESETS = {
 };
 
 /** Presets of every generator, by channel type. */
-export const ENGINE_PRESETS = { synth: SYNTH_PRESETS, fm: FM_PRESETS, organ: ORGAN_PRESETS, pluck: PLUCK_PRESETS, sfx: SFX_PRESETS };
+export const WAVETABLE_PRESETS = {
+  Pads: [
+    { name: 'Morph Pad', params: { table: 'Basic shapes', position: 0.1, posLfo: 0.35, lfoRate: 0.15, unison: 3, spread: 14, cutoff: 5000, attack: 0.6, decay: 1.5, sustain: 0.8, release: 1.8 } },
+    { name: 'Choir Vowels', params: { table: 'Vowels', position: 0, posLfo: 0.9, lfoRate: 0.2, unison: 3, spread: 9, cutoff: 6000, attack: 0.4, decay: 1, sustain: 0.85, release: 1.4 } },
+    { name: 'Glass Sweep', params: { table: 'Harmonic sweep', position: 0.1, posEnv: 0.8, posDecay: 3, unison: 2, spread: 8, cutoff: 12000, attack: 0.3, decay: 2, sustain: 0.7, release: 1.6 } },
+  ],
+  Leads: [
+    { name: 'Digital Lead', params: { table: 'Digital', position: 0.45, posEnv: 0.3, posDecay: 0.25, unison: 2, spread: 10, cutoff: 7000, res: 2, envAmt: 0.3, attack: 0.005, decay: 0.3, sustain: 0.75, release: 0.2 } },
+    { name: 'PWM Lead', params: { table: 'Pulse width', position: 0.3, posLfo: 0.5, lfoRate: 4.5, unison: 1, cutoff: 6000, attack: 0.005, decay: 0.2, sustain: 0.8, release: 0.15 } },
+  ],
+  Basses: [
+    { name: 'Growl Bass', params: { table: 'Vowels', position: 0.2, posLfo: 0.7, lfoRate: 2, unison: 1, cutoff: 2400, res: 3, envAmt: 0.2, attack: 0.003, decay: 0.3, sustain: 0.9, release: 0.1 } },
+    { name: 'Pluck Bass', params: { table: 'Basic shapes', position: 0.75, posEnv: -0.6, posDecay: 0.2, cutoff: 1800, envAmt: 0.6, attack: 0.002, decay: 0.25, sustain: 0.3, release: 0.1 } },
+  ],
+  Keys: [
+    { name: 'Drawbar Keys', params: { table: 'Organ drawbars', position: 0.55, unison: 2, spread: 5, cutoff: 9000, attack: 0.005, decay: 0.6, sustain: 0.6, release: 0.3 } },
+  ],
+};
+
+export const ENGINE_PRESETS = { synth: SYNTH_PRESETS, fm: FM_PRESETS, organ: ORGAN_PRESETS, pluck: PLUCK_PRESETS, sfx: SFX_PRESETS, wavetable: WAVETABLE_PRESETS };
 
 /** Flat list of { type, category, name, params } across all generators. */
 export const allEnginePresets = () => Object.entries(ENGINE_PRESETS).flatMap(([type, cats]) => Object.entries(cats).flatMap(([category, list]) => list.map((p) => ({ type, category, name: p.name, params: p.params }))));

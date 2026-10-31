@@ -10,7 +10,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 
 ## Mid term
 - Time-stretch and pitch-shift for audio clips.
-- More built-in instruments (wavetable, sample-based pianos / strings); vocoder and pitch effects.
+- More built-in instruments (sample-based pianos / strings); vocoder and pitch effects.
 - Mixer track grouping.
 - MP3 export.
 - Theming and a keyboard-shortcut editor; accessibility pass.

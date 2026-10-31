@@ -69,7 +69,7 @@ export const tools = [
     title: 'Add channel',
     description: 'Add an instrument channel to the rack (like ADD → One more channel). type "instrument": a General MIDI sound (give instrument name, or program/bank). "drum_kit": a SoundFont drum kit (kit name or program), optionally one piece (name or key) to make a single-drum channel. Built-in generators, each with presets (list_catalog synth_presets): "synth" (subtractive: basses, leads, pads, stabs), "fm" (electric pianos, bells, mallets, bass), "organ" (drawbar organ), "pluck" (guitar, harp, koto, banjo, bass strings), "sfx" (risers, impacts, sweeps, textures). "drum": a synthesized drum voice (list_catalog drum_voices). "sampler": plays a sample (a sample id from import_sample, or a file path). Returns the new channel; its id is used everywhere else. The new channel becomes selected. To get a whole set of instruments for a style at once use setup_song.',
     inputSchema: obj({
-      type: choice(['instrument', 'drum_kit', 'synth', 'fm', 'organ', 'pluck', 'sfx', 'drum', 'sampler'], 'Kind of channel'),
+      type: choice(['instrument', 'drum_kit', 'synth', 'fm', 'organ', 'pluck', 'sfx', 'wavetable', 'drum', 'sampler'], 'Kind of channel'),
       name: str('Channel name (defaults to the instrument / piece / preset name)'),
       instrument: str('instrument: General MIDI sound name, e.g. "Grand Piano" (see list_catalog)'),
       bank: int('instrument: SoundFont bank (default 0)', { minimum: 0, maximum: 127 }),
@@ -105,7 +105,7 @@ export const tools = [
             : (() => { const pc = resolvePiece(kit, a.piece); return { name: pc.name, type: 'sf', bank: 128, program: kit.program, fixedKey: pc.key }; })();
           break;
         }
-        case 'synth': case 'fm': case 'organ': case 'pluck': case 'sfx': {
+        case 'synth': case 'fm': case 'organ': case 'pluck': case 'sfx': case 'wavetable': {
           const list = Object.values(ENGINE_PRESETS[a.type]).flat();
           const preset = a.preset === undefined ? (a.type === 'synth' ? ENGINE_PRESETS.synth.Leads[0] : null) : pickByName(list, a.preset, `${a.type} preset`);
           spec = { name: preset?.name ?? ENGINES[a.type].label, type: a.type, preset: preset?.params ?? null };
@@ -176,7 +176,7 @@ export const tools = [
         if (a.mixer !== undefined) ch.mixer = mixerIndex(a.mixer);
         if (a.role) ch.role = a.role;
         if (a.preset !== undefined) {
-          if (!ENGINE_PRESETS[ch.type]) fail('Only synth, fm, organ, pluck and sfx channels have presets');
+          if (!ENGINE_PRESETS[ch.type]) fail('Only synth, fm, organ, pluck, sfx and wavetable channels have presets');
           const p = pickByName(Object.values(ENGINE_PRESETS[ch.type]).flat(), a.preset, `${ch.type} preset`);
           ch.params = { ...defaultParams(ch.type), ...p.params };
           if (a.name === undefined) ch.name = p.name;
