@@ -4,8 +4,9 @@ import { createKnob, hint, showAutomationMenu } from './knob.js';
 import { showMenu } from './menu.js';
 import { promptDialog } from './dialog.js';
 import { MIXER_TRACKS } from '../state.js';
-import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
+import { EFFECT_DEFS, defaultEffectParams, effectMenu } from '../audio/effects.js';
 import { overlayScrollbars, wheelScrollsHorizontally } from './scrollbars.js';
+import { GROUPS, GROUP_COLORS, groupMates, setGroupVolume, setGroupFlag } from '../mixergroups.js';
 import { T, appearance } from '../theme.js';
 
 const METER_W = 12;
@@ -55,13 +56,40 @@ export function createMixer(app) {
     });
     name.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      select(i);
+      // like FL Studio: with another track selected, right-click a track to route the selected one into it
+      const from = store.project.selected.mixer;
+      const src = mixer()[from];
+      const canRoute = from > 0 && from !== i && !store.wouldCycle(from, i);
+      const route = (only) => {
+        store.checkpoint();
+        if (only && i === 0) { src.sends = {}; delete src.master; } else if (only) { src.sends = { [i]: 0.8 }; src.master = false; }
+        else if (i === 0) delete src.master;
+        else src.sends[i] = src.sends[i] ?? 0.8;
+        store.emit('mixer');
+        renderFx();
+        refreshActive();
+      };
       showMenu([
+        ...(canRoute ? [
+          { label: `Route “${src.name}” to this track only`, action: () => route(true) },
+          ...(i > 0 ? [{ label: `Send “${src.name}” to this track too`, disabled: src.sends[i] != null, action: () => route(false) }] : []),
+          { separator: true },
+        ] : []),
         { label: 'Rename…', action: () => name.dispatchEvent(new MouseEvent('dblclick')) },
         { label: 'Color', submenu: COLORS.map((c) => ({ label: ' ', swatch: c, action: () => { store.checkpoint(); m().color = c; refreshLabels(); } })) },
+        ...(i > 0 ? [{ label: 'Group', submenu: [
+          { label: 'None', checked: !m().group, action: () => setGroup(null) },
+          ...Array.from({ length: GROUPS }, (_, g) => ({ label: `Group ${g + 1}`, swatch: GROUP_COLORS[g], checked: m().group === g + 1, action: () => setGroup(g + 1) })),
+        ] }] : []),
         { label: 'Reset', action: () => { store.checkpoint(); Object.assign(m(), { vol: 0.8, pan: 0, mute: false, solo: false, fx: m().fx.map(() => null), sends: {} }); engine.syncFx(i); store.emit('mixer'); renderFx(); } },
       ], e.clientX, e.clientY);
     });
+
+    const setGroup = (g) => {
+      store.checkpoint();
+      if (g) m().group = g; else delete m().group;
+      store.emit('mixer'); // refreshes every strip
+    };
 
     const pan = createKnob({
       value: m().pan, min: -1, max: 1, def: 0, size: 26, bipolar: true, label: 'Pan',
@@ -75,12 +103,16 @@ export function createMixer(app) {
     const thumb = h('div', { class: 'mx-thumb' });
     const rail = h('div', { class: 'mx-rail' });
     const scale = h('div', { class: 'mx-scale' }, SCALE_MARKS.map(([t, v]) => h('span', { style: { bottom: faderOffset(v) } }, t)));
-    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset' }, rail, thumb);
-    const setFaderUi = () => { thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`; };
-    const setVol = (v) => {
-      m().vol = clamp(v, 0, 1);
-      setFaderUi();
-      hint.set(`Track ${i}: ${fmtDb(faderToGain(m().vol))} dB`);
+    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset', role: 'slider', tabindex: 0, 'aria-label': i === 0 ? 'Master volume' : `Insert ${i} volume`, 'aria-valuemin': 0, 'aria-valuemax': 100 }, rail, thumb);
+    const setFaderUi = () => {
+      thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`;
+      fader.setAttribute('aria-valuenow', String(Math.round(m().vol * 100)));
+      fader.setAttribute('aria-valuetext', `${fmtDb(faderToGain(m().vol))} dB`);
+    };
+    // grouped tracks follow (Alt moves this one alone)
+    const setVol = (v, alone = false) => {
+      setGroupVolume(mixer(), i, clamp(v, 0, 1), { alone });
+      hint.set(`Track ${i}: ${fmtDb(faderToGain(m().vol))} dB${!alone && groupMates(mixer(), i).length ? ` · group ${m().group}` : ''}`);
       store.emit('mixer');
     };
     let dragStart = null;
@@ -90,37 +122,56 @@ export function createMixer(app) {
       fader.setPointerCapture(e.pointerId);
       store.checkpoint();
       // relative drag (clicking never makes the level jump); Shift for fine control
-      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height - THUMB_H };
+      dragStart = { y: e.clientY, vol: m().vol, h: fader.getBoundingClientRect().height - THUMB_H, alone: e.altKey };
     });
     fader.addEventListener('pointermove', (e) => {
       if (!dragStart) return;
       const d = (dragStart.y - e.clientY) / dragStart.h;
-      setVol(dragStart.vol + d * (e.shiftKey ? 0.2 : 1));
-      if (e.shiftKey) { dragStart = { y: e.clientY, vol: m().vol, h: dragStart.h }; }
+      setVol(dragStart.vol + d * (e.shiftKey ? 0.2 : 1), dragStart.alone);
+      if (e.shiftKey) { dragStart = { ...dragStart, y: e.clientY, vol: m().vol }; }
     });
     fader.addEventListener('pointerup', () => { dragStart = null; });
     fader.addEventListener('pointercancel', () => { dragStart = null; });
-    fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8); });
+    fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8, true); }); // a reset is for this track only
     fader.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'mixer', track: i, param: 'vol' }));
+    // keyboard: arrows (Shift finer), Page Up / Down, Home / End, Delete back to 0 dB; Alt for this track alone
+    let keyUndo = -Infinity;
+    fader.addEventListener('keydown', (e) => {
+      const d = e.shiftKey ? 0.002 : 0.01;
+      const to = { ArrowUp: m().vol + d, ArrowRight: m().vol + d, ArrowDown: m().vol - d, ArrowLeft: m().vol - d, PageUp: m().vol + 0.05, PageDown: m().vol - 0.05, Home: 0, End: 1, Delete: 0.8, Backspace: 0.8 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (performance.now() - keyUndo > 600) store.checkpoint(); // one undo step per burst of key presses
+      keyUndo = performance.now();
+      setVol(to, e.altKey || to === 0.8);
+    });
 
     const meter = h('canvas', { class: 'mx-meter' });
     const db = h('div', { class: 'mx-db' }, '0.0');
 
     // the whole scale | fader | meter column takes the wheel, so it never scrolls the mixer by accident
     const faderWrap = h('div', { class: 'mx-fader-wrap' }, scale, fader, h('div', { class: 'mx-meter-box' }, meter));
-    faderWrap.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02); }, { passive: false });
+    faderWrap.addEventListener('wheel', (e) => { e.preventDefault(); setVol(m().vol - Math.sign(e.deltaY) * 0.02, e.altKey); }, { passive: false });
 
     const muteBtn = h('button', { class: 'mx-btn mute', 'data-hint': 'Mute' }, 'M');
     const soloBtn = h('button', { class: 'mx-btn solo', 'data-hint': 'Solo' }, 'S');
-    muteBtn.addEventListener('click', () => { store.checkpoint(); m().mute = !m().mute; refresh(); store.emit('mixer'); });
-    soloBtn.addEventListener('click', () => { store.checkpoint(); m().solo = !m().solo; refresh(); store.emit('mixer'); });
+    const flag = (key, e) => {
+      store.checkpoint();
+      setGroupFlag(mixer(), i, key, !m()[key], { alone: e.altKey });
+      store.emit('mixer');
+    };
+    muteBtn.addEventListener('click', (e) => flag('mute', e));
+    soloBtn.addEventListener('click', (e) => flag('solo', e));
 
     const el = h('div', { class: `mx-strip${i === 0 ? ' master' : ''}`, dataset: { track: i } },
       name, label, pan, h('div', { class: 'mx-btns' }, muteBtn, soloBtn),
       faderWrap, db);
     el.addEventListener('pointerdown', () => { if (store.project.selected.mixer !== i) select(i); });
 
-    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), mw: 0, mh: 0, level: [0, 0], hold: [0, 0], setFaderUi, active: false };
+    const s = { i, el, name, label, thumb, pan, muteBtn, soloBtn, db, meter, ctx: meter.getContext('2d'), mw: 0, mh: 0, level: [0, 0], hold: [0, 0], holdAt: [0, 0], clip: false, setFaderUi, active: false };
+    meter.addEventListener('click', (e) => { e.stopPropagation(); s.clip = false; s.hold = [0, 0]; drawMeter(s, [0, 0]); });
+    meter.dataset.hint = 'Level with peak hold — a red top means it clipped; click to reset';
     const refresh = () => {
       const mm = m();
       s.pan.setValue(mm.pan);
@@ -132,6 +183,10 @@ export function createMixer(app) {
       s.active = isRouted(i);
       el.classList.toggle('routed', s.active);
       label.style.setProperty('--tc', mm.color || 'transparent');
+      if (label.textContent !== mm.name) label.textContent = mm.name; // renamed by an agent, undo or a load
+      el.classList.toggle('grouped', !!mm.group);
+      el.style.setProperty('--group', mm.group ? GROUP_COLORS[mm.group - 1] : 'transparent');
+      name.dataset.group = mm.group ? `G${mm.group}` : '';
     };
     s.refresh = refresh;
     refresh();
@@ -164,7 +219,8 @@ export function createMixer(app) {
   }
 
   // ------------------------------------------------------------------ FX rack
-  let openSlot = -1;
+  // the effect being edited lives in its own window (src/ui/fxwindow.js)
+  const openFx = () => app.effectWindow?.current();
   function renderFx() {
     const i = store.project.selected.mixer;
     const track = mixer()[i];
@@ -180,36 +236,39 @@ export function createMixer(app) {
         engine.syncFx(i);
         renderFx();
       });
-      const row = h('div', { class: `mx-slot${slot ? ' filled' : ''}${openSlot === k && slot ? ' open' : ''}`, 'data-hint': slot ? 'Click to edit · right-click to remove' : 'Click to add an effect' },
+      const editing = slot && openFx()?.track === i && openFx()?.slot === k && app.effectWindow.win.visible;
+      const row = h('div', { class: `mx-slot${slot ? ' filled' : ''}${editing ? ' open' : ''}`, 'data-hint': slot ? 'Click to open its editor · right-click for more' : 'Click to add an effect' },
         led, h('span', { class: 'mx-slot-name' }, slot ? EFFECT_DEFS[slot.type].name : '(none)'));
       row.addEventListener('click', () => {
         if (!slot) {
-          showMenu(Object.entries(EFFECT_DEFS).map(([type, def]) => ({
+          showMenu(effectMenu((type, def) => ({
             label: def.name,
             action: () => {
               store.checkpoint();
               track.fx[k] = { type, params: defaultEffectParams(type), on: true };
-              openSlot = k;
               engine.syncFx(i);
               renderFx();
               refreshActive();
+              app.actions.openEffect(i, k);
+              renderFx();
             },
           })), row.getBoundingClientRect().left, row.getBoundingClientRect().bottom);
-        } else { openSlot = openSlot === k ? -1 : k; renderFx(); }
+        } else if (editing) { app.effectWindow.win.hide(); renderFx(); } else { app.actions.openEffect(i, k); renderFx(); }
       });
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
         showMenu([
           ...(slot ? [
-            { label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; if (openSlot === k) openSlot = -1; engine.syncFx(i); renderFx(); } },
+            { label: 'Open editor', action: () => { app.actions.openEffect(i, k); renderFx(); } },
+            { label: 'Remove effect', action: () => { store.checkpoint(); track.fx[k] = null; engine.syncFx(i); store.emit('mixer'); renderFx(); } },
             { label: 'Move up', disabled: k === 0, action: () => moveSlot(k, -1) },
             { label: 'Move down', disabled: k === track.fx.length - 1, action: () => moveSlot(k, 1) },
             { separator: true },
           ] : []),
-          ...Object.entries(EFFECT_DEFS).map(([type, def]) => ({
-            label: `${slot ? 'Replace with' : 'Add'} ${def.name}`,
-            action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); renderFx(); },
-          })),
+          { label: slot ? 'Replace with' : 'Add', submenu: effectMenu((type, def) => ({
+            label: def.name,
+            action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); store.emit('mixer'); renderFx(); },
+          })) },
         ], e.clientX, e.clientY);
       });
       list.append(row);
@@ -217,28 +276,6 @@ export function createMixer(app) {
     fxPanel.append(list);
 
     fxPanel.append(sendsBlock(i, track));
-
-    const slot = track.fx[openSlot];
-    if (slot) {
-      const def = EFFECT_DEFS[slot.type];
-      const knobs = h('div', { class: 'mx-fx-params' });
-      for (const meta of def.params) {
-        if (meta.type === 'select') {
-          const sel = h('button', { class: 'dd', 'data-hint': meta.label }, h('span', {}, slot.params[meta.key]), h('span', { class: 'caret' }, '▼'));
-          sel.addEventListener('click', () => showMenu(meta.options.map((o) => ({ label: o, checked: slot.params[meta.key] === o, action: () => { store.checkpoint(); slot.params[meta.key] = o; engine.setEffectParam(i, openSlot, meta.key, o); renderFx(); } })), sel.getBoundingClientRect().left, sel.getBoundingClientRect().bottom));
-          knobs.append(h('div', { class: 'mx-fx-param' }, sel, h('span', {}, meta.label)));
-          continue;
-        }
-        const k = createKnob({
-          value: slot.params[meta.key], min: meta.min, max: meta.max, def: meta.def, size: 34, log: meta.log, step: meta.step || 0, label: meta.label, fmt: meta.fmt,
-          onStart: () => store.checkpoint(),
-          target: { kind: 'fx', track: i, slot: openSlot, key: meta.key },
-          onChange: (v) => { slot.params[meta.key] = v; engine.setEffectParam(i, openSlot, meta.key, v); store.dirty = true; },
-        });
-        knobs.append(h('div', { class: 'mx-fx-param' }, k, h('span', {}, meta.label)));
-      }
-      fxPanel.append(h('div', { class: 'mx-fx-edit' }, h('div', { class: 'mx-fx-edit-title' }, def.name), knobs));
-    }
   }
 
   /** Swap an effect slot with its neighbour (automation targets follow the effect). */
@@ -256,13 +293,25 @@ export function createMixer(app) {
     }
     // the engine keys live effects by slot, so rebuild them in their new positions
     engine.resetFx(i);
-    if (openSlot === k) openSlot = j; else if (openSlot === j) openSlot = k;
+    const ed = openFx();
+    if (ed?.track === i && (ed.slot === k || ed.slot === j)) app.actions.openEffect(i, ed.slot === k ? j : k);
+    store.emit('mixer');
     renderFx();
   }
 
   function sendsBlock(i, track) {
     const box = h('div', { class: 'mx-sends' }, h('div', { class: 'mx-sub' }, i === 0 ? 'Output' : 'Sends'));
     if (i === 0) { box.append(h('div', { class: 'mx-send-note' }, 'The master track feeds the audio device.')); return box; }
+    // like FL, an insert can be taken off the master (e.g. when it only feeds a bus through a send)
+    const toMaster = track.master !== false;
+    const masterBtn = h('button', { class: `mx-route${toMaster ? ' on' : ''}`, 'data-hint': toMaster ? 'Click to stop sending this track to the master' : 'Click to send this track to the master' }, toMaster ? 'On' : 'Off');
+    masterBtn.addEventListener('click', () => {
+      store.checkpoint();
+      if (track.master === false) delete track.master; else track.master = false;
+      store.emit('mixer');
+      renderFx();
+    });
+    box.append(h('div', { class: 'mx-send' }, h('span', { class: 'mx-send-name' }, '→ Master'), masterBtn));
     for (const [dest, level] of Object.entries(track.sends)) {
       const d = Number(dest);
       const knob = createKnob({
@@ -289,7 +338,7 @@ export function createMixer(app) {
 
   // ------------------------------------------------------------------ wiring
   const refreshActive = () => strips.forEach((s) => { s.active = isRouted(s.i); s.el.classList.toggle('routed', s.active); });
-  store.on('project', () => { openSlot = -1; build(); });
+  store.on('project', () => { build(); });
   store.on('channels', refreshActive);
   store.on('mixer', () => { strips.forEach((s) => s.refresh()); });
   store.on('mixerSelection', () => select(store.project.selected.mixer, true));
@@ -325,25 +374,33 @@ export function createMixer(app) {
       const lin = levels[c];
       const target = Math.min(1.25, lin);
       s.level[c] = target > s.level[c] ? target : s.level[c] * 0.88;
-      s.hold[c] = Math.max(s.hold[c] * 0.995, s.level[c]);
-      const dbv = 20 * Math.log10(Math.max(s.level[c], 0.00001));
-      const frac = clamp((dbv + 60) / 66, 0, 1);
-      const hh = frac * METER_H;
+      // peak hold: stays put for 1.5 s, then falls
+      const now = performance.now();
+      if (lin >= s.hold[c]) { s.hold[c] = lin; s.holdAt[c] = now; } else if (now - s.holdAt[c] > 1500) s.hold[c] *= 0.94;
+      if (lin > 1) s.clip = true;
+      const toY = (v) => METER_H - clamp((20 * Math.log10(Math.max(v, 0.00001)) + 60) / 66, 0, 1) * METER_H;
+      const top = toY(s.level[c]);
       const x = 1 + c * (bw + 1);
       const grad = ctx.createLinearGradient(0, METER_H, 0, 0);
       grad.addColorStop(0, T.meter1); grad.addColorStop(0.65, T.meter2); grad.addColorStop(0.88, T.meter3); grad.addColorStop(1, T.meter4);
       ctx.fillStyle = grad;
-      ctx.fillRect(x, METER_H - hh, bw, hh);
+      ctx.fillRect(x, top, bw, METER_H - top);
       ctx.fillStyle = 'rgba(0,0,0,.35)';
       for (let y = 0; y < METER_H; y += 3) ctx.fillRect(x, y, bw, 1);
+      if (s.hold[c] > 0.001) {
+        ctx.fillStyle = s.hold[c] > 1 ? T.meter4 : T.text;
+        ctx.fillRect(x, Math.round(toY(s.hold[c])), bw, 2);
+      }
     }
+    // clip indicator: latched until the meter is clicked
+    if (s.clip) { ctx.fillStyle = T.meter4; ctx.fillRect(0, 0, w, 4); }
   };
 
   function update() {
     if (!win.visible) return;
     for (const s of strips) {
       if (!s.active && s.i !== store.project.selected.mixer) {
-        if (s.level[0] > 0.0005 || s.level[1] > 0.0005) { s.level = [0, 0]; drawMeter(s, [0, 0]); }
+        if (s.level[0] > 0.0005 || s.level[1] > 0.0005 || s.hold[0] > 0.001 || s.hold[1] > 0.001) { s.level = [0, 0]; drawMeter(s, [0, 0]); }
         continue;
       }
       drawMeter(s, engine.readLevels(s.i));

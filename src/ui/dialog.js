@@ -1,5 +1,6 @@
 import { h } from '../util.js';
 
+let modalCount = 0;
 function modal(title, body, buttons, cls = '') {
   return new Promise((resolve) => {
     const shade = h('div', { class: 'modal-shade' });
@@ -13,8 +14,9 @@ function modal(title, body, buttons, cls = '') {
     };
     const btnEls = buttons.map((b) =>
       h('button', { class: `btn${b.primary ? ' primary' : ''}`, onClick: () => close(b.value()) }, b.label));
-    const box = h('div', { class: `modal${cls ? ` ${cls}` : ''}` },
-      h('div', { class: 'modal-title' }, title),
+    const titleId = `modal-title-${++modalCount}`;
+    const box = h('div', { class: `modal${cls ? ` ${cls}` : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId },
+      h('div', { class: 'modal-title', id: titleId }, title),
       h('div', { class: 'modal-body' }, body),
       h('div', { class: 'modal-buttons' }, btnEls));
     shade.append(box);
@@ -23,6 +25,8 @@ function modal(title, body, buttons, cls = '') {
     window.addEventListener('keydown', onKey, true);
     box.querySelector('input')?.focus();
     box.querySelector('input')?.select();
+    // keyboard users land on the dialog: its field, else its main button
+    if (!box.contains(document.activeElement)) (box.querySelector('select, .btn.primary, .btn'))?.focus();
     modal.last = { box, close };
   });
 }
@@ -38,6 +42,38 @@ export function promptDialog(title, value = '', label = '') {
     e.stopPropagation();
   });
   return p;
+}
+
+/**
+ * A small form. fields: [{ key, label, value, options?: [[value, label], …], min?, max?, step? }] — a select when
+ * `options` is given, else a number input. Resolves to { key: value } (numbers stay numbers), or null on cancel.
+ */
+export function formDialog(title, fields, okLabel = 'Apply', note = '') {
+  const inputs = new Map();
+  const rows = fields.map((f) => {
+    const el = f.options
+      ? h('select', {}, f.options.map(([v, label]) => h('option', { value: String(v), selected: v === f.value }, label)))
+      : h('input', { type: 'number', value: String(f.value), min: f.min, max: f.max, step: f.step ?? 'any' });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); modal.last.box.querySelector('.btn.primary').click(); }
+      e.stopPropagation();
+    });
+    inputs.set(f.key, el);
+    return h('label', { class: 'form-row' }, h('span', {}, f.label), el);
+  });
+  const read = () => Object.fromEntries(fields.map((f) => {
+    const raw = inputs.get(f.key).value;
+    if (f.options) return [f.key, typeof f.value === 'number' ? Number(raw) : raw];
+    let v = Number(raw);
+    if (!Number.isFinite(v)) v = f.value;
+    if (f.min != null) v = Math.max(f.min, v);
+    if (f.max != null) v = Math.min(f.max, v);
+    return [f.key, v];
+  }));
+  return modal(title, [note ? h('div', { class: 'form-note' }, note) : null, h('div', { class: 'form-grid' }, rows)], [
+    { label: 'Cancel', value: () => null },
+    { label: okLabel, primary: true, value: read },
+  ]);
 }
 
 export function confirmDialog(title, message, okLabel = 'OK') {

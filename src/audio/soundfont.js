@@ -138,7 +138,7 @@ export function playSoundfont(ctx, dest, sf, preset, key, vel, t, dur, p, exclus
     if (r.exclusive) exclusiveKeys.add(`${chId}:${r.exclusive}`);
   }
 
-  const voice = { nodes, out: top, end: sustained ? Infinity : end, parts, released: false };
+  const voice = { nodes, out: top, end: sustained ? Infinity : end, parts, released: false, pitchParams: parts.map((x) => x.src.detune) };
   voice.release = (when) => {
     if (voice.released || isDrum) return; // GM percussion ignores note-off
     voice.released = true;

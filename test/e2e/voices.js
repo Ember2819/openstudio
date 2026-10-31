@@ -41,7 +41,7 @@
 
   // every preset of every engine
   const play = {
-    synth: inst.playSynth, fm: inst.playFm, organ: inst.playOrgan, pluck: inst.playPluck,
+    synth: inst.playSynth, fm: inst.playFm, organ: inst.playOrgan, pluck: inst.playPluck, wavetable: inst.playWavetable,
     sfx: (ctx, dest, pitch, t, dur, vel, semis, p) => inst.playSfx(ctx, dest, t, dur, vel, pitch - 60 + semis, p),
   };
   for (const [type, cats] of Object.entries(inst.ENGINE_PRESETS)) {
@@ -70,6 +70,20 @@
   await tune('FM synth, stacked operators', 'fm', { ratio: 2, index: 3, ratio2: 1, index2: 1, indexSus: 1, sustain: 1, decay: 2 }, 0.02);
   await tune('organ (8′ and up)', 'organ', { d16: 0, d513: 0 });
   await tune('plucked string', 'pluck', { decay: 3, bright: 0.5, damp: 0.3 });
+  for (const table of (await import('./src/audio/wavetable.js')).WAVETABLES) {
+    if (table === 'Digital' || table === 'Vowels') continue; // sparse / formant spectra: the fundamental is weak by design
+    await tune(`wavetable "${table}"`, 'wavetable', { table, position: 0.5, cutoff: 18000, envAmt: 0, attack: 0.001, sustain: 1 });
+  }
+
+  // the wavetable position morphs: sine (0) is dull, square (1) is bright
+  const bright = async (position) => {
+    const d = await render((ctx, dest) => inst.playWavetable(ctx, dest, 57, 0, Infinity, 0.8, 0, { ...inst.defaultParams('wavetable'), table: 'Basic shapes', position, cutoff: 18000, envAmt: 0, attack: 0.001, sustain: 1 }), 0.5);
+    let e = 0, de = 0;
+    for (let i = 2000; i < 20000; i++) { e += d[i] * d[i]; de += (d[i] - d[i - 1]) ** 2; }
+    return de / e;
+  };
+  const dull = await bright(0), sharp = await bright(1);
+  ok('wavetable position morphs from sine to square', sharp > dull * 5, `${dull.toFixed(4)} vs ${sharp.toFixed(4)}`);
 
   // the pluck cache must not hand back a buffer for a different pitch or setting
   const a = await render((ctx, dest) => inst.playPluck(ctx, dest, 57, 0, 0.5, 0.8, 0, { ...inst.defaultParams('pluck'), decay: 1 }), 0.6);
@@ -87,6 +101,73 @@
   app.store.emit('mixer');
   ok('a strip is built when it is touched', !!eng.tracks[90]);
   eng.dispose();
+
+  // slide notes bend the sounding note; Mod X closes the filter
+  const engineRender = async (seconds, fn) => {
+    const ctx = new OfflineAudioContext(1, Math.ceil(SR * seconds), SR);
+    const e = new Engine(app.store, ctx);
+    await e.ready;
+    const play = (spec, ...args) => {
+      const node = e._channelNode(spec);
+      if (node.mixer !== 'test') { node.mute.disconnect(); node.mute.connect(ctx.destination); node.mixer = 'test'; }
+      return e.playNote(spec, ...args);
+    };
+    fn(play);
+    const buf = await ctx.startRendering();
+    e.dispose();
+    return buf.getChannelData(0);
+  };
+  const steady = { attack: 0.001, sustain: 1, decay: 0.05, release: 0.05, envAmt: 0 };
+  for (const type of ['synth', 'fm', 'wavetable', 'organ']) {
+    const spec = { id: -40, type, params: { ...inst.defaultParams(type), ...steady, wave1: 'sawtooth', mix: 0, cutoff: 9000, ratio: 1, index: 0.3, indexSus: 1, d16: 0, d513: 0, table: 'Basic shapes', position: 0.66 } };
+    const d = await engineRender(1.2, (play) => {
+      play(spec, 57, 0.8, 0, 1.1);
+      play(spec, 69, 0.8, 0.35, 0.2, { p: 69, sl: true });
+    });
+    const before = hzOf(d, 0.1, 0.2), after = hzOf(d, 0.7, 0.2);
+    ok(`${type} slide note glides 220 → 440 Hz and stays`, Math.abs(before / 220 - 1) < 0.02 && Math.abs(after / 440 - 1) < 0.02, `${before.toFixed(1)} → ${after.toFixed(1)}`);
+  }
+  {
+    const spec = { id: -41, type: 'sampler', sampleId: null, params: inst.defaultParams('sampler') };
+    const silent = await engineRender(0.4, (play) => { play(spec, 60, 0.8, 0, 0.3, { p: 60, sl: true }); });
+    ok('a slide note with nothing under it is silent', stats(silent).peak === 0);
+  }
+  {
+    const spec = { id: -42, type: 'synth', params: { ...inst.defaultParams('synth'), ...steady, wave1: 'sawtooth', mix: 0, cutoff: 6000, res: 0.7 } };
+    const bright = await engineRender(0.5, (play) => { play(spec, 57, 0.8, 0, 0.4); });
+    const dark = await engineRender(0.5, (play) => { play(spec, 57, 0.8, 0, 0.4, { p: 57, mx: -0.8 }); });
+    const hf = (d, from = 4411, to = 15000) => { let s = 0; for (let i = from; i < to; i++) s += (d[i] - d[i - 1]) ** 2; return s; };
+    ok('Mod X closes the cutoff of the note', hf(dark) < hf(bright) * 0.2, `${hf(dark).toFixed(3)} vs ${hf(bright).toFixed(3)}`);
+    const drum = { id: -43, type: 'drum', voice: 'hat', params: inst.defaultParams('drum') };
+    const hat = await engineRender(0.3, (play) => { play(drum, 60, 0.9, 0, 0.1); });
+    const dull = await engineRender(0.3, (play) => { play(drum, 60, 0.9, 0, 0.1, { p: 60, mx: -1 }); });
+    ok('Mod X filters instruments without a cutoff control', hf(dull, 1, 6000) < hf(hat, 1, 6000) * 0.2, `${hf(dull, 1, 6000).toFixed(4)} vs ${hf(hat, 1, 6000).toFixed(4)}`);
+  }
+
+  // multi-sample zones: each key plays the nearest zone's sample from that zone's root
+  {
+    const sine = (hz) => {
+      const b = new AudioBuffer({ numberOfChannels: 1, length: SR, sampleRate: SR });
+      const d = b.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = 0.5 * Math.sin((2 * Math.PI * hz * i) / SR);
+      return b;
+    };
+    const ids = [9001, 9002];
+    app.store.samples.set(ids[0], { name: 'low A2.wav', data: new ArrayBuffer(0), buffer: sine(110) });
+    app.store.samples.set(ids[1], { name: 'high A4.wav', data: new ArrayBuffer(0), buffer: sine(440) });
+    const spec = { id: -44, type: 'sampler', sampleId: ids[0], params: inst.defaultParams('sampler'), zones: [{ sampleId: ids[0], root: 45, lo: 0, hi: 56 }, { sampleId: ids[1], root: 69, lo: 57, hi: 127 }] };
+    for (const [key, want] of [[45, 110], [47, 123.47], [69, 440], [64, 329.63]]) {
+      const d = await engineRender(0.5, (play) => { play(spec, key, 0.8, 0, 0.4); });
+      const hz = hzOf(d, 0.1, 0.2);
+      ok(`zone for key ${key} plays ${want} Hz`, Math.abs(hz / want - 1) < 0.01, `got ${hz.toFixed(1)}`);
+    }
+    // velocity layers: both zones on the same keys, split by velocity
+    const layered = { ...spec, id: -45, zones: [{ sampleId: ids[0], root: 57, lo: 0, hi: 127, vlo: 0, vhi: 0.5 }, { sampleId: ids[1], root: 57, lo: 0, hi: 127, vlo: 0.5, vhi: 1 }] };
+    const soft = hzOf(await engineRender(0.5, (play) => { play(layered, 57, 0.3, 0, 0.4); }), 0.1, 0.2);
+    const hard = hzOf(await engineRender(0.5, (play) => { play(layered, 57, 0.9, 0, 0.4); }), 0.1, 0.2);
+    ok('velocity layers pick the sample by velocity', Math.abs(soft / 110 - 1) < 0.01 && Math.abs(hard / 440 - 1) < 0.01, `${soft.toFixed(1)} / ${hard.toFixed(1)}`);
+    ids.forEach((id) => app.store.samples.delete(id));
+  }
 
   return log.join('\n');
 })()

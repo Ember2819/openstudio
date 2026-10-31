@@ -17,22 +17,36 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - 261 General MIDI instruments and 13 drum kits (TR-808/909, Electronic, Jazz, Orchestral, …) from the
   [GeneralUser GS](assets/CREDITS.md) SoundFont, played by a built-in sampler engine (velocity, loops, envelopes,
   filters, vibrato, hi-hat choke).
-- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter, LFO),
-  an FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps, textures);
-  26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio files.
-- Mixer effects: reverb, delay, chorus, phaser, distortion, filter, EQ, compressor, limiter, stereo width.
+- Built-in generators with presets: a subtractive synth (dual oscillator, 11 waveforms, unison, sub, 12/24 dB filter,
+  LFO, mono / legato with glide for 808 slides), a wavetable synth (morphing tables with position envelope / LFO), an
+  FM synth, a tonewheel organ, Karplus-Strong plucked strings and a Sound FX generator (risers, impacts, sweeps,
+  textures); 26 synthesized drum voices (808, punchy, acoustic-style); and a sampler for your own audio (root note,
+  start / end, loop region, Slicex-style slicing at the hits, and multi-sample key / velocity zones).
+- Mixer effects, each in its own window: parametric EQ (graphical, with a live spectrum), spectrum analyser, reverb,
+  delay (stereo / ping-pong), chorus, phaser, flanger, tremolo, distortion, bitcrusher, filter, 3-band EQ, compressor,
+  multiband compressor, sidechain compressor, volume shaper (tempo-synced pumps and gates), gate, limiter, stereo width,
+  pitch shifter, pitch correction (key / scale, from natural to robot) and a 16-band vocoder.
 
 **Workflow**
-- **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo and mixer routing.
-- **Piano roll** with draw / select / delete / mute / slice tools, scale highlighting, ghost notes, velocity lane,
-  quantize, and drum-kit key labels.
-- **Playlist** with pattern, audio and automation clips, loop region, drag-and-drop of samples and audio files.
-- **Mixer** with 125 inserts, sends (feedback-protected), 10 effect slots per track and stereo meters.
-- **Automation** — right-click any knob or fader to create an automation clip with an editable curve.
+- **Opens FL Studio projects (.flp)** — patterns, notes, playlist, channels and mixer, with built-in stand-ins for FL
+  plugins and samples found beside the project.
+- **Channel rack** step sequencer — pads are real piano-roll notes — with swing, mute/solo, mixer routing and
+  drag-and-drop of samples.
+- **Piano roll** with draw / select / delete / mute / slice tools, scale highlighting, chord stamps, ghost notes,
+  velocity / pan / mod X / mod Y / fine-pitch lanes, slide notes, quantize, legato, arpeggiate, strum, chop, flam, articulate, scale snap and limit.
+- **Playlist** with pattern, audio and automation clips, time markers, loop region, split by channel, audio-clip fades,
+  gain, reverse and tempo-following (stretch or resample), and drag-and-drop of patterns, samples and audio files.
+- **Mixer** with 125 inserts, routing (to the master, to buses, or both — feedback-protected), sidechain, 10 effect
+  slots per track and stereo meters with peak hold.
+- **Automation** of any knob, fader, effect parameter or the **tempo**; **time signatures**; **MIDI controller links**
+  (right-click → Link to controller).
+- **Recording** of notes from the computer or a MIDI keyboard, and of **audio** from any input into the playlist,
+  with loop takes and input monitoring.
+- **Browser** with your own sample folders (preview, drag in), every instrument, preset, drum voice and effect.
+- **Export** to WAV, FLAC, MP3 (192-320 kbps, gapless), per-mixer-track stems and MIDI; `.osp` projects with autosave, recent files and undo/redo.
 - **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
   by a music critic, mix from measured stems, then render. You watch it happen live and can undo any of it.
-- Undo/redo, `.osp` project files, WAV and MIDI export, computer-keyboard and MIDI-keyboard input, live recording.
 
 **Desktop**
 - **Theming** — 12 preset themes (including light ones), 10 accent palettes and custom colours in a Settings drawer
@@ -146,10 +160,10 @@ For a tour of the code read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limitations
 
-Plugin (VST/CLAP) hosting, time signatures other than 4/4, time-stretching audio, audio recording, tempo
-automation, importing other DAWs' project files, and most of the commercial DAWs' bundled instruments and effects
-are not implemented. OpenStudio is an independent project and is not affiliated with, endorsed by, or derived
-from any commercial DAW; product names mentioned in this repository belong to their respective owners.
+Plugin (VST/CLAP) hosting, plugin settings and automation clips in imported FL Studio projects, MP3 export, and
+many of the commercial DAWs' bundled instruments and effects are not implemented. OpenStudio is an independent
+project and is not affiliated with, endorsed by, or derived from any commercial DAW; product names mentioned in this
+repository belong to their respective owners.
 
 ## Contributing
 

@@ -76,7 +76,9 @@
 .pr-grid, .pl-grid { position: absolute; left: 0; top: 0; }
 .pr-scroller { position: absolute; inset: 0; overflow: scroll; }
 .pr-spacer { pointer-events: none; }
-.pr-vel-label { background: var(--grid-vel-label); border-top: 1px solid var(--grid-edge); border-right: 1px solid var(--grid-edge); color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; padding: 8px 10px; }
+.pr-vel-label { background: var(--grid-vel-label); border: 0; border-top: 1px solid var(--grid-edge); border-right: 1px solid var(--grid-edge); border-radius: 0; color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; padding: 8px 10px; text-align: left; align-self: stretch; display: flex; align-items: flex-start; gap: 3px; height: auto; cursor: pointer; }
+.pr-vel-label:hover { color: var(--text-bright); }
+.pr-vel-label .caret { font-size: 9px; }
 .pr-vel { border-top: 1px solid var(--grid-edge); cursor: ns-resize; }
 .pr-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .pr-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; margin-left: -1px; display: none; background: var(--playhead); }
@@ -188,6 +190,9 @@
 .mx-send-x .ico { width: 11px; height: 11px; }
 .mx-send-add { align-self: flex-start; height: 22px; font-size: 11px; }
 .mx-send-add .ico { width: 11px; height: 11px; }
+.mx-route { height: 20px; min-width: 38px; padding: 0 8px; font-size: 11px; border-radius: 3px; border: 1px solid var(--line); background: transparent; color: var(--text-dim); }
+.mx-route.on { color: var(--text-bright); border-color: var(--accent); }
+.mx-route:hover { background: var(--hover); }
 .mx-send-note { font-size: 11px; color: var(--text-dim); }
 
 /* ============================================================ Channel settings */
@@ -204,8 +209,8 @@
 .cs-toggle { margin-top: 8px; min-width: 60px; }
 .cs-foot { padding: 6px 16px 16px; }
 .cs-sampler { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 0; }
-.cs-wave { width: 100%; height: 70px; border: 1px solid var(--line); border-radius: 4px; }
-.cs-sampler .btn { align-self: flex-start; }
+.cs-wave { width: 100%; height: 90px; border: 1px solid var(--line); border-radius: 4px; }
+.cs-sampler-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
 /* ===================================================== Automation editor */
 .ae-wrap { flex: 1; min-height: 0; position: relative; background: var(--grid-bg); }
@@ -213,3 +218,22 @@
 .ae-title { font-weight: 600; color: var(--text-bright); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ae-lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--text-dim); }
 .ae-len { min-width: 54px; text-align: center; color: var(--text); font-variant-numeric: tabular-nums; }
+
+/* ---------- effect window ---------- */
+.fxw-root { height: 100%; display: flex; flex-direction: column; min-height: 0; background: var(--surface); }
+.fxw-head { flex: none; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.fxw-name { font-weight: 600; color: var(--text-bright); font-size: 12.5px; }
+.fxw-track { font-size: 11px; color: var(--text-dim); }
+.fxw-btn { height: 22px; font-size: 11px; padding: 0 10px; }
+.fxw-graph-wrap { flex: 1 1 auto; min-height: 140px; margin: 8px 10px 0; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; }
+.fxw-graph-wrap.tall { margin-bottom: 4px; }
+.fxw-graph { width: 100%; height: 100%; display: block; }
+.fxw-bands { flex: none; display: grid; grid-template-columns: repeat(8, minmax(60px, 1fr)); gap: 4px; padding: 8px 10px 10px; }
+.fxw-band { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border-radius: 4px; background: var(--inset); }
+.fxw-band-name { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text); white-space: nowrap; }
+.fxw-band-name i { width: 8px; height: 8px; border-radius: 50%; }
+.fxw-knobs { flex: none; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); padding: 14px 12px; }
+.cs-keymap { width: 100%; height: 34px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+.mx-strip.grouped .mx-name { box-shadow: inset 0 -3px 0 var(--group); }
+.mx-name[data-group]:not([data-group=""])::after { content: attr(data-group); margin-left: 4px; font-size: 9px; color: var(--group); }
+.mx-strip.selected .mx-name[data-group]:not([data-group=""])::after { color: inherit; }

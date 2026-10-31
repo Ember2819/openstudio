@@ -10,7 +10,9 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const electron = join(root, 'node_modules', '.bin', 'electron');
 // every test/e2e/*.js script is run in its own app launch; a script is one IIFE that resolves to "ok …"/"FAIL …" lines
-const scripts = readdirSync(join(root, 'test/e2e')).filter((f) => f.endsWith('.js')).sort();
+// `npm run test:e2e -- voices` runs only the scripts whose names contain one of the arguments
+const only = process.argv.slice(2);
+const scripts = readdirSync(join(root, 'test/e2e')).filter((f) => f.endsWith('.js') && (!only.length || only.some((o) => f.includes(o)))).sort();
 const shot = join(mkdtempSync(join(tmpdir(), 'openstudio-e2e-')), 'screenshot.png');
 
 if (!existsSync(join(root, 'assets/soundfonts/GeneralUser-GS.sf2'))) {
@@ -21,7 +23,9 @@ if (!existsSync(join(root, 'assets/soundfonts/GeneralUser-GS.sf2'))) {
 function runScript(name) {
   const script = readFileSync(join(root, 'test/e2e', name), 'utf8');
   const args = ['.', '--no-sandbox', '--disable-gpu', `--user-data-dir=${mkdtempSync(join(tmpdir(), 'openstudio-ud-'))}`,
-    '--no-mcp', `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300'];
+    '--no-mcp', `--screenshot=${shot}`, '--wait=2500', `--eval=${script}`, '--after=300',
+    // a fake microphone (a test tone) for the audio-recording test
+    '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'];
   const headless = !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
   const cmd = headless ? 'xvfb-run' : electron;
   const full = headless ? ['-a', '-s', '-screen 0 1600x900x24', electron, ...args] : args;

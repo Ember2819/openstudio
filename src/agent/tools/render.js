@@ -1,8 +1,10 @@
 import { bool, choice, int, num, obj, ref, str } from '../schema.js';
 import { channelOf, fail, patternOf } from '../helpers.js';
 import { analyze, BANDS } from '../analysis.js';
-import { renderSteps } from '../../audio/render.js';
+import { renderSteps, renderStems } from '../../audio/render.js';
 import { encodeWav } from '../../audio/wav.js';
+import { encodeFlac } from '../../audio/flac.js';
+import { encodeMp3 } from '../../audio/mp3.js';
 import { STEPS_PER_BAR } from '../../state.js';
 import { roleOf } from '../music/roles.js';
 import { flattenSong } from '../music/critique.js';
@@ -40,9 +42,34 @@ async function stemReport(app, a, steps, channels) {
 
 export const tools = [
   {
+    name: 'export_stems',
+    title: 'Export stems',
+    description: 'Write one 16-bit WAV per used mixer track (post-fader, every insert that a channel, playlist track or send feeds, or that has effects) plus the master into a folder — like FL Studio\'s "split mixer tracks" export. Renders the song (or the pattern in pattern mode) once per 15 tracks. Returns the files written.',
+    inputSchema: obj({
+      dir: str('Absolute path of an existing folder'),
+      tail: num('Seconds of release/reverb tail after the last step (default 2)', { minimum: 0, maximum: 20 }),
+    }, ['dir']),
+    annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: false, title: 'Export stems' },
+    async run(a, app) {
+      const { store } = app;
+      const proj = store.project;
+      const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
+      if (steps <= 0) fail('Nothing to export — the playlist has no clips (or switch to pattern mode)');
+      const tracks = app.actions.stemTracks();
+      if (!tracks.length) fail('Nothing is routed to a mixer insert, so there are no stems — route channels to their own tracks first (update_channel mixer, or manage_channel)');
+      if (app.transport.secondsAt(steps) > MAX_SECONDS) fail(`The song is longer than ${MAX_SECONDS} s`);
+      const res = await renderStems(store, steps, tracks, { tail: a.tail ?? 2 });
+      const dir = a.dir.replace(/[\\/]+$/, '');
+      const safe = (s) => s.replace(/[\\/:*?"<>|]/g, '_');
+      const files = [await app.files.write(`${dir}/${safe(proj.name)} - Master.wav`, encodeWav(res.master))];
+      for (const [i, buf] of res.stems) files.push(await app.files.write(`${dir}/${safe(proj.name)} - ${String(i).padStart(2, '0')} ${safe(proj.mixer[i].name)}.wav`, encodeWav(buf)));
+      return { tracks, files, seconds: Math.round(res.master.duration * 100) / 100 };
+    },
+  },
+  {
     name: 'render_audio',
     title: 'Render and analyse audio',
-    description: 'Render the project offline (the same engine as playback and Export audio) and analyse the result, since you cannot listen: peak / RMS / crest in dBFS, clipped samples, stereo correlation, a loudness timeline (one entry per bar, merged for long pieces), spectral balance (share of energy per band + centroid) and plain-language warnings. scope "pattern" renders the selected (or given) pattern, "song" the playlist, "auto" follows the project mode. Restrict to one channel to judge it in isolation. Optionally writes a 16-bit WAV file. Playback is not affected.',
+    description: 'Render the project offline (the same engine as playback and Export audio) and analyse the result, since you cannot listen: peak / RMS / crest in dBFS, clipped samples, stereo correlation, a loudness timeline (one entry per bar, merged for long pieces), spectral balance (share of energy per band + centroid) and plain-language warnings. scope "pattern" renders the selected (or given) pattern, "song" the playlist, "auto" follows the project mode. Restrict to one channel to judge it in isolation. Optionally writes a 16-bit WAV, FLAC or 320 kbps MP3 file. Playback is not affected.',
     inputSchema: obj({
       scope: choice(['auto', 'pattern', 'song'], 'What to render (default auto)'),
       pattern: ref('Pattern (with scope "pattern"; default the selected one)'),
@@ -50,7 +77,7 @@ export const tools = [
       fromStep: num('Analyse from this step (default 0)', { minimum: 0 }),
       toStep: num('Analyse up to this step (default the end)', { minimum: 0 }),
       tail: num('Seconds of release/reverb tail to include after the last step (default 2)', { minimum: 0, maximum: 20 }),
-      path: str('Also write the render to this absolute .wav path'),
+      path: str('Also write the render to this absolute path: .wav (16-bit), .flac (lossless, smaller) or .mp3 (320 kbps)'),
       sampleRate: int('Sample rate for the render (default 44100)', { minimum: 8000, maximum: 96000 }),
       stems: bool('Also render every channel on its own (over the busiest 4 bars, or fromStep-toStep) and report its level, brightness and share of the mix, with warnings about channels that are inaudible, dominate, or fight for the same range'),
     }),
@@ -70,22 +97,23 @@ export const tools = [
         if (pat) proj.selected.pattern = pat.id;
         steps = scope === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
         if (steps <= 0) fail('Nothing to render — the playlist has no clips (add clips, or use scope "pattern")');
-        const seconds = steps * transport.stepDur + (a.tail ?? 2);
+        const seconds = transport.secondsAt(steps) + (a.tail ?? 2);
         if (seconds > MAX_SECONDS) fail(`That would be ${Math.round(seconds)} s of audio; the limit is ${MAX_SECONDS} s`);
         if (only) proj.channels.forEach((c) => { c.solo = c.id === only.id; });
         const sampleRate = a.sampleRate ?? 44100;
         const rendered = await renderSteps(store, steps, { tail: a.tail ?? 2, sampleRate });
         const stepDur = 60 / proj.bpm / 4;
+        const at = (step) => (scope === 'song' ? transport.tempo.timeAt(step) : step * stepDur);
         const result = {
           scope, channel: only?.id ?? null, steps, bars: steps / STEPS_PER_BAR, bpm: proj.bpm, sampleRate,
           bandsHz: Object.fromEntries(BANDS.map(([name, lo, hi]) => [name, `${lo}-${hi}`])),
           ...analyze(rendered.getChannelData(0), rendered.getChannelData(1), sampleRate, {
             windowSeconds: STEPS_PER_BAR * stepDur,
-            from: (a.fromStep ?? 0) * stepDur,
-            to: a.toStep === undefined ? undefined : a.toStep * stepDur,
+            from: at(a.fromStep ?? 0),
+            to: a.toStep === undefined ? undefined : at(a.toStep),
           }),
         };
-        if (a.path) result.path = await app.files.write(a.path, encodeWav(rendered));
+        if (a.path) result.path = await app.files.write(a.path, /\.flac$/i.test(a.path) ? await encodeFlac(rendered) : /\.mp3$/i.test(a.path) ? await encodeMp3(rendered, { bitrate: 320 }) : encodeWav(rendered));
         if (a.stems) result.stems = await stemReport(app, a, steps, store.project.channels);
         return result;
       } finally {

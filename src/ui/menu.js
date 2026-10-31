@@ -17,7 +17,31 @@ export function closeMenus() {
   cb?.();
 }
 
-const escHandler = (e) => { if (e.key === 'Escape') closeMenus(); };
+/** Escape closes; arrows move through the deepest open menu, Right / Left open and close submenus, Enter picks. */
+const escHandler = (e) => {
+  if (e.key === 'Escape') { closeMenus(); return; }
+  const menu = openMenus.at(-1);
+  if (!menu) return;
+  const items = [...menu.querySelectorAll('.menu-item:not(.disabled)')];
+  if (!items.length) return;
+  let i = items.findIndex((x) => x.classList.contains('kbd'));
+  const focus = (k) => { items.forEach((x) => x.classList.remove('kbd')); items[k].classList.add('kbd'); items[k].scrollIntoView?.({ block: 'nearest' }); };
+  const handled = () => { e.preventDefault(); e.stopPropagation(); };
+  if (e.key === 'ArrowDown') { handled(); focus((i + 1) % items.length); } else if (e.key === 'ArrowUp') { handled(); focus((i - 1 + items.length) % items.length); } else if (e.key === 'Home') { handled(); focus(0); } else if (e.key === 'End') { handled(); focus(items.length - 1); } else if (e.key === 'ArrowLeft' && openMenus.length > 1) {
+    handled();
+    const parent = openMenus.at(-2);
+    openMenus.pop().remove();
+    parent.querySelector('.menu-item.open')?.classList.remove('open');
+  } else if ((e.key === 'ArrowRight' || e.key === 'Enter' || e.key === ' ') && i >= 0) {
+    handled();
+    const row = items[i];
+    if (row.getAttribute('aria-haspopup')) {
+      row.dispatchEvent(new Event('pointerenter'));
+      const sub = openMenus.at(-1);
+      sub?.querySelector('.menu-item:not(.disabled)')?.classList.add('kbd');
+    } else if (e.key !== 'ArrowRight') row.click();
+  }
+};
 
 export const isMenuOpen = () => openMenus.length > 0;
 
@@ -34,7 +58,7 @@ function place(el, x, y, alignRightOf = null) {
 }
 
 function build(items, depth) {
-  const menu = h('div', { class: 'menu' });
+  const menu = h('div', { class: 'menu', role: 'menu' });
   menu.addEventListener('contextmenu', (e) => e.preventDefault());
   let submenuEl = null;
 
@@ -49,7 +73,13 @@ function build(items, depth) {
   for (const it of items) {
     if (it.separator) { menu.append(h('div', { class: 'menu-sep' })); continue; }
     if (it.title) { menu.append(h('div', { class: 'menu-title' }, it.title)); continue; }
-    const row = h('div', { class: `menu-item${it.disabled ? ' disabled' : ''}` },
+    const row = h('div', {
+      class: `menu-item${it.disabled ? ' disabled' : ''}`,
+      role: it.checked !== undefined ? 'menuitemcheckbox' : 'menuitem',
+      'aria-checked': it.checked !== undefined ? String(!!it.checked) : null,
+      'aria-disabled': it.disabled ? 'true' : null,
+      'aria-haspopup': it.submenu ? 'menu' : null,
+    },
       h('span', { class: 'm-check' }, it.checked ? '✓' : ''),
       it.swatch ? h('span', { class: 'm-swatch', style: { background: it.swatch } }) : null,
       h('span', { class: 'm-label' }, it.label),
@@ -57,6 +87,7 @@ function build(items, depth) {
       it.submenu ? h('span', { class: 'm-arrow' }, '▸') : null);
     row.addEventListener('pointerenter', () => {
       if (it.disabled) return;
+      menu.querySelectorAll('.menu-item.kbd').forEach((x) => { if (x !== row) x.classList.remove('kbd'); });
       closeSub();
       if (it.submenu) {
         row.classList.add('open');

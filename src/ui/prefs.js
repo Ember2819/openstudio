@@ -7,6 +7,7 @@ import { SOLIDS, GRADIENTS, IMAGES, gradientCss, importImageFile, themeFromWallp
 import { messageDialog } from './dialog.js';
 import { claudePrompt, opencodePrompt, codexPrompt, antigravityPrompt, piPrompt } from './agentprompts.js';
 import { PROFILES, ACTIONS, MODIFIERS, comboOf, resolveCombo } from './tiling.js';
+import { keymap, COMMANDS, comboLabel } from '../keymap.js';
 
 const COLOR_FIELDS = [
   ['bg', 'Background', 'Behind the windows'],
@@ -21,7 +22,7 @@ const COLOR_FIELDS = [
 export function createPreferences(app) {
   let tab = 'theme';
   const body = h('div', { class: 'prefs-body' });
-  const TAB_NAMES = { theme: 'Theme', wallpaper: 'Wallpaper', windows: 'Windows & keys', agents: 'Agents' };
+  const TAB_NAMES = { theme: 'Theme', wallpaper: 'Wallpaper', keys: 'Keys', windows: 'Windows', agents: 'Agents' };
   const tabs = Object.keys(TAB_NAMES).map((id) => {
     const b = h('button', { class: 'prefs-tab', onClick: () => { tab = id; render(); body.scrollTop = 0; } }, TAB_NAMES[id]);
     b.dataset.tab = id;
@@ -222,6 +223,49 @@ export function createPreferences(app) {
     app.tiler.capturing = true;
     render();
   }
+  // ------------------------------------------------------------ keys tab (app-wide shortcuts)
+  let keyCapture = null; // command id waiting for a key press
+  const PIANO_KEYS = new Set('ZSXDCVGBHNJMQ2W3ER5T6Y7UI9O0P,L.;/'.split(''));
+  const setKeyCapture = (id) => { keyCapture = id; keymap.capturing = !!id; app.tiler.capturing = !!id; render(); };
+  window.addEventListener('keydown', (e) => {
+    if (!keyCapture) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') { setKeyCapture(null); return; }
+    const combo = comboOf(e);
+    if (!combo) return; // waiting for a non-modifier key
+    const list = keymap.binds(keyCapture);
+    if (!list.includes(combo)) keymap.set(keyCapture, [...list, combo]);
+    setKeyCapture(null);
+  }, true);
+
+  function renderKeys() {
+    const conflicts = keymap.conflicts();
+    const tiling = app.tiler.active ? app.tiler.bindingMap() : new Map();
+    const warnOf = (id, c) => conflicts.get(`${id}|${c}`)
+      ?? (tiling.has(c) ? 'Tiling mode takes this key' : null)
+      ?? (PIANO_KEYS.has(c) ? 'No longer plays a note on the computer keyboard' : null);
+    const groups = [...new Set(COMMANDS.map((c) => c[2]))];
+    body.replaceChildren(
+      h('p', { class: 'prefs-note' }, 'App-wide shortcuts. Click a key to remove it, + to add one (then press the keys; Esc cancels). Keys inside the editors (piano roll, playlist …) are listed under Help → Keyboard shortcuts.'),
+      ...groups.map((g) => section(g, h('div', { class: 'prefs-binds' }, COMMANDS.filter((c) => c[2] === g).map(([id, label]) => {
+        const list = keymap.binds(id);
+        const warn = list.map((c) => warnOf(id, c)).filter(Boolean);
+        return h('div', { class: 'prefs-bind' },
+          h('span', { class: 'prefs-bind-label' },
+            h('span', { class: 'prefs-bind-title' }, label, !keymap.isDefault(id) ? h('button', { class: 'prefs-link', 'data-hint': 'Back to the default keys', onClick: () => keymap.reset(id) }, 'reset') : null),
+            warn.length ? h('span', { class: 'prefs-bind-warn' }, warn.join(' · ')) : null),
+          h('span', { class: 'prefs-bind-keys' },
+            list.map((c) => h('button', { class: `prefs-chip${warnOf(id, c) && conflicts.has(`${id}|${c}`) ? ' warn' : ''}`, 'aria-label': `Remove ${comboLabel(c)}`, 'data-hint': 'Click to remove this key', onClick: () => keymap.set(id, list.filter((x) => x !== c)) },
+              comboLabel(c).split(/\+(?=.)/).map((k) => h('kbd', {}, k)))),
+            keyCapture === id
+              ? h('span', { class: 'prefs-chip listening' }, 'Press keys… (Esc cancels)')
+              : h('button', { class: 'prefs-chip add', 'aria-label': `Add a key for ${label}`, 'data-hint': 'Add a key', onClick: () => setKeyCapture(id) }, icon('plus'))));
+      })))),
+      h('div', { class: 'prefs-match' }, h('button', { class: 'btn', onClick: () => keymap.reset() }, 'Reset all to defaults')));
+  }
+  keymap.on('change', () => { if (tab === 'keys' && !el.classList.contains('hidden')) render(); });
+
   window.addEventListener('keydown', (e) => {
     if (!capture) return;
     e.preventDefault();
@@ -322,7 +366,7 @@ export function createPreferences(app) {
   function render() {
     tabs.forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     const top = body.scrollTop;
-    if (tab === 'theme') renderTheme(); else if (tab === 'wallpaper') renderWallpaper(); else if (tab === 'agents') renderAgents(); else renderWindows();
+    if (tab === 'theme') renderTheme(); else if (tab === 'wallpaper') renderWallpaper(); else if (tab === 'agents') renderAgents(); else if (tab === 'keys') renderKeys(); else renderWindows();
     body.scrollTop = top;
   }
 

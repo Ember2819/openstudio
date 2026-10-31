@@ -124,3 +124,4 @@
 .prefs-chip.add .ico { width: 11px; height: 11px; }
 .prefs-chip.listening { padding: 0 8px; font-size: 11px; color: var(--accent); border-color: var(--accent); background: var(--sel-fill); }
 .prefs-row .prefs-seg button { padding: 0 8px; }
+.prefs-bind-title { display: flex; align-items: baseline; gap: 8px; }

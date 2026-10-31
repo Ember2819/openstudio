@@ -93,3 +93,27 @@ test('no-op checkpoints do not add undo steps', () => {
   s.checkpoint();
   assert.equal(s.undoStack.length, 1);
 });
+
+test('undo history stays within its memory budget on big projects', () => {
+  const store = new Store();
+  const pat = store.currentPattern;
+  const ch = store.project.channels[0].id;
+  // ~4 MB snapshots
+  pat.notes[ch] = Array.from({ length: 120000 }, (_, i) => ({ p: 60, s: i % 64, l: 1, v: 0.8 }));
+  for (let k = 0; k < 60; k++) { store.checkpoint(); pat.notes[ch][0].v = k / 100; }
+  const total = store.undoStack.reduce((a, x) => a + x.length, 0);
+  assert.ok(total <= 96 * 1024 * 1024 + 5e6, String(total));
+  assert.ok(store.undoStack.length >= 10 && store.undoStack.length < 60);
+  assert.ok(store.undo());
+});
+
+test('load can take samples as raw buffers (autosave recovery)', () => {
+  const store = new Store();
+  const id = store.addSample('a.wav', new Uint8Array([1, 2, 3]).buffer);
+  const text = store.snapshot();
+  const data = store.samples.get(id).data;
+  const other = new Store();
+  other.load(text, null, { samples: [{ id, name: 'a.wav', data }] });
+  assert.equal(other.samples.get(id).data, data);
+  assert.ok(other.project.nextId > id);
+});

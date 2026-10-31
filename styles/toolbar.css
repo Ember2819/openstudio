@@ -48,6 +48,7 @@
 }
 .tempo-box:hover { border-color: var(--border-hover); }
 .tempo-val { font: 600 15px/1 var(--font-mono); color: var(--text-bright); letter-spacing: .02em; }
+.tempo-box.automated .tempo-val { color: var(--accent); }
 
 .time-box {
   width: 124px; height: 34px; padding: 0 9px; cursor: pointer; box-sizing: border-box;
@@ -113,6 +114,8 @@
 .snap-dd span:nth-child(2) { flex: 1; text-align: left; }
 
 .pat-group { display: flex; align-items: center; gap: 4px; }
+.ts-box { height: 26px; min-width: 44px; padding: 0 8px; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text-bright); font: 600 12px/1 var(--font-mono); }
+.ts-box:hover { border-color: var(--border-hover); }
 .pat-box { width: 176px; height: 26px; display: flex; align-items: center; gap: 8px; padding: 0 9px; text-align: left; background: var(--inset); border: 1px solid var(--line); border-radius: var(--radius); color: var(--text-bright); }
 .pat-box:hover { border-color: var(--border-hover); }
 .pat-box .pat-name { flex: 1; font-size: 12px; }

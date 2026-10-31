@@ -19,7 +19,10 @@ export function channelInfo(app, ch) {
       : cat?.families.flatMap((f) => f.presets).find((p) => p.bank === ch.bank && p.program === ch.program)?.name;
     if (name) out.instrument = name;
   }
-  if (ch.type === 'sampler') out.sampleId = ch.sampleId;
+  if (ch.type === 'sampler') {
+    out.sampleId = ch.sampleId;
+    if (ch.zones) out.zones = ch.zones.map((z) => ({ sample: z.sampleId, root: z.root, lo: z.lo, hi: z.hi, ...(z.vlo != null ? { velocityMin: z.vlo } : {}), ...(z.vhi != null ? { velocityMax: z.vhi } : {}) }));
+  }
   out.params = ch.params;
   return out;
 }
@@ -34,7 +37,15 @@ export function patternInfo(store, pat) {
 export function clipInfo(c) {
   const out = { id: c.id, type: c.type, track: c.track, start: c.start, length: c.len, offset: c.offset || 0, mute: !!c.mute };
   if (c.type === 'pattern') out.pattern = c.pat;
-  else if (c.type === 'audio') { out.sample = c.sampleId; out.gain = c.gain ?? 1; } else out.automation = c.autoId;
+  else if (c.type === 'audio') {
+    out.sample = c.sampleId;
+    out.gain = c.gain ?? 1;
+    if (c.fadeIn) out.fadeIn = c.fadeIn;
+    if (c.fadeOut) out.fadeOut = c.fadeOut;
+    if (c.reverse) out.reverse = true;
+    if (c.stretch) out.stretch = c.stretch;
+    if (c.pitch) out.pitch = c.pitch;
+  } else out.automation = c.autoId;
   return out;
 }
 
@@ -45,6 +56,8 @@ export function automationInfo(store, a, withPoints = false) {
 export function mixerTrackInfo(store, i) {
   const m = store.project.mixer[i];
   const out = { track: i, name: m.name, vol: round(m.vol), pan: round(m.pan), mute: m.mute, solo: m.solo, color: m.color };
+  if (i > 0) out.toMaster = m.master !== false;
+  if (m.group) out.group = m.group;
   out.effects = m.fx.map((slot, k) => (slot ? { slot: k, type: slot.type, on: slot.on, params: slot.params } : null)).filter(Boolean);
   out.sends = Object.entries(m.sends).map(([to, level]) => ({ to: Number(to), level: round(level) }));
   out.channels = store.project.channels.filter((c) => c.mixer === i).map((c) => c.id);
@@ -53,7 +66,7 @@ export function mixerTrackInfo(store, i) {
 
 const isCustomMixer = (store, i) => {
   const m = store.project.mixer[i];
-  return i === 0 || m.name !== `Insert ${i}` || m.vol !== 0.8 || m.pan !== 0 || m.mute || m.solo || m.color || m.fx.some(Boolean) || Object.keys(m.sends).length
+  return i === 0 || m.name !== `Insert ${i}` || m.vol !== 0.8 || m.pan !== 0 || m.mute || m.solo || m.color || m.master === false || m.group || m.fx.some(Boolean) || Object.keys(m.sends).length
     || store.project.channels.some((c) => c.mixer === i) || store.project.playlist.tracks.some((t) => t.mixer === i);
 };
 
@@ -63,7 +76,7 @@ export function transportInfo(app) {
   const bst = t.formatBst(pos);
   return {
     playing: t.playing, positionSteps: round(pos), position: `${bst.bar}:${bst.beat}:${String(bst.tick).padStart(2, '0')}`,
-    seconds: round(pos * t.stepDur, 2), mode: t.mode, loopEnabled: t.loopEnabled, metronome: t.metronome,
+    seconds: round(t.secondsAt(pos), 2), mode: t.mode, loopEnabled: t.loopEnabled, metronome: t.metronome,
   };
 }
 
@@ -84,6 +97,8 @@ export function summarize(app) {
     filePath: store.filePath,
     unsavedChanges: store.dirty,
     bpm: p.bpm,
+    timeSig: p.timeSig,
+    stepsPerBar: store.barSteps,
     ...(p.song ? { song: p.song } : {}),
     swing: p.swing,
     masterPitch: p.masterPitch,

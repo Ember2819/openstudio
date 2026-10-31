@@ -1,10 +1,12 @@
 import { Emitter, COLORS, ROOT_NOTE, arrayBufferToBase64, base64ToArrayBuffer } from './util.js';
+import { validZones } from './audio/zones.js';
 import { defaultParams } from './audio/instruments.js';
 
 export const STEPS_PER_BEAT = 4;
-export const STEPS_PER_BAR = 16;
+export const STEPS_PER_BAR = 16; // in 4/4; a project's bar length is barSteps(project)
 export const MIXER_TRACKS = 126; // 0 = master, 1..125 inserts
 export const PLAYLIST_TRACKS = 125;
+const UNDO_BUDGET = 96 * 1024 * 1024; // characters kept in the undo history (~190 MB of UTF-16)
 
 const makeMixer = () =>
   Array.from({ length: MIXER_TRACKS }, (_, i) => ({
@@ -18,6 +20,12 @@ const makeMixer = () =>
     sends: {}, // destination track -> level (fader law)
   }));
 
+// Time signature: [beats per bar, beat unit]. A step is always a 16th note, so a beat is 16 / unit steps.
+export const TIME_SIG_UNITS = [2, 4, 8, 16];
+export const validTimeSig = (ts) => Array.isArray(ts) && Number.isInteger(ts[0]) && ts[0] >= 1 && ts[0] <= 32 && TIME_SIG_UNITS.includes(ts[1]);
+export const beatSteps = (proj) => 16 / (validTimeSig(proj?.timeSig) ? proj.timeSig[1] : 4);
+export const barSteps = (proj) => (validTimeSig(proj?.timeSig) ? proj.timeSig[0] : 4) * beatSteps(proj);
+
 const makeTracks = () => Array.from({ length: PLAYLIST_TRACKS }, (_, i) => ({ name: `Track ${i + 1}`, color: null, mute: false, mixer: 0 }));
 
 export function blankProject() {
@@ -25,6 +33,7 @@ export function blankProject() {
     version: 1,
     name: 'Untitled',
     bpm: 130,
+    timeSig: [4, 4],
     masterPitch: 0,
     mode: 'pattern',
     nextId: 1,
@@ -33,6 +42,8 @@ export function blankProject() {
     mixer: makeMixer(),
     playlist: { tracks: makeTracks(), clips: [] },
     automations: [],
+    markers: [], // time markers in the playlist: { id, step, name }
+    controllerLinks: [], // MIDI CC -> control (src/controllers.js)
     loop: null, // { start, end } in steps
     swing: 0,
     selected: { channel: null, pattern: null, mixer: 0 },
@@ -43,6 +54,7 @@ export function blankProject() {
 export class Store extends Emitter {
   constructor() {
     super();
+    this.rev = 0; // bumped on every event: lets caches (the tempo map) know the project may have changed
     this.project = blankProject();
     this.samples = new Map(); // sampleId -> { name, data: ArrayBuffer, buffer: AudioBuffer|null }
     this.undoStack = [];
@@ -53,6 +65,11 @@ export class Store extends Emitter {
   }
 
   uid() { return this.project.nextId++; }
+
+  emit(evt, data) {
+    this.rev++;
+    super.emit(evt, data);
+  }
 
   // ---------- project lifecycle ----------
   resetToDefault() {
@@ -84,7 +101,10 @@ export class Store extends Emitter {
     const snap = this.snapshot();
     // clicks that end up changing nothing (or double-clicks) would otherwise leave no-op undo steps
     if (this.undoStack[this.undoStack.length - 1] !== snap) this.undoStack.push(snap);
-    if (this.undoStack.length > 200) this.undoStack.shift();
+    // at most 200 steps, and at most UNDO_BUDGET characters: a big project's snapshot is several MB
+    let total = 0;
+    for (const x of this.undoStack) total += x.length;
+    while (this.undoStack.length > 200 || (total > UNDO_BUDGET && this.undoStack.length > 10)) total -= this.undoStack.shift().length;
     this.redoStack = [];
     this.dirty = true;
   }
@@ -111,15 +131,22 @@ export class Store extends Emitter {
     return JSON.stringify({ ...this.project, samples });
   }
 
-  load(text, filePath = null) {
+  /**
+   * Load a project from its JSON text. Samples come from the text (base64, as saved in .osp files) or, with
+   * `opts.samples` ([{ id, name, data: ArrayBuffer }]), as raw buffers (autosave recovery).
+   */
+  load(text, filePath = null, opts = {}) {
     const raw = JSON.parse(text);
     if (!raw || !Array.isArray(raw.channels) || !Array.isArray(raw.patterns)) throw new Error('Not an OpenStudio project');
     const { samples = {}, ...project } = raw;
+    const list = opts.samples
+      ? opts.samples.map((s) => [Number(s.id), s.name, s.data])
+      : Object.entries(samples).map(([id, s]) => [Number(id), s.name, base64ToArrayBuffer(s.data)]);
     const base = blankProject();
     this.project = { ...base, ...project, mixer: this._mergeMixer(base.mixer, project.mixer) };
-    this._normalizeLoaded(base, Object.keys(samples).map(Number));
+    this._normalizeLoaded(base, list.map(([id]) => id));
     this.samples.clear();
-    for (const [id, s] of Object.entries(samples)) this.samples.set(Number(id), { name: s.name, data: base64ToArrayBuffer(s.data), buffer: null });
+    for (const [id, name, data] of list) this.samples.set(id, { name, data, buffer: null });
     this.filePath = filePath;
     this.finishLoad();
   }
@@ -129,6 +156,9 @@ export class Store extends Emitter {
     const p = this.project;
     p.selected = { ...base.selected, ...(p.selected || {}) };
     p.automations = Array.isArray(p.automations) ? p.automations : [];
+    p.controllerLinks = (Array.isArray(p.controllerLinks) ? p.controllerLinks : []).filter((l) => l && Number.isInteger(l.cc) && l.target && typeof l.target.kind === 'string');
+    p.markers = (Array.isArray(p.markers) ? p.markers : []).filter((m) => m && Number.isFinite(m.step) && m.step >= 0)
+      .map((m) => ({ id: m.id, step: m.step, name: String(m.name ?? 'Marker') }));
     const pl = p.playlist && typeof p.playlist === 'object' ? p.playlist : {};
     const tracks = Array.isArray(pl.tracks) ? pl.tracks : [];
     p.playlist = {
@@ -151,6 +181,9 @@ export class Store extends Emitter {
       ch.color ||= COLORS[(ch.id * 5) % COLORS.length];
       ch.rootPitch ??= ROOT_NOTE;
       if (!(ch.mixer >= 0 && ch.mixer < MIXER_TRACKS)) ch.mixer = 0;
+      // sampler slices: sorted fractions starting at 0
+      if (ch.zones !== undefined && !(validZones(ch.zones) && ch.zones.every((z) => sampleIds.includes(z.sampleId)))) delete ch.zones;
+      if (ch.slices !== undefined && !(Array.isArray(ch.slices) && ch.slices.length && ch.slices.every((x, i) => Number.isFinite(x) && x >= 0 && x < 1 && (i === 0 || x > ch.slices[i - 1])))) delete ch.slices;
     }
     if (!p.patterns.length) this._addPattern();
     if (!this.pattern(p.selected.pattern)) p.selected.pattern = p.patterns[0].id;
@@ -163,9 +196,12 @@ export class Store extends Emitter {
     p.patterns.forEach((x) => seen(x.id));
     p.playlist.clips.forEach((c) => seen(c.id));
     p.automations.forEach((a) => seen(a.id));
+    p.markers.forEach((m) => seen(m.id));
     sampleIds.forEach(seen);
     p.nextId = Math.max(p.nextId || 1, maxId + 1);
+    for (const m of p.markers) if (!Number.isFinite(m.id)) m.id = p.nextId++;
     if (!Number.isFinite(p.bpm) || p.bpm <= 0) p.bpm = base.bpm;
+    if (!validTimeSig(p.timeSig)) p.timeSig = [4, 4];
   }
 
   _mergeMixer(base, saved) {
@@ -176,6 +212,7 @@ export class Store extends Emitter {
       const out = { ...b, ...m, fx: b.fx.map((_, k) => m.fx?.[k] ?? null), sends: m.sends ?? {} };
       if (!Number.isFinite(out.vol)) out.vol = b.vol;
       if (!Number.isFinite(out.pan)) out.pan = b.pan;
+      if (out.group !== undefined && !(i > 0 && Number.isInteger(out.group) && out.group >= 1 && out.group <= 8)) delete out.group;
       return out;
     });
   }
@@ -194,14 +231,19 @@ export class Store extends Emitter {
   patternSteps(pat) {
     let end = 0;
     for (const list of Object.values(pat.notes)) for (const n of list) end = Math.max(end, n.s + n.l);
-    return Math.max(pat.bars, Math.ceil(end / STEPS_PER_BAR - 1e-6)) * STEPS_PER_BAR;
+    const bar = barSteps(this.project);
+    return Math.max(pat.bars, Math.ceil(end / bar - 1e-6)) * bar;
   }
+
+  /** Steps in a bar / a beat of the project's time signature. */
+  get barSteps() { return barSteps(this.project); }
+  get beatSteps() { return beatSteps(this.project); }
 
   /** Grow the pattern if a note extends past its end (like FL's auto-extending patterns). */
   normalizePattern(pat) {
     let end = 0;
     for (const list of Object.values(pat.notes)) for (const n of list) end = Math.max(end, n.s + n.l);
-    pat.bars = Math.max(pat.bars, Math.ceil(end / STEPS_PER_BAR - 1e-6), 1);
+    pat.bars = Math.max(pat.bars, Math.ceil(end / barSteps(this.project) - 1e-6), 1);
   }
 
   // ---------- channels ----------
@@ -356,6 +398,13 @@ export class Store extends Emitter {
   // ---------- notes ----------
   addNote(pat, chId, note) {
     const n = { p: note.p, s: note.s, l: note.l, v: note.v ?? 0.78 };
+    // per-note extras survive copy / paste / duplicate
+    if (note.pan) n.pan = note.pan;
+    if (note.fine) n.fine = note.fine;
+    if (note.m) n.m = true;
+    if (note.mx) n.mx = note.mx;
+    if (note.my) n.my = note.my;
+    if (note.sl) n.sl = true;
     this.notesOf(pat, chId).push(n);
     this.normalizePattern(pat);
     return n;

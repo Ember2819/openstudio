@@ -2,7 +2,7 @@ import js from '@eslint/js';
 import globals from 'globals';
 
 export default [
-  { ignores: ['node_modules/', 'assets/'] },
+  { ignores: ['node_modules/', 'assets/', 'dist/', 'out/', 'release/'] }, // build output is gitignored too
   js.configs.recommended,
   {
     // renderer (ES modules in the browser)

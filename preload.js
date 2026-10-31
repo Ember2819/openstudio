@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // automated / screenshot runs (see main.js) must not be interrupted by the first-launch welcome (--welcome forces it)
 const testRun = process.argv.some((a) => a.startsWith('--screenshot=')) && !process.argv.includes('--welcome');
@@ -7,8 +7,25 @@ contextBridge.exposeInMainWorld('studioAPI', {
   testRun,
   saveProject: (opts) => ipcRenderer.invoke('project:save', opts),
   openProject: () => ipcRenderer.invoke('project:open'),
+  openProjectPath: (file) => ipcRenderer.invoke('project:openPath', file),
+  pathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
+  recent: {
+    list: () => ipcRenderer.invoke('recent:list'),
+    open: (file) => ipcRenderer.invoke('recent:open', file),
+    clear: () => ipcRenderer.invoke('recent:clear'),
+  },
   openSamples: () => ipcRenderer.invoke('sample:open'),
+  flpSamples: (paths) => ipcRenderer.invoke('flp:samples', paths),
   writeFile: (opts) => ipcRenderer.invoke('file:write', opts),
+  pickFolder: (opts) => ipcRenderer.invoke('dir:pick', opts),
+  library: {
+    folders: () => ipcRenderer.invoke('lib:folders'),
+    add: () => ipcRenderer.invoke('lib:add'),
+    remove: (p) => ipcRenderer.invoke('lib:remove', p),
+    list: (dir) => ipcRenderer.invoke('lib:list', dir),
+    read: (file) => ipcRenderer.invoke('lib:read', file),
+  },
+  writeInFolder: (opts) => ipcRenderer.invoke('dir:write', opts),
   readAsset: (rel) => ipcRenderer.invoke('asset:read', rel),
   devWrite: (file, data) => ipcRenderer.invoke('dev:write', file, data),
   updates: {

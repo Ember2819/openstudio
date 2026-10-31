@@ -73,6 +73,34 @@ test('set_steps takes a drum grid', async () => {
   assert.equal(app.store.currentPattern.bars, 3);
 });
 
+test('transform_notes: piano-roll tools (arpeggiate, strum, chop, scale, limit) and per-note pan / fine', async () => {
+  const app = makeApp();
+  const ch = app.store.project.channels[0].id;
+  await call(app, 'set_notes', { channel: ch, notes: [
+    { pitch: 'C5', start: 0, length: 8, pan: -0.5 }, { pitch: 'E5', start: 0, length: 8, fine: 20, modX: -0.4, modY: 0.3 }, { pitch: 'G5', start: 0, length: 8 },
+  ] });
+  const notesOf = () => app.store.currentPattern.notes[ch];
+  assert.equal(notesOf().find((n) => n.p === 60).pan, -0.5);
+  assert.deepEqual(['fine', 'mx', 'my'].map((k) => notesOf().find((n) => n.p === 64)[k]), [20, -0.4, 0.3]);
+  const seen = await call(app, 'get_pattern', { pattern: app.store.currentPattern.id });
+  assert.ok(JSON.stringify(seen).includes('"modX":-0.4'), 'the agent sees mod X');
+  await call(app, 'transform_notes', { channel: ch, op: 'arpeggiate', arp: { rate: 2, pattern: 'up', gate: 0.5 } });
+  assert.deepEqual(notesOf().map((n) => [n.p, n.s, n.l]).sort((x, y) => x[1] - y[1]), [[60, 0, 1], [64, 2, 1], [67, 4, 1], [60, 6, 1]]);
+  app.store.undo();
+  await call(app, 'transform_notes', { channel: ch, op: 'strum', strum: { spread: 1 } });
+  assert.deepEqual(notesOf().map((n) => n.s).sort(), [0, 0.5, 1]);
+  await call(app, 'transform_notes', { channel: ch, op: 'chop', grid: 4 });
+  assert.ok(notesOf().length > 3);
+  await call(app, 'set_notes', { channel: ch, notes: [{ pitch: 61, start: 0, length: 1 }, { pitch: 30, start: 1, length: 1 }] });
+  await call(app, 'transform_notes', { channel: ch, op: 'snap_to_scale', scale: { root: 'C', name: 'major' } });
+  assert.deepEqual(notesOf().map((n) => n.p).sort(), [29, 60]);
+  await call(app, 'transform_notes', { channel: ch, op: 'limit', range: { pitchMin: 'C4', pitchMax: 'C6' } });
+  assert.deepEqual(notesOf().map((n) => n.p).sort(), [53, 60]);
+  assert.match(await callFails(app, 'transform_notes', { channel: ch, op: 'snap_to_scale' }), /needs scale/);
+  const pat = await call(app, 'get_pattern', {});
+  assert.equal(pat.id, app.store.currentPattern.id);
+});
+
 test('transform_notes: transpose, quantize, legato, velocity, duplicate, bounds', async () => {
   const app = makeApp();
   const ch = (await call(app, 'add_channel', { type: 'synth' })).id;
@@ -181,6 +209,17 @@ test('mixer: levels, effects, sends, reset', async () => {
   const app = makeApp();
   await call(app, 'update_mixer_track', { track: 3, name: 'Drums', vol: 0.6, pan: 0.25, mute: true });
   assert.deepEqual([app.store.project.mixer[3].name, app.store.project.mixer[3].vol, app.store.project.mixer[3].mute], ['Drums', 0.6, true]);
+  let info = await call(app, 'update_mixer_track', { track: 3, toMaster: false });
+  assert.equal(app.store.project.mixer[3].master, false);
+  assert.equal(info.toMaster, false);
+  info = await call(app, 'update_mixer_track', { track: 3, toMaster: true });
+  assert.equal(info.toMaster, true);
+  assert.equal(app.store.project.mixer[3].master, undefined);
+  info = await call(app, 'update_mixer_track', { track: 3, group: 2 });
+  assert.equal(info.group, 2);
+  info = await call(app, 'update_mixer_track', { track: 3, group: 0 });
+  assert.equal(info.group, undefined);
+  assert.match(await callFails(app, 'update_mixer_track', { track: 0, group: 1 }), /master cannot be grouped/);
 
   let t = await call(app, 'set_effect', { track: 3, type: 'reverb', params: { mix: 0.5 } });
   assert.deepEqual(t.effects.map((e) => [e.slot, e.type, e.params.mix]), [[0, 'reverb', 0.5]]);
@@ -242,6 +281,61 @@ test('playlist: place, move, duplicate, make unique, remove', async () => {
   assert.match(await callFails(app, 'edit_clips', { action: 'remove' }), /either ids or track/);
 });
 
+test('slice_sample slices a sampler channel and writes the slices as notes', async () => {
+  const app = makeApp();
+  const id = app.store.addSample('loop.wav', new ArrayBuffer(8));
+  const ch = app.store._addChannel({ name: 'Loop', type: 'sampler', sampleId: id });
+  app.actions.slicesToPattern = (chId) => { app.calls.push(['slicesToPattern', chId]); return app.store.currentPattern; };
+  let r = await call(app, 'slice_sample', { channel: ch.id, mode: 'equal', count: 4, toPattern: true });
+  assert.deepEqual(r.slices, [0, 0.25, 0.5, 0.75]);
+  assert.ok(app.calls.some((c) => c[0] === 'slicesToPattern' && c[1] === ch.id));
+  r = await call(app, 'slice_sample', { channel: ch.id, mode: 'set', slices: [0.5, 0.25] });
+  assert.deepEqual(r.slices, [0, 0.25, 0.5]);
+  await call(app, 'slice_sample', { channel: ch.id, mode: 'clear' });
+  assert.equal(ch.slices, undefined);
+  app.store.undo();
+  assert.deepEqual(ch.slices ?? app.store.channel(ch.id).slices, [0, 0.25, 0.5]);
+  assert.match(await callFails(app, 'slice_sample', { channel: app.store.project.channels[0].id, mode: 'equal', count: 2 }), /Only sampler/);
+});
+
+test('markers, split_by_channel and audio clip fades', async () => {
+  const app = makeApp();
+  const { store } = app;
+  await call(app, 'markers', { action: 'add', step: 32, name: 'Chorus' });
+  await call(app, 'markers', { action: 'add', step: 0, name: 'Intro' });
+  let r = await call(app, 'markers', { action: 'list' });
+  assert.deepEqual(r.markers.map((m) => [m.name, m.step]), [['Intro', 0], ['Chorus', 32]]);
+  const chorus = r.markers[1].id;
+  await call(app, 'markers', { action: 'rename', id: chorus, name: 'Hook' });
+  r = await call(app, 'markers', { action: 'loop', id: r.markers[0].id });
+  assert.deepEqual(r.loop, { start: 0, end: 32 });
+  await call(app, 'markers', { action: 'jump', id: chorus });
+  assert.equal(app.transport.position(), 32);
+  await call(app, 'markers', { action: 'remove', id: chorus });
+  assert.equal(store.project.markers.length, 1);
+  store.load(store.serialize());
+  assert.equal(store.project.markers[0].name, 'Intro', 'markers are saved');
+
+  const [kick, clap] = store.project.channels;
+  await call(app, 'set_steps', { channel: kick.id, grid: 'x...x...x...x...' });
+  await call(app, 'set_steps', { channel: clap.id, grid: '....x.......x...' });
+  const placed = await call(app, 'add_clips', { clips: [{ type: 'pattern', pattern: store.currentPattern.id, track: 2, start: 0 }] });
+  await call(app, 'add_clips', { clips: [{ type: 'pattern', pattern: store.currentPattern.id, track: 3, start: 0 }] });
+  const split = await call(app, 'edit_clips', { ids: [placed.added[0].id], action: 'split_by_channel' });
+  assert.equal(split.added.length, 2);
+  assert.deepEqual(split.added.map((c) => c.track), [2, 4], 'the occupied track 3 is skipped');
+  const names = split.added.map((c) => store.pattern(c.pattern).name);
+  assert.ok(names[0].endsWith(kick.name) && names[1].endsWith(clap.name));
+  assert.equal(store.pattern(split.added[1].pattern).notes[kick.id], undefined);
+
+  const id = store.addSample('a.wav', new ArrayBuffer(8));
+  const audio = store.addClip({ type: 'audio', sampleId: id, track: 9, start: 0, len: 16 });
+  r = await call(app, 'update_clips', { clips: [{ id: audio.id, fadeIn: 4, fadeOut: 40, reverse: true }] });
+  assert.deepEqual([r.updated[0].fadeIn, r.updated[0].fadeOut, r.updated[0].reverse], [4, 16, true]);
+  r = await call(app, 'update_clips', { clips: [{ id: audio.id, fadeIn: 0, reverse: false }] });
+  assert.deepEqual([r.updated[0].fadeIn, r.updated[0].reverse], [undefined, undefined]);
+});
+
 test('audio clips take their length from the sample', async () => {
   const app = makeApp();
   const id = app.store.addSample('loop.wav', new ArrayBuffer(8));
@@ -273,6 +367,19 @@ test('automation: create with real values, read back, update, remove', async () 
   assert.match(await callFails(app, 'update_automation', { id: au.id, points: [{ step: 100, value: 1 }] }), /past the end/);
   assert.match(await callFails(app, 'create_automation', { target: { kind: 'fx', track: 9, slot: 3, key: 'mix' } }), /does not exist/);
   assert.match(await callFails(app, 'create_automation', { target: { kind: 'mixer', track: 1 } }), /need track, param/);
+
+  const tempo = await call(app, 'create_automation', { target: { kind: 'tempo' }, start: 0, points: [{ step: 0, value: 100 }, { step: 16, value: 160 }] });
+  assert.equal(tempo.name, 'Tempo');
+  assert.equal(tempo.points[1].value, 160);
+  app.store.project.mode = 'song';
+  assert.equal(Math.round(app.transport.tempo.bpm(8)), 130);
+  await call(app, 'remove_automation', { id: tempo.id });
+
+  const settings = await call(app, 'set_project', { timeSig: [3, 4] });
+  assert.deepEqual(settings.timeSig, [3, 4]);
+  assert.equal(app.store.barSteps, 12);
+  assert.match(await callFails(app, 'set_project', { timeSig: [3, 5] }), /timeSig/);
+  await call(app, 'set_project', { timeSig: [4, 4] });
 
   await call(app, 'remove_automation', { id: au.id });
   assert.equal(app.store.project.automations.length, 1);
@@ -344,7 +451,7 @@ test('catalog lookups', async () => {
   assert.ok(fx.effects.find((e) => e.type === 'reverb').params.some((p) => p.key === 'mix'));
   assert.ok((await call(app, 'list_catalog', { kind: 'channel_params' })).synth.some((p) => p.key === 'cutoff' && p.logarithmic));
   assert.ok((await call(app, 'list_catalog', { kind: 'drum_voices' })).voices.length >= 8);
-  assert.ok((await call(app, 'list_catalog', { kind: 'automation_targets' })).formats.length === 4);
+  assert.ok((await call(app, 'list_catalog', { kind: 'automation_targets' })).formats.length === 5);
 });
 
 test('ui tools: selection and windows', async () => {
@@ -368,4 +475,22 @@ test('preview_note plays through the engine without touching the project', async
   assert.deepEqual(r.played, [60, 64]);
   assert.equal(app.calls.filter((c) => c[0] === 'preview').length, 2);
   assert.equal(app.store.snapshot(), before);
+});
+
+test('set_zones maps samples across the keyboard', async () => {
+  const app = makeApp();
+  const a = app.store.addSample('Piano C4.wav', new ArrayBuffer(8));
+  const b = app.store.addSample('Piano C5.wav', new ArrayBuffer(8));
+  const c = app.store.addSample('Piano C5 soft.wav', new ArrayBuffer(8));
+  const ch = app.store._addChannel({ name: 'Piano', type: 'sampler', sampleId: a });
+  const r = await call(app, 'set_zones', { channel: ch.id, zones: [{ sample: a }, { sample: b, velocityMin: 0.5 }, { sample: c, velocityMax: 0.5 }] });
+  assert.deepEqual(ch.zones.map((z) => [z.sampleId, z.root, z.lo, z.hi]), [[a, 60, 0, 66], [b, 72, 67, 127], [c, 72, 67, 127]]);
+  assert.equal(r.zones.length, 3);
+  assert.equal(ch.zones[1].vlo, 0.5);
+  await call(app, 'set_zones', { channel: ch.id, zones: [{ sample: b, root: 'C6', lo: 'C3', hi: 'C9' }] });
+  assert.deepEqual(ch.zones.map((z) => [z.root, z.lo, z.hi]), [[72, 36, 108]], 'roots are in FL naming (C5 = 60)');
+  await call(app, 'set_zones', { channel: ch.id, clear: true });
+  assert.equal(ch.zones, undefined);
+  assert.match(await callFails(app, 'set_zones', { channel: app.store.project.channels[0].id, zones: [{ sample: a }] }), /sampler/);
+  assert.match(await callFails(app, 'set_zones', { channel: ch.id, zones: [{ sample: 99 }] }), /needs sample/);
 });

@@ -1,5 +1,7 @@
 import { COLOR, PITCH, bool, choice, int, num, obj, ref, str, arr } from '../schema.js';
-import { channelOf, checkParam, edit, fail, parsePitch, pickByName, round } from '../helpers.js';
+import { channelOf, checkParam, edit, fail, noteName, parsePitch, pickByName, round } from '../helpers.js';
+import { detectOnsets, equalSlices } from '../../audio/slicing.js';
+import { guessRoot, spreadZones, validZones } from '../../audio/zones.js';
 import { channelInfo } from '../describe.js';
 import { DRUM_KIT, PARAM_META, ENGINE_PRESETS, ENGINES, DRUM_VOICES, defaultParams } from '../../audio/instruments.js';
 import { ROLES } from '../music/styles.js';
@@ -68,7 +70,7 @@ export const tools = [
     title: 'Add channel',
     description: 'Add an instrument channel to the rack (like ADD → One more channel). type "instrument": a General MIDI sound (give instrument name, or program/bank). "drum_kit": a SoundFont drum kit (kit name or program), optionally one piece (name or key) to make a single-drum channel. Built-in generators, each with presets (list_catalog synth_presets): "synth" (subtractive: basses, leads, pads, stabs), "fm" (electric pianos, bells, mallets, bass), "organ" (drawbar organ), "pluck" (guitar, harp, koto, banjo, bass strings), "sfx" (risers, impacts, sweeps, textures). "drum": a synthesized drum voice (list_catalog drum_voices). "sampler": plays a sample (a sample id from import_sample, or a file path). Returns the new channel; its id is used everywhere else. The new channel becomes selected. To get a whole set of instruments for a style at once use setup_song.',
     inputSchema: obj({
-      type: choice(['instrument', 'drum_kit', 'synth', 'fm', 'organ', 'pluck', 'sfx', 'drum', 'sampler'], 'Kind of channel'),
+      type: choice(['instrument', 'drum_kit', 'synth', 'fm', 'organ', 'pluck', 'sfx', 'wavetable', 'drum', 'sampler'], 'Kind of channel'),
       name: str('Channel name (defaults to the instrument / piece / preset name)'),
       instrument: str('instrument: General MIDI sound name, e.g. "Grand Piano" (see list_catalog)'),
       bank: int('instrument: SoundFont bank (default 0)', { minimum: 0, maximum: 127 }),
@@ -104,7 +106,7 @@ export const tools = [
             : (() => { const pc = resolvePiece(kit, a.piece); return { name: pc.name, type: 'sf', bank: 128, program: kit.program, fixedKey: pc.key }; })();
           break;
         }
-        case 'synth': case 'fm': case 'organ': case 'pluck': case 'sfx': {
+        case 'synth': case 'fm': case 'organ': case 'pluck': case 'sfx': case 'wavetable': {
           const list = Object.values(ENGINE_PRESETS[a.type]).flat();
           const preset = a.preset === undefined ? (a.type === 'synth' ? ENGINE_PRESETS.synth.Leads[0] : null) : pickByName(list, a.preset, `${a.type} preset`);
           spec = { name: preset?.name ?? ENGINES[a.type].label, type: a.type, preset: preset?.params ?? null };
@@ -175,7 +177,7 @@ export const tools = [
         if (a.mixer !== undefined) ch.mixer = mixerIndex(a.mixer);
         if (a.role) ch.role = a.role;
         if (a.preset !== undefined) {
-          if (!ENGINE_PRESETS[ch.type]) fail('Only synth, fm, organ, pluck and sfx channels have presets');
+          if (!ENGINE_PRESETS[ch.type]) fail('Only synth, fm, organ, pluck, sfx and wavetable channels have presets');
           const p = pickByName(Object.values(ENGINE_PRESETS[ch.type]).flat(), a.preset, `${ch.type} preset`);
           ch.params = { ...defaultParams(ch.type), ...p.params };
           if (a.name === undefined) ch.name = p.name;
@@ -249,6 +251,101 @@ export const tools = [
       const pitches = (a.pitches ?? [60]).map(parsePitch);
       for (const p of pitches) app.engine.preview(ch, p, a.velocity ?? 0.8, a.seconds ?? 0.6);
       return { played: pitches, channel: ch.id };
+    },
+  },
+  {
+    name: 'slice_sample',
+    title: 'Slice sample',
+    description: 'Chop a sampler channel\'s sample into slices played from its root key up, like FL Studio\'s Slicex: "auto" cuts at the hits (sensitivity 0-1), "equal" into `count` parts, "set" uses your own `slices` (fractions 0-1, first 0), "clear" removes them. With toPattern the slices are written into the current pattern as notes that replay the loop in time (it then follows the project tempo).',
+    inputSchema: obj({
+      channel: ref('Sampler channel'),
+      mode: choice(['auto', 'equal', 'set', 'clear'], 'How to slice'),
+      sensitivity: num('auto: 0 (fewer slices) to 1 (more), default 0.5', { minimum: 0, maximum: 1 }),
+      count: int('equal: number of slices', { minimum: 1, maximum: 128 }),
+      slices: arr(num('', { minimum: 0, maximum: 1 }), 'set: slice starts as fractions of the sample'),
+      toPattern: bool('Write the slices into the current pattern'),
+    }, ['channel', 'mode']),
+    annotations: { ...WRITE, destructiveHint: true, title: 'Slice sample' },
+    async run(a, app) {
+      const { store } = app;
+      const ch = channelOf(store, a.channel);
+      if (ch.type !== 'sampler' || ch.sampleId == null) fail('Only sampler channels with a sample can be sliced');
+      let slices = null;
+      if (a.mode === 'auto') {
+        const buf = await app.engine.ensureSample(ch.sampleId);
+        if (!buf?.getChannelData) fail('The sample could not be decoded');
+        slices = detectOnsets(buf.getChannelData(0), buf.sampleRate, { sensitivity: a.sensitivity ?? 0.5 });
+      } else if (a.mode === 'equal') {
+        slices = equalSlices(a.count ?? fail('equal needs count'));
+      } else if (a.mode === 'set') {
+        const list = [...(a.slices ?? fail('set needs slices'))].sort((x, y) => x - y);
+        if (list[0] !== 0) list.unshift(0);
+        if (list.some((x, i) => x >= 1 || (i && x <= list[i - 1]))) fail('slices must be distinct fractions below 1');
+        slices = list;
+      }
+      edit(store, () => {
+        if (slices) ch.slices = slices; else delete ch.slices;
+        store.emit('channelParams', ch.id);
+        store.emit('channels');
+      });
+      if (a.toPattern && slices) {
+        if (!app.actions.slicesToPattern(ch.id)) fail('Could not write the slices into the pattern (is the sample decoded?)');
+      }
+      return { channel: ch.id, slices: (ch.slices ?? []).map((x) => round(x, 4)), keys: ch.slices ? `${noteName(ch.rootPitch ?? 60)} and up` : null };
+    },
+  },
+  {
+    name: 'set_zones',
+    title: 'Set sampler zones',
+    description: 'Make a sampler channel multi-sample (sampled pianos, strings, kits): each zone plays its own sample from its own root key over a key range, optionally only within a velocity range (layers). Leave root out to take it from the file name (checked against the detected pitch); leave lo / hi out and the ranges meet halfway between roots. Replaces the zones; clear removes them.',
+    inputSchema: obj({
+      channel: ref('Sampler channel'),
+      zones: arr(obj({
+        sample: int('Sample id from import_sample'),
+        path: str('…or an audio file to import'),
+        root: PITCH,
+        lo: PITCH,
+        hi: PITCH,
+        velocityMin: num('Lowest velocity 0-1 this zone plays', { minimum: 0, maximum: 1 }),
+        velocityMax: num('Highest velocity 0-1', { minimum: 0, maximum: 1 }),
+      }), 'The zones'),
+      clear: bool('Remove the zones (back to one sample)'),
+    }, ['channel']),
+    annotations: { ...WRITE, destructiveHint: true, title: 'Set sampler zones' },
+    async run(a, app) {
+      const { store } = app;
+      const ch = channelOf(store, a.channel);
+      if (ch.type !== 'sampler') fail('Zones are for sampler channels');
+      let zones = null;
+      if (!a.clear) {
+        if (!a.zones?.length) fail('Give zones, or clear');
+        zones = [];
+        for (const [i, z] of a.zones.entries()) {
+          const id = z.path ? (await importSample(app, z.path)).id : z.sample;
+          if (id === undefined || !store.samples.has(id)) fail(`zones[${i}] needs sample (an id from import_sample) or path`);
+          let root = z.root === undefined ? null : parsePitch(z.root);
+          if (root == null) {
+            const buf = await app.engine.ensureSample(id);
+            root = guessRoot(store.samples.get(id).name, buf?.getChannelData ? buf.getChannelData(0) : null, buf?.sampleRate ?? 44100, 60);
+          }
+          const zone = { sampleId: id, root };
+          if (z.lo !== undefined) zone.lo = parsePitch(z.lo);
+          if (z.hi !== undefined) zone.hi = parsePitch(z.hi);
+          if (z.velocityMin !== undefined) zone.vlo = z.velocityMin;
+          if (z.velocityMax !== undefined) zone.vhi = z.velocityMax;
+          zones.push(zone);
+        }
+        // ranges that weren't given meet halfway between roots
+        const spread = new Map(spreadZones(zones).map((z) => [z.sampleId + ':' + z.root, z]));
+        zones = zones.map((z) => { const s = spread.get(z.sampleId + ':' + z.root); return { ...z, lo: z.lo ?? s.lo, hi: z.hi ?? s.hi }; });
+        if (!validZones(zones)) fail('Each zone needs lo <= hi, keys 0-127 and velocities 0-1');
+      }
+      edit(store, () => {
+        if (zones) { ch.zones = zones; ch.sampleId = zones[0].sampleId; delete ch.slices; } else delete ch.zones;
+        store.emit('channelParams', ch.id);
+        store.emit('channels');
+      });
+      return { channel: ch.id, zones: (ch.zones ?? []).map((z) => ({ sample: z.sampleId, root: noteName(z.root), keys: `${noteName(z.lo)}-${noteName(z.hi)}`, ...(z.vlo != null || z.vhi != null ? { velocity: [z.vlo ?? 0, z.vhi ?? 1] } : {}) })) };
     },
   },
   {

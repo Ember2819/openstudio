@@ -3,6 +3,7 @@
 // On top of that it sizes things itself: each window type has a preferred orientation and
 // content-aware ideal size, and the focused column / window grows to its ideal while the rest
 // shrink towards their minimums — everything fits on screen when it can, and scrolls when it can't.
+import { keymap, COMMANDS } from '../keymap.js';
 import { Emitter, clamp } from '../util.js';
 import { isMenuOpen } from './menu.js';
 
@@ -27,6 +28,7 @@ export const PROFILES = {
   playlist: { name: 'Playlist', orient: 'wide', fill: true, min: [560, 260], ideal: (win, W, H) => ({ w: W, h: H }) },
   mixer: { name: 'Mixer', orient: 'wide', min: [520, 330], ideal: (win, W) => ({ w: Math.min(W, 1180), h: 500 }) },
   automation: { name: 'Automation', orient: 'wide', min: [420, 220], ideal: () => ({ w: 780, h: 340 }) },
+  effect: { name: 'Effect', orient: 'square', min: [380, 220], ideal: (win) => ({ w: 660, h: win.body.querySelector('.fxw-graph-wrap') ? 470 : 260 }) },
   settings: {
     name: 'Channel settings', orient: 'square', min: [420, 220],
     ideal: (win) => {
@@ -37,9 +39,9 @@ export const PROFILES = {
   },
 };
 /** Canonical order for auto-arrange: the pattern tools, the song, then mixing. */
-const ORDER = ['rack', 'piano', 'playlist', 'mixer', 'automation', 'settings'];
+const ORDER = ['rack', 'piano', 'playlist', 'mixer', 'effect', 'automation', 'settings'];
 /** Where a newly opened window belongs: next to (or stacked with) the window it works with. */
-const AFFINITY = { piano: 'rack', rack: 'piano', settings: 'rack', automation: 'playlist', mixer: 'playlist' };
+const AFFINITY = { piano: 'rack', rack: 'piano', settings: 'rack', automation: 'playlist', mixer: 'playlist', effect: 'mixer' };
 
 /** Generic ideals for a user-chosen orientation. */
 const ORIENT_IDEAL = {
@@ -88,20 +90,25 @@ export const ACTIONS = [
   ['show-help', 'Show key bindings', ['Mod+Shift+/']],
 ];
 
-/** App shortcuts that use modifiers, so the binding editor can flag clashes. */
-const APP_SHORTCUTS = {
-  'Alt+R': 'Piano roll: randomize velocity', 'Alt+Up': 'Channel rack: move channel up', 'Alt+Down': 'Channel rack: move channel down',
-  'Alt+F8': 'Browser', 'Ctrl+Z': 'Undo', 'Ctrl+Y': 'Redo', 'Ctrl+S': 'Save', 'Ctrl+O': 'Open', 'Ctrl+N': 'New project',
-  'Ctrl+R': 'Export audio', 'Ctrl+M': 'Metronome', 'Ctrl+L': 'Pattern / song mode', 'Ctrl+B': 'Duplicate', 'Ctrl+D': 'Deselect',
-  'Ctrl+A': 'Select all', 'Ctrl+C': 'Copy', 'Ctrl+X': 'Cut', 'Ctrl+V': 'Paste', 'Ctrl+Q': 'Quantize', 'Ctrl+,': 'Settings',
-  'Ctrl+Shift+S': 'Save as', 'Ctrl+Shift+P': 'New pattern', 'Ctrl+Up': 'Transpose octave', 'Ctrl+Down': 'Transpose octave',
+/** Shortcuts inside the editors (fixed), so the binding editor can flag clashes; the app-wide ones come from the keymap. */
+const WINDOW_SHORTCUTS = {
+  'Alt+R': 'Piano roll: randomize velocity', 'Alt+A': 'Piano roll: arpeggiate', 'Alt+S': 'Piano roll: strum', 'Alt+U': 'Piano roll: chop',
+  'Alt+Up': 'Channel rack: move channel up', 'Alt+Down': 'Channel rack: move channel down',
+  'Ctrl+B': 'Duplicate', 'Ctrl+D': 'Deselect', 'Ctrl+A': 'Select all', 'Ctrl+C': 'Copy', 'Ctrl+X': 'Cut', 'Ctrl+V': 'Paste',
+  'Ctrl+Q': 'Quantize', 'Ctrl+Up': 'Transpose octave', 'Ctrl+Down': 'Transpose octave',
 };
+/** What an app combo does, if anything ("Save", "Piano roll: strum" …). */
+export function appShortcut(combo) {
+  const id = keymap.map().get(combo);
+  if (id) return COMMANDS.find((c) => c[0] === id)[1];
+  return WINDOW_SHORTCUTS[combo] ?? null;
+}
 
 const CODE_KEYS = {
   ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', BracketLeft: '[', BracketRight: ']',
   Comma: ',', Period: '.', Minus: '-', Equal: '=', Slash: '/', Backslash: '\\', Semicolon: ';', Quote: '\'', Backquote: '`',
   Space: 'Space', Enter: 'Enter', Tab: 'Tab', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
-  Delete: 'Delete', Backspace: 'Backspace', Insert: 'Insert',
+  Delete: 'Delete', Backspace: 'Backspace', Insert: 'Insert', NumpadAdd: 'Num+', NumpadSubtract: 'Num-', Escape: 'Escape',
 };
 /** Physical key name of an event ("H", "1", "[", "Left", "F5"), or null for bare modifiers. */
 export function keyName(e) {
@@ -584,7 +591,7 @@ export class Tiler extends Emitter {
       for (const b of this.cfg.binds[id] || []) {
         const c = resolveCombo(b, this.cfg.mod);
         if (seen.has(c) && seen.get(c) !== id) out.set(`${id}|${b}`, `Also bound to “${ACTIONS.find((a) => a[0] === seen.get(c))[1]}”`);
-        else if (APP_SHORTCUTS[c]) out.set(`${id}|${b}`, `Replaces ${APP_SHORTCUTS[c]} in tiling mode`);
+        else if (appShortcut(c)) out.set(`${id}|${b}`, `Replaces ${appShortcut(c)} in tiling mode`);
         seen.set(c, id);
       }
     }

@@ -1,6 +1,7 @@
 import { Emitter } from '../util.js';
-import { STEPS_PER_BEAT, STEPS_PER_BAR } from '../state.js';
+import { STEPS_PER_BEAT, barSteps, beatSteps } from '../state.js';
 import { applyTarget, curveAt, normToValue, targetValid } from '../automation.js';
+import { TempoMap } from '../tempo.js';
 
 const LOOKAHEAD = 0.12; // seconds scheduled ahead
 const TICK_MS = 25;
@@ -14,7 +15,8 @@ const TICK_MS = 25;
  */
 export function scheduleStep(store, engine, step, time, sd, opts = {}) {
   const proj = store.project;
-  if (opts.metronome && step % STEPS_PER_BEAT === 0) engine.click(time, step % STEPS_PER_BAR === 0);
+  if (opts.metronome && step % beatSteps(proj) === 0) engine.click(time, step % barSteps(proj) === 0);
+  if (engine.stepped?.size) engine.stepEffects(step, time, sd);
 
   const anySolo = proj.channels.some((c) => c.solo);
   const swing = proj.swing || 0;
@@ -29,12 +31,16 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       if (ch.mute || (anySolo && !ch.solo)) continue;
       const notes = pat.notes[ch.id];
       if (!notes) continue;
+      let slides = null;
       for (const n of notes) {
         if (n.m) continue;
         if (n.s >= local - 1e-6 && n.s < local + 1 - 1e-6) {
-          engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd);
+          // slide notes bend what is sounding, so they go after the notes that start with them
+          if (n.sl) (slides ??= []).push(n);
+          else engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n.pan || n.fine || n.mx || n.my ? n : null);
         }
       }
+      if (slides) for (const n of slides) engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n);
     }
   };
 
@@ -46,6 +52,8 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
 
   for (const clip of proj.playlist.clips) {
     if (clip.mute || step < clip.start || step >= clip.start + clip.len) continue;
+    // opts.only: render just these clips (automation keeps applying)
+    if (opts.only && clip.type !== 'auto' && !opts.only.has(clip.id)) continue;
     const track = proj.playlist.tracks[clip.track];
     if (track?.mute) continue;
     const type = clip.type || 'pattern';
@@ -59,10 +67,20 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       const sample = store.samples.get(clip.sampleId);
       if (!sample?.buffer) continue;
       const into = step - clip.start;
-      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1);
+      // tempo-following clips: `stretch` keeps the pitch, `resample` speeds up / slows down like a record
+      // `pitch` (semitones) shifts without changing the length: time-stretch by 1/r, then play r times faster
+      const st = clip.stretch;
+      const speed = st?.bpm > 0 ? 60 / (sd * 4) / st.bpm : 1;
+      const r = clip.pitch ? 2 ** (clip.pitch / 12) : 1;
+      const timeSpeed = (st?.mode === 'stretch' ? speed : 1) / r;
+      let buffer = sample.buffer;
+      const rate = (st?.mode === 'resample' ? speed : 1) * r;
+      if (Math.abs(timeSpeed - 1) > 1e-4 && engine.stretchedBuffer) buffer = engine.stretchedBuffer(sample, timeSpeed);
+      engine.playAudio(buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd * rate, (clip.len - into) * sd, clip.gain ?? 1,
+        { reverse: clip.reverse, fadeIn: (clip.fadeIn || 0) * sd, fadeOut: (clip.fadeOut || 0) * sd, into: into * sd, rate });
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
-      if (!auto || !targetValid(store, auto.target)) continue;
+      if (!auto || auto.target?.kind === 'tempo' || !targetValid(store, auto.target)) continue; // tempo: see tempo.js
       const local = step - clip.start + (clip.offset || 0);
       const v0 = normToValue(store, auto.target, curveAt(auto.points, local));
       const v1 = normToValue(store, auto.target, curveAt(auto.points, local + 1));
@@ -81,6 +99,9 @@ export class Transport extends Emitter {
     this.engine = engine;
     this.playing = false;
     this.recording = false;
+    // what Record captures: notes from the keyboard / MIDI into the piano roll, audio input into the playlist
+    this.recordNotes = globalThis.localStorage?.getItem('openstudio.recordNotes') !== '0';
+    this.recordAudio = globalThis.localStorage?.getItem('openstudio.recordAudio') === '1';
     this.metronome = false;
     this.loopEnabled = false;
     this.jumped = true;
@@ -91,13 +112,18 @@ export class Transport extends Emitter {
     this.timer = null;
     this.queue = []; // {time, step} history for UI position
     this.openRecordNotes = new Map();
+    this.tempo = new TempoMap(store);
     // a new or loaded project stops playback; undo / redo keeps it going (the scheduler reads the project afresh on every step)
     store.on('project', (e) => { if (this.playing && !e?.history) this.stop(); });
   }
 
   get ctx() { return this.engine.ctx; }
   get bpm() { return this.store.project.bpm; }
+  /** Length of a step at the project tempo (seconds). With tempo automation use `tempo.stepDur(step)`. */
   get stepDur() { return 60 / this.bpm / STEPS_PER_BEAT; }
+
+  /** The tempo at the play position: follows tempo automation while the song plays. */
+  currentBpm() { return this.tempo.bpm(this.position()); }
   get mode() { return this.store.project.mode; }
 
   setMode(mode) {
@@ -118,6 +144,8 @@ export class Transport extends Emitter {
   setMetronome(on) { this.metronome = on; this.emit('change'); }
   setLoop(on) { this.loopEnabled = on; this.emit('change'); }
   setRecording(on) { this.recording = on; this.emit('change'); }
+  setRecordNotes(on) { this.recordNotes = on; globalThis.localStorage?.setItem('openstudio.recordNotes', on ? '1' : '0'); this.emit('change'); }
+  setRecordAudio(on) { this.recordAudio = on; globalThis.localStorage?.setItem('openstudio.recordAudio', on ? '1' : '0'); this.emit('change'); }
 
   // -------------------------------------------------------------- control
   play() {
@@ -159,7 +187,8 @@ export class Transport extends Emitter {
     if (this.mode === 'pattern') return this.store.patternSteps(this.store.currentPattern);
     const loop = this.store.project.loop;
     if (this.loopEnabled && loop) return loop.end;
-    return Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+    const bar = this.store.barSteps;
+    return Math.ceil(this.store.playlistEndStep() / bar) * bar;
   }
 
   stop() {
@@ -186,6 +215,7 @@ export class Transport extends Emitter {
       this.nextTime = this.ctx.currentTime + 0.03;
       this.queue = [];
       this.jumped = true;
+      this.emit('jump', { time: this.nextTime, step: this.nextStep });
     }
     this.emit('change');
   }
@@ -200,8 +230,8 @@ export class Transport extends Emitter {
     while (i > 0 && q[i].time > now) i--;
     if (i < 0 || q.length === 0) return this.resumeStep;
     const e = q[i];
-    if (e.time > now) return Math.max(0, e.step - (e.time - now) / this.stepDur);
-    return e.step + (now - e.time) / this.stepDur;
+    if (e.time > now) return Math.max(0, e.step - (e.time - now) / e.dur);
+    return e.step + (now - e.time) / e.dur;
   }
 
   /** Position within the current pattern (pattern mode wraps). */
@@ -223,22 +253,25 @@ export class Transport extends Emitter {
           if (this.nextStep >= loop.end) { this.nextStep = loop.start; this.jumped = true; }
         } else {
           // like FL Studio, the song wraps to the start once it runs past the last bar that has clips
-          const end = Math.ceil(this.store.playlistEndStep() / STEPS_PER_BAR) * STEPS_PER_BAR;
+          const end = this.lengthSteps;
           if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
         }
+        // where the song continues somewhere else (loop recording splits takes there)
+        if (this.jumped) this.emit('jump', { time: this.nextTime, step: this.nextStep });
       }
-      this._scheduleStep(this.nextStep, this.nextTime);
+      const dur = this.tempo.stepDur(this.nextStep);
+      this._scheduleStep(this.nextStep, this.nextTime, dur);
       this.jumped = false;
-      this.queue.push({ time: this.nextTime, step: this.nextStep });
-      this.nextTime += this.stepDur;
+      this.queue.push({ time: this.nextTime, step: this.nextStep, dur });
+      this.nextTime += dur;
       this.nextStep++;
     }
     const cutoff = this.ctx.currentTime - 1;
     while (this.queue.length > 2 && this.queue[1].time < cutoff) this.queue.shift();
   }
 
-  _scheduleStep(step, time) {
-    scheduleStep(this.store, this.engine, step, time, this.stepDur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
+  _scheduleStep(step, time, dur) {
+    scheduleStep(this.store, this.engine, step, time, dur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
   }
 
   // -------------------------------------------------------------- recording
@@ -258,7 +291,7 @@ export class Transport extends Emitter {
   }
 
   recordNoteOn(ch, pitch, vel) {
-    if (!this.recording || !this.playing) return;
+    if (!this.recording || !this.recordNotes || !this.playing) return;
     const at = this._recordPos();
     if (!at) return;
     const snapped = Math.round(at.pos * 4) / 4;
@@ -285,8 +318,11 @@ export class Transport extends Emitter {
   }
 
   // ---------------------------------------------------------------- format
+  /** Seconds from the song start to `step` (follows tempo automation). */
+  secondsAt(step) { return this.mode === 'song' ? this.tempo.timeAt(step) : step * this.stepDur; }
+
   formatTime(step) {
-    const sec = (step * this.stepDur);
+    const sec = this.secondsAt(step);
     const m = Math.floor(sec / 60);
     const s = Math.floor(sec % 60);
     const cs = Math.floor((sec * 100) % 100);
@@ -294,9 +330,11 @@ export class Transport extends Emitter {
   }
 
   formatBst(step) {
-    const bar = Math.floor(step / STEPS_PER_BAR) + 1;
-    const beat = Math.floor((step % STEPS_PER_BAR) / STEPS_PER_BEAT) + 1;
-    const tick = Math.floor(((step % STEPS_PER_BEAT) / STEPS_PER_BEAT) * 96);
+    const barLen = this.store.barSteps;
+    const beatLen = this.store.beatSteps;
+    const bar = Math.floor(step / barLen) + 1;
+    const beat = Math.floor((step % barLen) / beatLen) + 1;
+    const tick = Math.floor(((step % beatLen) / beatLen) * 96);
     return { bar, beat, tick };
   }
 }

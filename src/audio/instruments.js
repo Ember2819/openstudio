@@ -3,8 +3,9 @@ import { CUSTOM_WAVES } from './dsp.js';
 import { DRUMS, playDrum } from './drums.js';
 import { playSynth, playFm, playOrgan, playPluck, DRAWBARS } from './synths.js';
 import { playSfx, SFX, SFX_SOUNDS } from './sfx.js';
+import { playWavetable, WAVETABLES } from './wavetable.js';
 
-export { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx };
+export { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playWavetable };
 
 // ---------------------------------------------------------------------------
 // Parameter metadata (drives the channel settings window, defaults, automation and agent validation)
@@ -44,6 +45,8 @@ const SYNTH_PARAMS = [
   { key: 'vibrato', label: 'Vibrato', min: 0, max: 1, def: 0, fmt: pct },
   { key: 'wobble', label: 'Filter LFO', min: 0, max: 1, def: 0, fmt: pct },
   { key: 'lfoRate', label: 'LFO rate', min: 0.1, max: 12, def: 5, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+  { key: 'mono', label: 'Mono / legato', type: 'toggle', def: false },
+  { key: 'glide', label: 'Glide', min: 0, max: 1, def: 0, fmt: (v) => (v < 0.001 ? 'Off' : `${(v * 1000).toFixed(0)} ms`) },
 ];
 
 const FM_PARAMS = [
@@ -83,6 +86,24 @@ const PLUCK_PARAMS = [
   { key: 'release', label: 'Release', min: 0.02, max: 2, def: 0.35, log: true, fmt: ms },
 ];
 
+const WAVETABLE_PARAMS = [
+  { key: 'table', label: 'Wavetable', type: 'select', options: WAVETABLES, def: 'Basic shapes' },
+  { key: 'position', label: 'Position', min: 0, max: 1, def: 0.3, fmt: pct },
+  { key: 'posEnv', label: 'Position env', min: -1, max: 1, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%` },
+  { key: 'posDecay', label: 'Env decay', min: 0.01, max: 4, def: 0.6, log: true, fmt: ms },
+  { key: 'posLfo', label: 'Position LFO', min: 0, max: 1, def: 0, fmt: pct },
+  { key: 'lfoRate', label: 'LFO rate', min: 0.05, max: 12, def: 0.5, log: true, fmt: (v) => `${v.toFixed(2)} Hz` },
+  { key: 'unison', label: 'Unison', min: 1, max: 5, def: 1, step: 1, fmt: (v) => `${v} voice${v > 1 ? 's' : ''}` },
+  { key: 'spread', label: 'Spread', min: 0, max: 50, def: 12, fmt: (v) => `${v.toFixed(0)} ct` },
+  { key: 'cutoff', label: 'Cutoff', min: 60, max: 18000, def: 9000, log: true, fmt: hz },
+  { key: 'res', label: 'Resonance', min: 0.1, max: 18, def: 0.8, fmt: (v) => v.toFixed(1) },
+  { key: 'envAmt', label: 'Filter env', min: 0, max: 1, def: 0.1, fmt: pct },
+  { key: 'attack', label: 'Attack', min: 0.001, max: 3, def: 0.01, log: true, fmt: ms },
+  { key: 'decay', label: 'Decay', min: 0.01, max: 4, def: 0.4, log: true, fmt: ms },
+  { key: 'sustain', label: 'Sustain', min: 0, max: 1, def: 0.7, fmt: pct },
+  { key: 'release', label: 'Release', min: 0.005, max: 5, def: 0.3, log: true, fmt: ms },
+];
+
 const SFX_PARAMS = [
   { key: 'sound', label: 'Sound', type: 'select', options: SFX_SOUNDS, labels: Object.fromEntries(Object.entries(SFX).map(([k, v]) => [k, v.label])), def: 'riser' },
   { key: 'length', label: 'Length', min: 0.2, max: 16, def: 3, log: true, fmt: (v) => `${v.toFixed(2)} s` },
@@ -94,11 +115,15 @@ const SFX_PARAMS = [
 const SAMPLER_PARAMS = [
   { key: 'pitch', label: 'Pitch', min: -12, max: 12, def: 0, fmt: st },
   { key: 'start', label: 'Start', min: 0, max: 0.95, def: 0, fmt: pct },
+  { key: 'end', label: 'End', min: 0.05, max: 1, def: 1, fmt: pct },
   { key: 'attack', label: 'Attack', min: 0.001, max: 1, def: 0.002, log: true, fmt: ms },
   { key: 'release', label: 'Release', min: 0.005, max: 2, def: 0.05, log: true, fmt: ms },
   { key: 'cutoff', label: 'Cutoff', min: 100, max: 20000, def: 20000, log: true, fmt: hz },
   { key: 'gate', label: 'Gate', type: 'toggle', def: false },
   { key: 'reverse', label: 'Reverse', type: 'toggle', def: false },
+  { key: 'loop', label: 'Loop', type: 'toggle', def: false },
+  { key: 'loopStart', label: 'Loop start', min: 0, max: 0.99, def: 0, fmt: pct },
+  { key: 'loopEnd', label: 'Loop end', min: 0.01, max: 1, def: 1, fmt: pct },
 ];
 
 const SF_PARAMS = [
@@ -108,7 +133,7 @@ const SF_PARAMS = [
   { key: 'cutoff', label: 'Low-pass', min: 200, max: 20000, def: 20000, log: true, fmt: (v) => (v >= 19999 ? 'Open' : hz(v)) },
 ];
 
-export const PARAM_META = { drum: DRUM_PARAMS, synth: SYNTH_PARAMS, fm: FM_PARAMS, organ: ORGAN_PARAMS, pluck: PLUCK_PARAMS, sfx: SFX_PARAMS, sampler: SAMPLER_PARAMS, sf: SF_PARAMS };
+export const PARAM_META = { drum: DRUM_PARAMS, synth: SYNTH_PARAMS, fm: FM_PARAMS, organ: ORGAN_PARAMS, pluck: PLUCK_PARAMS, sfx: SFX_PARAMS, wavetable: WAVETABLE_PARAMS, sampler: SAMPLER_PARAMS, sf: SF_PARAMS };
 
 export function defaultParams(type) {
   const out = {};
@@ -123,6 +148,7 @@ export const ENGINES = {
   organ: { label: 'Organ', icon: 'keys', blurb: 'Tonewheel organ with drawbars, percussion and rotary speaker' },
   pluck: { label: 'Plucked String', icon: 'wave', blurb: 'Physically modelled strings: guitar, harp, koto, banjo, bass' },
   sfx: { label: 'Sound FX', icon: 'wave', blurb: 'Risers, impacts, sweeps, textures and one-shot effects' },
+  wavetable: { label: 'Wavetable', icon: 'synth', blurb: 'Morphing wavetables with a position envelope and LFO: evolving pads, vowels, digital leads' },
 };
 
 // ---------------------------------------------------------------------------
@@ -159,6 +185,7 @@ export const DRUM_KIT = [
 
 export const SYNTH_PRESETS = {
   Bass: [
+    { name: '808 Glide', params: { wave1: 'sine', wave2: 'triangle', mix: 0.12, detune: 0, octave2: 0, sub: 0.35, cutoff: 900, res: 0.7, envAmt: 0.15, drive: 0.35, attack: 0.002, decay: 1.2, sustain: 0.55, release: 0.25, mono: true, glide: 0.07 } },
     { name: 'Sub Bass', params: { wave1: 'sine', wave2: 'triangle', mix: 0.25, detune: 0, octave2: -1, cutoff: 1400, res: 0.7, envAmt: 0.1, attack: 0.005, decay: 0.2, sustain: 0.9, release: 0.1 } },
     { name: 'Saw Bass', params: { wave1: 'sawtooth', wave2: 'sawtooth', mix: 0.5, detune: 12, octave2: -1, cutoff: 900, res: 4, envAmt: 0.65, attack: 0.004, decay: 0.22, sustain: 0.35, release: 0.1 } },
     { name: 'Pluck Bass', params: { wave1: 'square', wave2: 'sawtooth', mix: 0.3, detune: 5, octave2: 0, cutoff: 700, res: 6, envAmt: 0.9, attack: 0.002, decay: 0.14, sustain: 0.0, release: 0.08 } },
@@ -312,17 +339,46 @@ export const SFX_PRESETS = {
 };
 
 /** Presets of every generator, by channel type. */
-export const ENGINE_PRESETS = { synth: SYNTH_PRESETS, fm: FM_PRESETS, organ: ORGAN_PRESETS, pluck: PLUCK_PRESETS, sfx: SFX_PRESETS };
+export const WAVETABLE_PRESETS = {
+  Pads: [
+    { name: 'Morph Pad', params: { table: 'Basic shapes', position: 0.1, posLfo: 0.35, lfoRate: 0.15, unison: 3, spread: 14, cutoff: 5000, attack: 0.6, decay: 1.5, sustain: 0.8, release: 1.8 } },
+    { name: 'Choir Vowels', params: { table: 'Vowels', position: 0, posLfo: 0.9, lfoRate: 0.2, unison: 3, spread: 9, cutoff: 6000, attack: 0.4, decay: 1, sustain: 0.85, release: 1.4 } },
+    { name: 'Glass Sweep', params: { table: 'Harmonic sweep', position: 0.1, posEnv: 0.8, posDecay: 3, unison: 2, spread: 8, cutoff: 12000, attack: 0.3, decay: 2, sustain: 0.7, release: 1.6 } },
+  ],
+  Leads: [
+    { name: 'Digital Lead', params: { table: 'Digital', position: 0.45, posEnv: 0.3, posDecay: 0.25, unison: 2, spread: 10, cutoff: 7000, res: 2, envAmt: 0.3, attack: 0.005, decay: 0.3, sustain: 0.75, release: 0.2 } },
+    { name: 'PWM Lead', params: { table: 'Pulse width', position: 0.3, posLfo: 0.5, lfoRate: 4.5, unison: 1, cutoff: 6000, attack: 0.005, decay: 0.2, sustain: 0.8, release: 0.15 } },
+  ],
+  Basses: [
+    { name: 'Growl Bass', params: { table: 'Vowels', position: 0.2, posLfo: 0.7, lfoRate: 2, unison: 1, cutoff: 2400, res: 3, envAmt: 0.2, attack: 0.003, decay: 0.3, sustain: 0.9, release: 0.1 } },
+    { name: 'Pluck Bass', params: { table: 'Basic shapes', position: 0.75, posEnv: -0.6, posDecay: 0.2, cutoff: 1800, envAmt: 0.6, attack: 0.002, decay: 0.25, sustain: 0.3, release: 0.1 } },
+  ],
+  Keys: [
+    { name: 'Drawbar Keys', params: { table: 'Organ drawbars', position: 0.55, unison: 2, spread: 5, cutoff: 9000, attack: 0.005, decay: 0.6, sustain: 0.6, release: 0.3 } },
+  ],
+};
+
+export const ENGINE_PRESETS = { synth: SYNTH_PRESETS, fm: FM_PRESETS, organ: ORGAN_PRESETS, pluck: PLUCK_PRESETS, sfx: SFX_PRESETS, wavetable: WAVETABLE_PRESETS };
 
 /** Flat list of { type, category, name, params } across all generators. */
 export const allEnginePresets = () => Object.entries(ENGINE_PRESETS).flatMap(([type, cats]) => Object.entries(cats).flatMap(([category, list]) => list.map((p) => ({ type, category, name: p.name, params: p.params }))));
 
 export const DRUM_VOICES = Object.keys(DRUMS);
 
-export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
+/**
+ * Play a sample. `root`: the key that plays it at its own pitch. With `slices` (fractions 0..1, see slicing.js) the
+ * keys from `root` up play slice 0, 1, 2 … at their own pitch, each up to the next slice (FL's Slicex). Otherwise
+ * `start` / `end` trim it and `loop` repeats loopStart..loopEnd while the note is held.
+ */
+export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p, root = ROOT_NOTE, slices = null) {
   const src = ctx.createBufferSource();
   src.buffer = p.reverse ? reversed(ctx, buffer) : buffer;
-  src.playbackRate.value = Math.pow(2, (pitch - ROOT_NOTE + semis + (p.pitch || 0)) / 12);
+  const sliced = Array.isArray(slices) && slices.length > 0;
+  const index = sliced ? pitch - root : -1;
+  if (sliced && (index < 0 || index >= slices.length)) return null; // no slice on this key
+  // fine pitch (fractional pitch / semis) still applies to slices; the key itself only picks the slice
+  const keyShift = sliced ? pitch - Math.round(pitch) : pitch - root;
+  src.playbackRate.value = Math.pow(2, (keyShift + semis + (p.pitch || 0)) / 12);
   const g = ctx.createGain();
   const peak = 0.25 + vel * 0.75;
   g.gain.setValueAtTime(0.0001, t);
@@ -336,11 +392,21 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
     node = lp;
   }
   node.connect(g).connect(dest);
-  const offset = buffer.duration * (p.start || 0);
-  const natural = (buffer.duration - offset) / src.playbackRate.value;
-  const voice = { nodes: [src], out: g, end: t + natural + 0.05, released: false };
+  const len = buffer.duration;
+  const from = sliced ? slices[index] : (p.start || 0);
+  const to = sliced ? (slices[index + 1] ?? 1) : Math.max(from + 0.001, p.end ?? 1);
+  const offset = len * from;
+  const looping = !sliced && p.loop && (p.loopEnd ?? 1) > (p.loopStart ?? 0);
+  if (looping) {
+    src.loop = true;
+    src.loopStart = len * (p.loopStart ?? 0);
+    src.loopEnd = len * (p.loopEnd ?? 1);
+  }
+  const gated = p.gate || looping; // a loop plays until the note ends
+  const natural = looping ? Infinity : (len * (to - from)) / src.playbackRate.value;
+  const voice = { nodes: [src], out: g, end: t + natural + 0.05, released: false, pitchParams: [src.detune] };
   voice.release = (when) => {
-    if (voice.released || !p.gate) return;
+    if (voice.released || !gated) return;
     voice.released = true;
     const rt = Math.max(when, t + 0.002);
     g.gain.cancelAndHoldAtTime(rt);
@@ -348,13 +414,19 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p) {
     src.stop(rt + p.release * 1.6 + 0.05);
     voice.end = rt + p.release * 1.6 + 0.05;
   };
-  src.start(t, offset);
-  if (p.gate && Number.isFinite(dur)) voice.release(t + dur);
+  if (looping) src.start(t, offset);
+  else {
+    src.start(t, offset, len * (to - from));
+    // a short fade at the end of a trimmed region or slice avoids a click
+    const stopAt = t + natural;
+    if (to < 1 && natural > 0.01) { g.gain.setValueAtTime(peak, Math.max(t + 0.001, stopAt - 0.004)); g.gain.linearRampToValueAtTime(0.0001, stopAt); }
+  }
+  if (gated && Number.isFinite(dur)) voice.release(t + dur);
   return voice;
 }
 
 const reverseCache = new WeakMap();
-function reversed(ctx, buffer) {
+export function reversed(ctx, buffer) {
   if (reverseCache.has(buffer)) return reverseCache.get(buffer);
   const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
   for (let c = 0; c < buffer.numberOfChannels; c++) {

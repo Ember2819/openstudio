@@ -6,13 +6,13 @@ import { STEPS_PER_BAR } from '../../state.js';
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
 const TARGET = obj({
-  kind: choice(['mixer', 'channel', 'fx', 'chparam'], 'What is automated'),
+  kind: choice(['mixer', 'channel', 'fx', 'chparam', 'tempo'], 'What is automated'),
   track: int('mixer / fx: mixer track', { minimum: 0, maximum: 125 }),
   slot: int('fx: effect slot', { minimum: 0, maximum: 9 }),
   id: int('channel / chparam: channel id'),
   param: choice(['vol', 'pan'], 'mixer / channel: which control'),
   key: str('fx / chparam: parameter key (list_catalog kinds "effects" and "channel_params")'),
-}, ['kind'], 'Automation target. mixer: {kind,track,param}; channel: {kind,id,param}; fx: {kind,track,slot,key}; chparam: {kind,id,key}. See list_catalog automation_targets.');
+}, ['kind'], 'Automation target. mixer: {kind,track,param}; channel: {kind,id,param}; fx: {kind,track,slot,key}; chparam: {kind,id,key}; tempo: {kind} (40-240 BPM; the song keeps the last automated tempo after a clip ends). See list_catalog automation_targets.');
 
 const POINT = obj({
   step: num('Position in steps from the start of the clip', { minimum: 0 }),
@@ -28,6 +28,7 @@ function checkTarget(store, t) {
     case 'mixer': need('track', 'param'); mixerTrackOf(store, t.track); clean = { kind: 'mixer', track: t.track, param: t.param }; break;
     case 'channel': need('id', 'param'); channelOf(store, t.id); clean = { kind: 'channel', id: t.id, param: t.param }; break;
     case 'fx': need('track', 'slot', 'key'); clean = { kind: 'fx', track: t.track, slot: t.slot, key: t.key }; break;
+    case 'tempo': clean = { kind: 'tempo' }; break;
     default: need('id', 'key'); clean = { kind: 'chparam', id: t.id, key: t.key };
   }
   if (!targetValid(store, clean)) fail(`That ${clean.kind} target does not exist or is not automatable (for fx: is there an effect in that slot, and is the key right?)`);

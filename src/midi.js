@@ -1,3 +1,5 @@
+import { handleCC } from './controllers.js';
+
 /** Web MIDI input: every connected device plays the selected channel (and records when armed). */
 export async function initMidi(app) {
   const state = { access: null, enabled: new Map(), error: null };
@@ -17,6 +19,8 @@ export async function initMidi(app) {
         if (!state.enabled.get(input.id)) return;
         const [status, a, b] = msg.data;
         const cmd = status & 0xf0;
+        // a CC that is linked to a control (or being learned) drives that control
+        if (cmd === 0xb0 && handleCC(app, status & 0x0f, a, b)) return;
         const key = `midi:${input.id}:${a}`;
         if (cmd === 0x90 && b > 0) app.input.noteOn(key, a, b / 127);
         else if (cmd === 0x80 || (cmd === 0x90 && b === 0)) app.input.noteOff(key);

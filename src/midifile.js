@@ -1,4 +1,6 @@
 // Standard MIDI File (type 1) writer.
+import { validTimeSig } from './state.js';
+import { TempoMap } from './tempo.js';
 
 const PPQ = 96;
 const TICKS_PER_STEP = PPQ / 4;
@@ -18,12 +20,12 @@ function chunk(id, data) {
   return [...text(id), ...u32(data.length), ...data];
 }
 
-/** Notes of one channel across the song (or the current pattern), in steps. */
+/** Notes of one channel across the song (or the current pattern), in steps. Muted and slide notes are left out. */
 function collectNotes(store, ch, song) {
   const out = [];
   const proj = store.project;
   if (!song) {
-    for (const n of store.currentPattern.notes[ch.id] || []) out.push({ s: n.s, l: n.l, p: n.p, v: n.v });
+    for (const n of store.currentPattern.notes[ch.id] || []) if (!n.m && !n.sl) out.push({ s: n.s, l: n.l, p: n.p, v: n.v });
     return out;
   }
   for (const clip of proj.playlist.clips) {
@@ -35,6 +37,7 @@ function collectNotes(store, ch, song) {
     const loops = Math.ceil((clip.len + clip.offset) / len) + 1;
     for (let k = 0; k < loops; k++) {
       for (const n of list) {
+        if (n.m || n.sl) continue; // muted notes don't sound; slide notes only bend others
         const t = n.s - clip.offset + k * len;
         if (t < 0 || t >= clip.len) continue;
         out.push({ s: clip.start + t, l: Math.min(n.l, clip.len - t), p: n.p, v: n.v });
@@ -48,13 +51,30 @@ export function buildMidi(store, { song }) {
   const proj = store.project;
   const tracks = [];
 
-  const tempo = Math.round(60000000 / proj.bpm);
-  tracks.push(chunk('MTrk', [
+  const tempoEvent = (bpm) => { const us = Math.round(60000000 / bpm); return [0xff, 0x51, 0x03, (us >> 16) & 255, (us >> 8) & 255, us & 255]; };
+  const [num, den] = validTimeSig(proj.timeSig) ? proj.timeSig : [4, 4];
+  const conductor = [
     0, ...metaText(0x03, proj.name),
-    0, 0xff, 0x51, 0x03, (tempo >> 16) & 255, (tempo >> 8) & 255, tempo & 255,
-    0, 0xff, 0x58, 0x04, 4, 2, 24, 8,
-    0, 0xff, 0x2f, 0x00,
-  ]));
+    0, ...tempoEvent(proj.bpm),
+    0, 0xff, 0x58, 0x04, num, Math.log2(den), 24, 8,
+  ];
+  // tempo automation becomes tempo changes (one per step where the tempo moves)
+  const map = new TempoMap(store);
+  if (song && map.varies) {
+    let last = proj.bpm;
+    let lastTick = 0;
+    const end = store.playlistEndStep();
+    for (let step = 0; step < end; step++) {
+      const bpm = Math.round(map.bpm(step) * 1000) / 1000;
+      if (Math.abs(bpm - last) < 0.001) continue;
+      const tick = step * TICKS_PER_STEP;
+      conductor.push(...vlq(tick - lastTick), ...tempoEvent(bpm));
+      last = bpm;
+      lastTick = tick;
+    }
+  }
+  conductor.push(0, 0xff, 0x2f, 0x00);
+  tracks.push(chunk('MTrk', conductor));
 
   let nextChannel = 0;
   for (const ch of proj.channels) {

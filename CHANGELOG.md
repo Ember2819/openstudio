@@ -5,6 +5,122 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+### Performance
+- Undo history is capped by memory (~190 MB) as well as by steps, so big projects can't exhaust memory.
+- Autosave stores samples as raw buffers instead of re-encoding every sample to base64 every 30 seconds.
+
+### Fixed
+- Dropping a file on a part of the window that doesn't take it no longer navigates the app away (losing the session);
+  links open in the web browser.
+- The master's safety limiter added ~1.1 dB of hidden gain to everything; playback and exports now match the master
+  fader (about 1 dB quieter than before).
+- The Compressor added up to ~10 dB of hidden gain (Web Audio's automatic makeup) on top of its Makeup knob; it is now
+  unity below the threshold and Makeup is the real makeup. Projects that relied on it will play quieter — raise
+  Makeup. The Limiter now holds its ceiling exactly instead of overshooting by up to 1 dB.
+- Duplicating, copying and pasting notes keeps their mute state (and the new per-note pan and fine pitch).
+- MIDI export left muted notes in.
+- Mixer track names changed by an agent or by undo didn't show on the strip until the mixer was rebuilt.
+
+### Added
+- **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
+  velocity, per-note pan and fine pitch), the playlist arrangement with track names, colours and muted tracks, tempo, and
+  the mixer (insert names, colours, faders, pan, routing and recognisable effects). Layer channels play their children.
+  FL-only plugins get a built-in stand-in chosen from the plugin and channel name (3x Osc → synth, Sytrus → FM, a "Pad"
+  VST → a pad sound, "Kick" → the kick voice …); samples are found beside the project or in the FL Studio install, and
+  audio clips whose file is missing are played by the stand-in. A report lists what was substituted. Agents can do the
+  same with `open_project`.
+- Notes can carry their own **pan** and **fine pitch** (cents).
+- **Mod X / Mod Y** per note (event-lane choices in the piano roll): X moves the instrument's filter cutoff up to four
+  octaves either way, Y its resonance; instruments without a filter get a per-note low-pass. Imported from FL projects.
+- **Slide notes** (the slide button in the piano roll, or Tools → Toggle slide): instead of playing, a slide note
+  glides the notes already sounding on its channel to its pitch over its length — chords keep their shape. Works on the
+  synth, FM, organ, wavetable, plucked string, sampler and SoundFont instruments; FL slide notes import as slide notes.
+- **Tempo automation**: right-click the tempo display → Create automation clip (or an agent's `create_automation` with
+  target `{ kind: "tempo" }`). Playback, export, the song clock and the position slider all follow the tempo curve, and
+  the tempo display shows the current tempo while the song plays. After a tempo clip ends the song keeps its last tempo.
+- **Time signatures** (2/4, 3/4, 5/4, 6/8, 7/8, 12/8 … any n/2, n/4, n/8, n/16): the box beside the snap selector in the
+  toolbar, or `set_project` `timeSig`. Bars, beats, grid lines, rulers, snapping, the bar:beat clock, the metronome,
+  channel-rack pad groups and pattern lengths follow it; MIDI files carry it both ways, as do FL Studio projects.
+  Changing it keeps every note where it is.
+- **Piano-roll tools** (Tools menu): Arpeggiate (Alt+A: up, down, up-down, random; rate, gate, octaves), Strum (Alt+S),
+  Chop (Alt+U), Flam, Articulate (staccato / short / tenuto), Snap pitches to scale, Limit to range, velocity fade
+  in / out. Agents get the same through `transform_notes`.
+- The piano roll's event lane switches between **Velocity, Pan and Fine pitch** (click its label).
+- **Audio recording**: arm Record with Options → Record → "Audio into the playlist" (or right-click the record button),
+  press Play, and the take lands in the playlist as an audio clip where you started, on a free track named "Audio".
+  Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
+  Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
+  becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
+- **Accessibility**: knobs and mixer faders are focusable sliders (arrows, Shift for fine steps, Page Up / Down,
+  Home / End, Delete to reset) that screen readers announce with their value; menus work from the keyboard (arrows,
+  Right / Left for submenus, Enter); icon buttons, windows, editors and dialogs are named for assistive tech; dialogs
+  take keyboard focus; the system's "reduce motion" setting turns animations off.
+- **Keyboard shortcuts you can change**: Settings → Keys lists every app-wide command (transport, file, windows,
+  patterns …) with its keys; add, remove or reset them, with clashes flagged. Menus and Help → Keyboard shortcuts show
+  your keys. New bindable commands without a default: Record, Loop, Export MP3.
+- **Mixer groups**: right-click a track → Group → 1-8. Grouped faders move together (by the same amount), and mute
+  and solo switch the whole group; hold Alt to adjust one track alone. Agents: `update_mixer_track` `group`.
+- **Pitch shifter** (±24 semitones and cents, adjustable grain), **pitch correction** (snaps a voice to the nearest
+  note of a key and scale; speed from natural to the robotic hard-tune) and a 16-band **vocoder** (put it on the synth,
+  pick the voice's mixer track as the modulator; formant shift, sibilance, release).
+- **Sampler zones (multi-sample)**: Zones → "Add samples as zones…" maps several samples across the keyboard, each
+  played from its own root key — the root is read from the file name ("Piano C4.wav") with its octave checked against
+  the detected pitch, and key ranges meet halfway between roots. Right-click a zone on the key map to change its root,
+  make it a soft / hard velocity layer, or remove it. Agents: `set_zones`.
+- **Sampler**: root note, end point and a loop region (all draggable on the waveform), and **slicing** like FL Studio's
+  Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
+  each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
+  Agents get `slice_sample`.
+- **FLAC export** (File → Export audio (FLAC, lossless)…): about half the size of WAV, bit-identical audio. Agents
+  can write `.flac` from `render_audio`.
+- **MP3 export** (File → Export audio (MP3) → 320 / 256 / 192 kbps): a built-in encoder (no dependencies), with a
+  gapless header so players trim the codec delay and the file is exactly as long as the song. Agents can write `.mp3`
+  from `render_audio`.
+- **File → Open recent**: the last 12 projects you opened or saved (also FL Studio projects); missing files are hidden.
+- **Sample folders in the browser**: add the folders where your samples live (Browser → Sample folders → Add a
+  folder…), browse them, click a file to hear it, double-click to make a sampler channel, or drag it into the playlist
+  (an audio clip) or the channel rack (a new sampler, or onto a sampler to swap its sample). The app can only read
+  audio files inside folders you added.
+- The synth has **Mono / legato** and **Glide** (portamento): overlapping notes slide into each other without
+  retriggering — 808 glides — with a new "808 Glide" preset.
+- **Link to controller** (MIDI learn): right-click any knob, fader, effect parameter or the tempo → "Link to
+  controller…", then move a knob or fader on your MIDI controller. Links are saved with the project, each gesture is
+  one undo step, and Options → MIDI controller links lists and removes them.
+- Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
+  track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **Input monitoring**: hear your microphone or instrument through a mixer track (its effects and fader) — Options →
+  Audio input → Monitor through the selected mixer track; works with or without recording.
+- Audio clips can be **pitch-shifted** in semitones without changing their length (right-click → Pitch…).
+- **Audio clips can follow the project tempo** (right-click → Follow the project tempo): *Stretch* keeps the pitch
+  (WSOLA time-stretching), *Resample* speeds up and pitches up like a record. The loop's own tempo is guessed from
+  its length; tempo automation is followed too. Agents: `update_clips` `stretch`.
+- **Drop files anywhere**: a project (.osp or FL Studio .flp) opens, a MIDI file is imported, audio becomes sampler
+  channels. Dropping a MIDI file on the piano roll writes its notes into the channel being edited, where you drop it.
+- **File → New from template**: twelve styles (house, techno, trance, trap, hip-hop, lo-fi, pop, rock, drum & bass,
+  synthwave, funk, ambient), each with a matching set of instruments on their own mixer tracks, reverb and delay
+  buses, a master chain, tempo and swing.
+- **Render to audio clip** (right-click pattern or audio clips): renders them, through their mixer tracks, into one
+  audio clip and mutes the originals — FL Studio's consolidate / freeze. Agents: `edit_clips` render_to_audio.
+- **Wavetable synth**: six morphing tables (basic shapes, pulse width, harmonic sweep, vowels, digital, organ drawbars)
+  with a position envelope and LFO, unison and a filter, plus 8 presets (Morph Pad, Choir Vowels, Growl Bass …).
+- **Volume shaper**: tempo-synced pumps and gates (Pump 1/4 and 1/2, Gate 1/8 and 1/16, Offbeat, Trance 3+3+2,
+  Stutter 1/32) with depth and smoothing — locked to the song by the scheduler, in playback and export alike.
+- **Sidechain compressor**: duck a track from another mixer track's output (the kick pumping the bass and pads):
+  pick the key input in its effect window; threshold, ratio, maximum reduction and release. The **Gate** now has a
+  real envelope follower (instant open, hold, release) instead of a smoothed average.
+- **Playlist**: named **time markers** (right-click the ruler: add, jump to, loop between markers; click a marker to
+  jump, double-click to rename), **Split by channel** for pattern clips, and audio-clip **gain, fade in / out and
+  reverse** (right-click an audio clip). Agents: `markers`, `edit_clips` split_by_channel, `update_clips` fades.
+- **Export stems** (File menu, Ctrl+Shift+R): one WAV per used mixer track (post-fader) plus the master, into a folder
+  you pick — FL Studio's "split mixer tracks". Rendered in one pass for up to 15 tracks. Agents: `export_stems`.
+- **Effect windows**: clicking an effect in the mixer opens its editor in its own window (like FL Studio's plugin
+  windows), with a power switch and Reset.
+- **New effects**: a 7-band **Parametric EQ** with a response graph you drag directly (wheel = Q, double-click = reset)
+  over a live spectrum; a **Spectrum analyser**; a **Gate**; a 3-band **Multiband compressor**; and a **ping-pong**
+  mode for the Delay.
+- Exported MIDI files include tempo automation as tempo changes.
+- Mixer inserts can be taken **off the master** (Sends → "→ Master"), as in FL Studio, so a track can feed a bus only.
+
 ## [0.5.0]
 
 ### Changed

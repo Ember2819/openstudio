@@ -1,9 +1,10 @@
-import { bool, choice, int, maybe, num, obj, str } from '../schema.js';
+import { arr, bool, choice, int, maybe, num, obj, str } from '../schema.js';
 import { edit, fail } from '../helpers.js';
 import { summarize, transportInfo } from '../describe.js';
 import { importMidi, parseMidi } from '../../midiimport.js';
 import { buildMidi } from '../../midifile.js';
-import { STEPS_PER_BAR } from '../../state.js';
+import { parseFlp, importFlp, flpSamplePaths } from '../../flp.js';
+import { STEPS_PER_BAR, validTimeSig } from '../../state.js';
 
 const RO = { readOnlyHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -35,6 +36,28 @@ async function writeProject(app, path) {
   return saved;
 }
 
+async function openFlp(app, path) {
+  let flp;
+  try { flp = parseFlp(await app.files.read(path)); } catch (err) { fail(`Could not open ${path}: ${err.message}`); }
+  const dir = path.replace(/[\\/][^\\/]*$/, '');
+  const samples = new Map();
+  for (const ref of flpSamplePaths(flp)) {
+    const base = ref.split(/[\\/]/).pop();
+    for (const candidate of [ref, `${dir}/${base}`, `${dir}/Samples/${base}`]) {
+      if (candidate.includes('%')) continue;
+      try { samples.set(ref, { name: base, data: await app.files.read(candidate) }); break; } catch { /* try the next place */ }
+    }
+  }
+  app.transport.stop();
+  const report = importFlp(app.store, flp, { name: path.split(/[\\/]/).pop().replace(/\.flp$/i, ''), samples });
+  app.store.filePath = null;
+  app.store.finishLoad();
+  app.store.dirty = true;
+  app.autosave?.discard();
+  setTitle(app);
+  return { ...summarize(app), imported: { flVersion: flp.version, ...report } };
+}
+
 export const tools = [
   {
     name: 'get_project',
@@ -51,6 +74,7 @@ export const tools = [
     inputSchema: obj({
       name: str('Project name'),
       bpm: num('Tempo in beats per minute', { minimum: 10, maximum: 522 }),
+      timeSig: arr(int('', { minimum: 1, maximum: 32 }), 'Time signature [beats per bar, beat unit (2, 4, 8 or 16)], e.g. [3, 4] or [6, 8]. A bar is beats × 16 / unit steps. The composing tools (compose, build_song) write 4/4.', { minItems: 2, maxItems: 2 }),
       swing: num('Swing amount 0-1 (shifts every second step)', { minimum: 0, maximum: 1 }),
       masterPitch: int('Master transposition in semitones', { minimum: -12, maximum: 12 }),
       mode: choice(['pattern', 'song'], '"pattern" loops the selected pattern, "song" plays the playlist'),
@@ -63,9 +87,16 @@ export const tools = [
       const { store, transport } = app;
       const p = store.project;
       if (a.loop && !(a.loop.end > a.loop.start)) fail('loop.end must be greater than loop.start');
+      if (a.timeSig && !validTimeSig(a.timeSig)) fail('timeSig must be [1-32, 2|4|8|16]');
       edit(store, () => {
         if (a.name !== undefined) { p.name = a.name.trim() || p.name; store.emit('patterns'); setTitle(app); }
         if (a.bpm !== undefined) transport.setBpm(a.bpm);
+        if (a.timeSig !== undefined) {
+          const lens = new Map(p.patterns.map((pat) => [pat, store.patternSteps(pat)]));
+          p.timeSig = [a.timeSig[0], a.timeSig[1]];
+          for (const [pat, len] of lens) pat.bars = Math.max(1, Math.ceil(len / store.barSteps - 1e-6));
+          store.emit('patterns');
+        }
         if (a.swing !== undefined) p.swing = a.swing;
         if (a.masterPitch !== undefined) p.masterPitch = a.masterPitch;
         if (a.mode !== undefined) transport.setMode(a.mode);
@@ -74,7 +105,7 @@ export const tools = [
       if (a.loopEnabled !== undefined) transport.setLoop(a.loopEnabled);
       if (a.metronome !== undefined) transport.setMetronome(a.metronome);
       store.emit('settings');
-      return { name: p.name, bpm: p.bpm, swing: p.swing, masterPitch: p.masterPitch, mode: p.mode, loop: p.loop, loopEnabled: transport.loopEnabled, metronome: transport.metronome };
+      return { name: p.name, bpm: p.bpm, timeSig: p.timeSig, swing: p.swing, masterPitch: p.masterPitch, mode: p.mode, loop: p.loop, loopEnabled: transport.loopEnabled, metronome: transport.metronome };
     },
   },
   {
@@ -96,11 +127,12 @@ export const tools = [
   {
     name: 'open_project',
     title: 'Open project',
-    description: 'Open an .osp project file from an absolute path. Refuses while there are unsaved changes unless force is true.',
-    inputSchema: obj({ path: str('Absolute path of the .osp file'), force: bool('Discard unsaved changes') }, ['path']),
+    description: 'Open an .osp project file from an absolute path, or import an FL Studio .flp project (patterns, notes, playlist, channels, mixer; FL plugins get built-in stand-ins, samples are looked for beside the project). Refuses while there are unsaved changes unless force is true.',
+    inputSchema: obj({ path: str('Absolute path of the .osp or .flp file'), force: bool('Discard unsaved changes') }, ['path']),
     annotations: { ...WRITE, destructiveHint: true, title: 'Open project' },
     async run(a, app) {
       guardUnsaved(app.store, a.force, 'open another project');
+      if (/\.flp$/i.test(a.path)) return openFlp(app, a.path);
       const text = new TextDecoder().decode(await app.files.read(a.path));
       app.transport.stop();
       try { app.store.load(text, a.path); } catch (err) { fail(`Could not open ${a.path}: ${err.message}`); }

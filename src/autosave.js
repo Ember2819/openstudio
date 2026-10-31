@@ -44,7 +44,9 @@ export function installAutosave(app) {
     if (snap === last) return;
     busy = true;
     try {
-      await write({ time: Date.now(), name: store.project.name, filePath: store.filePath, text: store.serialize() });
+      // samples go in as raw ArrayBuffers (IndexedDB stores them as they are): no base64 of every sample each time
+      const samples = [...store.samples].map(([id, s]) => ({ id, name: s.name, data: s.data }));
+      await write({ time: Date.now(), name: store.project.name, filePath: store.filePath, project: snap, samples });
       last = snap;
     } catch (err) {
       console.warn('Autosave failed', err);
@@ -62,7 +64,7 @@ export function installAutosave(app) {
   async function offerRecovery() {
     let rec;
     try { rec = await read(); } catch { return; }
-    if (!rec?.text) return;
+    if (!rec?.text && !rec?.project) return;
     const when = new Date(rec.time).toLocaleString();
     const ok = await confirmDialog('Recover unsaved work?',
       `OpenStudio found unsaved changes to "${rec.name}" from ${when} (the app was closed or crashed before they were saved).\n\nRecover them now?`,
@@ -70,7 +72,8 @@ export function installAutosave(app) {
     if (!ok) { discard(); return; }
     try {
       app.transport.stop();
-      store.load(rec.text, rec.filePath ?? null);
+      if (rec.project) store.load(rec.project, rec.filePath ?? null, { samples: rec.samples ?? [] });
+      else store.load(rec.text, rec.filePath ?? null); // written by an older version
       store.dirty = true; // still unsaved
       store.emit('project');
     } catch (err) {

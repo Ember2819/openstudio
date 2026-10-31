@@ -24,8 +24,17 @@ function heldVoice(ctx, t, out, sources, releaseTime) {
 // ---------------------------------------------------------------------------
 // Subtractive: stacked unison oscillator + second oscillator + sub + noise -> drive -> 12/24 dB low-pass
 // ---------------------------------------------------------------------------
-export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p) {
+/**
+ * `from`: absolute pitch to glide from (portamento, over p.glide seconds), or null. The voice also gets `legato()`
+ * (move to a new pitch without retriggering, for mono mode) and `cut()` (stop quickly).
+ */
+export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p, from = null) {
   const freq = midiToFreq(pitch + semis);
+  // pitch bend shared by every oscillator: glides are ramps of it, in cents
+  const bend = ctx.createConstantSource();
+  const glideTime = Math.max(0.005, p.glide || 0);
+  bend.offset.setValueAtTime(from != null && p.glide > 0 ? (from - (pitch + semis)) * 100 : 0, t);
+  if (from != null && p.glide > 0) bend.offset.linearRampToValueAtTime(0, t + glideTime);
   const out = ctx.createGain();
   const peak = 0.22 * (0.25 + vel * 0.75);
   const sus = Math.max(p.sustain, 0.0001);
@@ -62,6 +71,7 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p) {
     const g = ctx.createGain();
     g.gain.value = (1 - p.mix * 0.5) / Math.sqrt(voices);
     o.connect(g).connect(bus);
+    bend.connect(o.detune);
     sources.push(o); detunable.push(o);
   }
   const o2 = ctx.createOscillator();
@@ -71,6 +81,7 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p) {
   const g2 = ctx.createGain();
   g2.gain.value = p.mix;
   o2.connect(g2).connect(bus);
+  bend.connect(o2.detune);
   sources.push(o2); detunable.push(o2);
 
   if (p.sub > 0.005) {
@@ -80,6 +91,7 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p) {
     const sg = ctx.createGain();
     sg.gain.value = p.sub * 0.9;
     sub.connect(sg).connect(bus);
+    bend.connect(sub.detune);
     sources.push(sub);
   }
   if (p.noise > 0.005) {
@@ -129,8 +141,31 @@ export function playSynth(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.linearRampToValueAtTime(peak, t + p.attack);
   out.gain.exponentialRampToValueAtTime(Math.max(peak * sus, 0.0001), t + p.attack + p.decay);
 
+  sources.push(bend);
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = [bend.offset]; // slide notes bend every oscillator through the shared bend
   sources.forEach((o) => o.start(t));
+  let bendTarget = 0;
+  // mono / legato: glide the sounding voice to a new note and hold it until that note ends
+  voice.legato = (absPitch, at, newDur, glide) => {
+    const cents = (absPitch - (pitch + semis)) * 100;
+    bend.offset.cancelScheduledValues(at);
+    bend.offset.setValueAtTime(bendTarget, at);
+    bend.offset.linearRampToValueAtTime(cents, at + Math.max(0.005, glide));
+    bendTarget = cents;
+    out.gain.cancelAndHoldAtTime(at);
+    out.gain.setTargetAtTime(Math.max(peak * sus, 0.0001), at, 0.02);
+    voice.released = false;
+    voice.end = Infinity;
+    if (Number.isFinite(newDur)) voice.release(at + newDur);
+  };
+  voice.cut = (at) => {
+    out.gain.cancelAndHoldAtTime(at);
+    out.gain.setTargetAtTime(0.0001, at, 0.004);
+    for (const s of sources) { try { s.stop(at + 0.03); } catch { /* already stopped */ } }
+    voice.released = true;
+    voice.end = at + 0.03;
+  };
   if (Number.isFinite(dur)) voice.release(t + dur);
   return voice;
 }
@@ -161,6 +196,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
     g.gain.setTargetAtTime(dev * p.indexSus, t, Math.max(p.indexDecay, 0.01) / 3);
   };
   shape(m1g, p.index, freq * p.ratio);
+  const pitched = [carrier.detune, m1.detune];
   if (p.index2 > 0.005) {
     const m2 = ctx.createOscillator();
     m2.frequency.value = freq * p.ratio2;
@@ -168,6 +204,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
     m2.connect(m2g).connect(m1.frequency);
     shape(m2g, p.index2, freq * p.ratio2);
     sources.push(m2);
+    pitched.push(m2.detune);
     // A modulated modulator has a DC component whenever ratio is a multiple of ratio2 (a sideband lands on 0 Hz).
     // Fed into the carrier's frequency, that DC offsets its pitch and the note goes out of tune and inharmonic,
     // so block it before it reaches the carrier.
@@ -209,6 +246,7 @@ export function playFm(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.exponentialRampToValueAtTime(Math.max(peak * sus, 0.0001), t + p.attack + p.decay);
 
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = pitched;
   sources.forEach((o) => o.start(t));
   if (Number.isFinite(dur)) voice.release(t + dur);
   return voice;
@@ -250,6 +288,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
   o.setPeriodicWave(harmonicWave(ctx, weights.map((x) => x.toFixed(3)).join(','), weights));
   o.frequency.value = freq / 2; // the 16' pitch; the weights place everything else on its harmonics
   const sources = [o];
+  const pitched = [o.detune];
   o.connect(out);
 
   if (p.perc !== 'off') { // percussion: a decaying 2nd or 3rd harmonic at the front of the note
@@ -260,6 +299,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
     pg.gain.setTargetAtTime(0, t, 0.09);
     po.connect(pg).connect(out);
     sources.push(po);
+    pitched.push(po.detune);
   }
   if (p.click > 0.005) {
     const n = noise(ctx);
@@ -298,6 +338,7 @@ export function playOrgan(ctx, dest, pitch, t, dur, vel, semis, p) {
   out.gain.linearRampToValueAtTime(peak, t + attack);
 
   const voice = heldVoice(ctx, t, out, sources, p.release);
+  voice.pitchParams = pitched;
   sources.forEach((s) => s.start(t));
   if (Number.isFinite(dur)) voice.release(t + dur);
   return voice;
@@ -407,7 +448,7 @@ export function playPluck(ctx, dest, pitch, t, dur, vel, semis, p) {
   }
   tail.connect(out).connect(dest);
   src.start(t);
-  const voice = { nodes: [src], out, end: t + buf.duration + 0.05, released: false };
+  const voice = { nodes: [src], out, end: t + buf.duration + 0.05, released: false, pitchParams: [src.detune] };
   voice.release = (when) => { // the string is damped when the note ends, like a muted or lifted finger
     if (voice.released) return;
     voice.released = true;

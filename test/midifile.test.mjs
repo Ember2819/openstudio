@@ -77,3 +77,17 @@ test('song export expands pattern clips', () => {
   const ons = midi.tracks[1].filter((e) => (e.status & 0xf0) === 0x90).map((e) => e.tick);
   assert.deepEqual(ons, [0, 384, 768]); // one per bar (16 steps * 24 ticks)
 });
+
+test('muted and slide notes are not exported as notes', () => {
+  const s = new Store();
+  const piano = s.addChannel({ type: 'sf', name: 'Piano', bank: 0, program: 0 });
+  s.addNote(s.currentPattern, piano.id, { p: 60, s: 0, l: 4, v: 1 });
+  s.addNote(s.currentPattern, piano.id, { p: 64, s: 2, l: 2, v: 1, sl: true });
+  s.addNote(s.currentPattern, piano.id, { p: 67, s: 4, l: 2, v: 1, m: true });
+  for (const song of [false, true]) {
+    if (song) s.addClip({ type: 'pattern', pat: s.currentPattern.id, track: 0, start: 0, len: 16 });
+    const midi = parse(buildMidi(s, { song }));
+    const ons = midi.tracks.at(-1).filter((e) => (e.status & 0xf0) === 0x90).map((e) => e.data[0]);
+    assert.deepEqual(ons, [60], song ? 'song' : 'pattern');
+  }
+});

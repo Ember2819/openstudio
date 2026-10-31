@@ -32,6 +32,12 @@ test('synth presets only use known parameters inside their ranges', () => {
   }
 });
 
+test('every effect is in exactly one menu group', async () => {
+  const { EFFECT_DEFS, EFFECT_GROUPS } = await import('../src/audio/effects.js');
+  const listed = Object.values(EFFECT_GROUPS).flat();
+  assert.deepEqual([...listed].sort(), Object.keys(EFFECT_DEFS).sort());
+});
+
 test('plucked strings are in tune, warm at the bottom and ring for their decay time', async () => {
   const { karplusStrong } = await import('../src/audio/synths.js');
   const SR = 44100;

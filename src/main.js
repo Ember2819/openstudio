@@ -8,13 +8,18 @@ import { createChannelRack } from './ui/channelrack.js';
 import { createPianoRoll } from './ui/pianoroll.js';
 import { createPlaylist } from './ui/playlist.js';
 import { createMixer } from './ui/mixer.js';
+import { createEffectWindow } from './ui/fxwindow.js';
+import { showToast } from './ui/toast.js';
+import { linkFor, unlink, describeLink } from './controllers.js';
+import { describeTarget } from './automation.js';
 import { createBrowser } from './ui/browser.js';
 import { createUpdater } from './ui/updater.js';
 import { createSettings } from './ui/settings.js';
 import { createAutomationEditor } from './ui/autoeditor.js';
-import { setAutomationHandler } from './ui/knob.js';
+import { setAutomationHandler, setControllerHandler } from './ui/knob.js';
 import { createActions } from './actions.js';
 import { installShortcuts } from './shortcuts.js';
+import { installAudioRecording } from './audiorecording.js';
 import { createInput } from './input.js';
 import { messageDialog } from './ui/dialog.js';
 import { initMidi } from './midi.js';
@@ -54,9 +59,33 @@ const playlist = createPlaylist(app);
 const autoEditor = createAutomationEditor(app);
 app.actions.openAutomation = autoEditor.open;
 setAutomationHandler((target) => app.actions.createAutomation(target));
+// MIDI controller links: learn binds the next CC that moves (src/controllers.js)
+app.controllers = { pending: null, lastMove: 0 };
+setControllerHandler({
+  learn(target) {
+    if (!app.midi?.access) { messageDialog('Link to controller', app.midi?.error ? `MIDI is not available: ${app.midi.error}` : 'No MIDI input is available yet.'); return; }
+    app.controllers.pending = target;
+    const toast = showToast(`Move a knob, fader or slider on your MIDI controller to link it to ${describeTarget(app.store, target)}…`, {
+      action: 'Cancel', timeout: 0, onAction: () => { app.controllers.pending = null; },
+    });
+    app.controllers.onLearned = (l) => { toast.close(); showToast(`Linked: ${describeLink(app.store, l)}`); };
+  },
+  linked: (target) => { const l = linkFor(app.store, target); return l ? `CC ${l.cc}` : null; },
+  unlink(target) { app.store.checkpoint(); unlink(app.store, target); app.store.emit('controllers'); },
+});
 const piano = createPianoRoll(app);
 const mixer = createMixer(app);
+app.effectWindow = createEffectWindow(app);
+app.actions.openEffect = (track, slot) => app.effectWindow.open(track, slot);
 installShortcuts(app);
+installAudioRecording(app);
+// files dropped outside the windows that take them (playlist, channel rack, piano roll, settings)
+window.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+window.addEventListener('drop', (e) => {
+  if (e.defaultPrevented || !e.dataTransfer?.files?.length) return;
+  e.preventDefault();
+  app.actions.dropFiles([...e.dataTransfer.files]);
+});
 app.tiler = new Tiler(app);
 const prefs = createPreferences(app);
 app.prefs = prefs;
@@ -75,7 +104,7 @@ loadSoundfont().then(() => {
   messageDialog('Instrument bank not found', 'OpenStudio could not load its sound library, so instruments will be silent.\n\nRun "npm run assets" in the project folder to download it, then restart the app.');
 });
 
-const panels = [rack, playlist, piano, mixer, settings];
+const panels = [rack, playlist, piano, mixer, settings, app.effectWindow];
 
 let lastDirty = app.store.dirty;
 function frame() {

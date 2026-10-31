@@ -1,7 +1,9 @@
 import { h, clamp } from '../util.js';
 import { icon } from './icons.js';
 import { ENGINE_PRESETS, ENGINES, DRUM_KIT, defaultParams } from '../audio/instruments.js';
-import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
+import { EFFECT_DEFS, EFFECT_GROUPS, defaultEffectParams } from '../audio/effects.js';
+import { showMenu } from './menu.js';
+import { messageDialog } from './dialog.js';
 
 const channelIcon = (c) => ({ drum: 'drum', sampler: 'sampler', organ: 'keys', pluck: 'wave', sfx: 'wave', sf: c.bank === 128 ? 'drum' : 'piano' }[c.type] || 'synth');
 
@@ -15,7 +17,7 @@ export function createBrowser(app) {
   const tree = h('div', { class: 'br-tree' });
   root.append(header, tree);
 
-  const open = new Set(['Current project', 'Instruments', 'Drum kits']);
+  const open = new Set(['Current project', 'Instruments', 'Drum kits', 'Sample folders']);
   let selectedPath = null;
 
   const spec = (type, extra) => ({ type, params: defaultParams(type), ...extra });
@@ -55,6 +57,81 @@ export function createBrowser(app) {
     ];
   }
 
+  // ---------------------------------------------------------------- sample folders on disk
+  const libApi = window.studioAPI?.library;
+  const lib = { folders: [], dirs: new Map(), data: new Map(), decoded: new Map() };
+  const baseName = (p) => p.split(/[\\/]/).filter(Boolean).pop() || p;
+  if (libApi) libApi.folders().then((f) => { lib.folders = f; render(); }).catch(() => {});
+
+  async function loadDir(dir) {
+    lib.dirs.set(dir, 'loading');
+    try { lib.dirs.set(dir, await libApi.list(dir)); } catch (err) { lib.dirs.set(dir, err); }
+    render();
+  }
+  /** File contents, cached for the last few files (previews and adding the same file twice). */
+  async function readFile(file) {
+    if (lib.data.has(file)) return lib.data.get(file);
+    const data = await libApi.read(file);
+    lib.data.set(file, data);
+    if (lib.data.size > 24) lib.data.delete(lib.data.keys().next().value);
+    return data;
+  }
+  let previewSrc = null;
+  async function previewFile(file) {
+    try {
+      engine.ensure();
+      let buf = lib.decoded.get(file);
+      if (!buf) {
+        buf = await engine.ctx.decodeAudioData((await readFile(file)).slice(0));
+        lib.decoded.set(file, buf);
+        if (lib.decoded.size > 24) lib.decoded.delete(lib.decoded.keys().next().value);
+      }
+      try { previewSrc?.stop(); } catch { /* already finished */ }
+      const src = engine.ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(engine.track(0).input);
+      src.start();
+      previewSrc = src;
+    } catch (err) {
+      console.warn('Preview failed', err);
+    }
+  }
+  async function addFileAsChannel(file) {
+    try {
+      const data = await readFile(file);
+      const name = baseName(file);
+      const id = store.addSample(name, data.slice(0));
+      store.addChannel({ name: name.replace(/\.[^.]+$/, ''), type: 'sampler', sampleId: id });
+    } catch (err) {
+      messageDialog('Could not load the sample', err.message);
+    }
+  }
+  function dirNodes(dir) {
+    const e = lib.dirs.get(dir);
+    if (!e || e === 'loading') return [{ label: 'Loading…', icon: 'wave' }];
+    if (e instanceof Error) return [{ label: 'Cannot read this folder', icon: 'wave' }];
+    if (!e.length) return [{ label: '(no audio files)', icon: 'wave' }];
+    return e.map((x) => (x.dir
+      ? { label: x.name, icon: 'folder', lazy: x.path, children: dirNodes(x.path) }
+      : { label: x.name, icon: 'wave', dragFile: x.path, hint: 'Click to preview · double-click to add a sampler channel · drag to the playlist or channel rack', onClick: () => previewFile(x.path), onDbl: () => addFileAsChannel(x.path) }));
+  }
+  function libraryNode() {
+    const add = { label: 'Add a folder…', icon: 'plus', onClick: async () => { lib.folders = await libApi.add(); render(); } };
+    return {
+      label: 'Sample folders', icon: 'folder',
+      children: [
+        ...lib.folders.map((f) => ({
+          label: baseName(f), icon: 'folder', lazy: f, children: dirNodes(f), hint: f,
+          onContext: (e) => showMenu([
+            { label: 'Refresh', action: () => { for (const k of [...lib.dirs.keys()]) if (k.startsWith(f)) lib.dirs.delete(k); render(); } },
+            { label: 'Remove from the browser', action: async () => { lib.folders = await libApi.remove(f); render(); } },
+          ], e.clientX, e.clientY),
+        })),
+        add,
+      ],
+    };
+  }
+
   function nodes() {
     const proj = store.project;
     return [
@@ -84,6 +161,7 @@ export function createBrowser(app) {
           },
         ],
       },
+      ...(libApi ? [libraryNode()] : []),
       ...soundfontNodes(),
       ...Object.entries(ENGINE_PRESETS).map(([type, cats]) => ({
         label: type === 'synth' ? 'Synth presets' : `${ENGINES[type].label} presets`, icon: 'folder',
@@ -116,10 +194,13 @@ export function createBrowser(app) {
       },
       {
         label: 'Effects', icon: 'folder',
-        children: Object.entries(EFFECT_DEFS).map(([type, def]) => ({
-          label: def.name, icon: 'fx',
-          hint: 'Double-click to add to the selected mixer track',
-          onDbl: () => addEffect(type),
+        children: Object.entries(EFFECT_GROUPS).map(([label, types]) => ({
+          label, icon: 'folder',
+          children: types.map((type) => ({
+            label: EFFECT_DEFS[type].name, icon: 'fx',
+            hint: 'Double-click to add to the selected mixer track',
+            onDbl: () => addEffect(type),
+          })),
         })),
       },
       {
@@ -163,7 +244,7 @@ export function createBrowser(app) {
           class: `br-row${node.children ? ' folder' : ''}${selectedPath === path ? ' selected' : ''}`,
           style: { paddingLeft: `${6 + depth * 14}px` },
           'data-hint': node.hint || (node.children ? '' : node.onDbl ? 'Click to preview · double-click to add' : ''),
-          draggable: node.dragPattern != null || node.dragSample != null,
+          draggable: node.dragPattern != null || node.dragSample != null || node.dragFile != null,
         },
         node.children ? h('span', { class: `br-caret${isOpen ? ' open' : ''}` }, icon('chevronRight')) : h('span', { class: 'br-caret-pad' }),
         h('span', { class: 'br-ico', style: node.color ? { color: node.color } : null }, icon(node.icon)),
@@ -178,6 +259,12 @@ export function createBrowser(app) {
           render();
         });
         if (node.onDbl) row.addEventListener('dblclick', node.onDbl);
+        if (node.onContext) row.addEventListener('contextmenu', (e) => { e.preventDefault(); node.onContext(e); });
+        if (node.dragFile != null) {
+          row.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/openstudio-file', node.dragFile); e.dataTransfer.effectAllowed = 'copy'; });
+        }
+        // a sample folder loads its contents the first time it is opened
+        if (node.lazy && isOpen && !lib.dirs.has(node.lazy)) loadDir(node.lazy);
         if (node.dragSample != null) {
           row.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/openstudio-sample', String(node.dragSample)); e.dataTransfer.effectAllowed = 'copy'; });
         }
@@ -210,5 +297,5 @@ export function createBrowser(app) {
   });
   splitter.addEventListener('pointerup', () => { drag = null; });
 
-  return { render };
+  return { render, readFile };
 }

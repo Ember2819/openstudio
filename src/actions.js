@@ -1,45 +1,24 @@
 import { promptDialog, confirmDialog, messageDialog, progressDialog, shortcutsDialog } from './ui/dialog.js';
-import { renderSteps } from './audio/render.js';
+import { renderSteps, renderStems } from './audio/render.js';
 import { encodeWav } from './audio/wav.js';
-import { STEPS_PER_BAR } from './state.js';
+import { encodeFlac } from './audio/flac.js';
+import { encodeMp3 } from './audio/mp3.js';
+import { STEPS_PER_BAR, validTimeSig } from './state.js';
 import { ENGINES, ENGINE_PRESETS, SYNTH_PRESETS } from './audio/instruments.js';
 import { getSoundfont } from './audio/engine.js';
 import { buildCatalog } from './audio/catalog.js';
 import { buildMidi } from './midifile.js';
 import { parseMidi, importMidi } from './midiimport.js';
+import { parseFlp, importFlp, flpSamplePaths } from './flp.js';
+import { guessBars, slicesToNotes } from './audio/slicing.js';
+import { tools as produceTools } from './agent/tools/produce.js';
+import { STYLES } from './agent/music/styles.js';
 import { describeTarget, readTarget, valueToNorm } from './automation.js';
 import { ACTIONS, resolveCombo } from './ui/tiling.js';
+import { keymap, COMMANDS, comboLabel } from './keymap.js';
 
-/** Help → Keyboard shortcuts. Keys: alternatives separated by " / ", combos joined with "+". */
+/** Help → Keyboard shortcuts inside the editors (the app-wide ones come from the keymap). Keys: alternatives separated by " / ", combos joined with "+". */
 const SHORTCUTS = [
-  ['General', [
-    ['Space', 'Play / pause'],
-    ['Home', 'Jump to the start'],
-    ['Ctrl+L', 'Switch pattern / song mode'],
-    ['Ctrl+M', 'Metronome'],
-    ['Ctrl+Z', 'Undo'],
-    ['Ctrl+Y / Ctrl+Shift+Z', 'Redo'],
-    ['Ctrl+N', 'New project'],
-    ['Ctrl+O', 'Open project'],
-    ['Ctrl+S', 'Save'],
-    ['Ctrl+Shift+S', 'Save as'],
-    ['Ctrl+R', 'Export audio'],
-    ['Ctrl+,', 'Settings (themes, wallpaper)'],
-    ['F1', 'This list'],
-  ]],
-  ['Windows', [
-    ['F5', 'Playlist'],
-    ['F6', 'Channel rack'],
-    ['F7', 'Piano roll'],
-    ['F9', 'Mixer'],
-    ['Alt+F8', 'Browser'],
-    ['F10', 'Channel settings'],
-    ['F2', 'Rename the selected channel'],
-  ]],
-  ['Patterns', [
-    ['F4 / Ctrl+Shift+P', 'New pattern'],
-    ['+ / −', 'Next / previous pattern'],
-  ]],
   ['Play from the computer keyboard', [
     ['Z S X D C V G B H N J M', 'Lower octave'],
     ['Q 2 W 3 E R 5 T 6 Y 7 U', 'Upper octave'],
@@ -54,13 +33,18 @@ const SHORTCUTS = [
     ['↑ / ↓', 'Transpose a semitone'],
     ['Ctrl+↑ / Ctrl+↓', 'Transpose an octave'],
     ['Alt+R', 'Randomize velocity'],
+    ['Alt+A', 'Arpeggiate…'],
+    ['Alt+S', 'Strum…'],
+    ['Alt+U', 'Chop…'],
     ['Ctrl+Drag', 'Temporary select tool'],
     ['Alt+Wheel', 'Row height'],
   ]],
   ['Playlist', [
     ['Ctrl+B', 'Duplicate selected clips'],
     ['Ctrl+D', 'Deselect clips'],
-    ['Shift+Drag', 'Set the loop region (on the ruler)'],
+    ['Shift+Drag / Right-drag', 'Set the loop region (on the ruler)'],
+    ['Right-click', 'Ruler menu: markers, loops (on the ruler)'],
+    ['Click / Double-click', 'Jump to / rename a marker'],
     ['Double-click', 'Clear the loop region (on the ruler)'],
     ['Right-click', 'Clip menu (on a clip title)'],
   ]],
@@ -72,7 +56,7 @@ const SHORTCUTS = [
     ['Ctrl+Wheel', 'Zoom piano roll / playlist'],
     ['Shift+Wheel', 'Scroll sideways'],
     ['Right-click', 'Delete notes / clips, erase steps'],
-    ['Right-click', 'Automate a knob or fader'],
+    ['Right-click', 'Automate a knob or fader, or link it to a MIDI controller'],
     ['Double-click', 'Reset a fader'],
   ]],
 ];
@@ -102,10 +86,38 @@ export function createActions(app) {
       app.autosave?.discard();
     },
 
-    async openProject() {
+    /**
+     * Start a new project from a style template: the instruments, mixer routing, buses, master chain, tempo and swing
+     * the producer tools use for that style (agents' setup_song), with empty patterns.
+     */
+    async newFromTemplate(style) {
+      if (!(await confirmDiscard())) return false;
+      if (!a.catalog()) { messageDialog('New from template', 'The instrument bank is still loading — try again in a moment.'); return false; }
+      transport.stop();
+      store.resetToDefault();
+      store.filePath = null;
+      const setup = produceTools.find((t) => t.name === 'setup_song');
+      try {
+        setup.run({ style, clear: true, name: STYLES[style].name }, app);
+      } catch (err) {
+        messageDialog('New from template', err.message);
+        return false;
+      }
+      // a fresh start: nothing to undo, nothing unsaved
+      store.undoStack = [];
+      store.redoStack = [];
+      store.dirty = false;
+      store.emit('project');
+      app.autosave?.discard();
+      return true;
+    },
+
+    async openProject(recentPath = null, droppedPath = null) {
       if (!(await confirmDiscard())) return;
-      const res = await window.studioAPI.openProject();
-      if (!res) return;
+      const res = droppedPath ? await window.studioAPI.openProjectPath(droppedPath)
+        : recentPath ? await window.studioAPI.recent.open(recentPath) : await window.studioAPI.openProject();
+      if (!res) { if (recentPath) messageDialog('Could not open project', `${recentPath} is no longer there.`); return; }
+      if (res.kind === 'flp') { await a.importFlpData(res.data, res.path); return; }
       try {
         transport.stop();
         store.load(res.text, res.path);
@@ -113,6 +125,35 @@ export function createActions(app) {
       } catch (err) {
         messageDialog('Could not open project', err.message);
       }
+    },
+
+    /** Open an FL Studio project: its patterns, playlist, channels and mixer, with stand-ins for FL-only plugins. */
+    async importFlpData(data, path = '') {
+      let flp;
+      try {
+        flp = parseFlp(data);
+      } catch (err) {
+        messageDialog('Could not open FL Studio project', err.message);
+        return null;
+      }
+      const refs = flpSamplePaths(flp);
+      const found = refs.length && window.studioAPI.flpSamples ? await window.studioAPI.flpSamples(refs) : [];
+      const samples = new Map(found.map((f) => [f.ref, { name: f.name, data: f.data }]));
+      transport.stop();
+      const fileName = path.split(/[\\/]/).pop().replace(/\.flp$/i, '');
+      const report = importFlp(store, flp, { name: fileName, samples });
+      store.filePath = null; // saving writes an .osp beside it, never over the .flp
+      store.finishLoad();
+      store.dirty = true;
+      app.autosave?.discard();
+      const notes = [];
+      notes.push(`FL Studio ${flp.version || '(unknown version)'} project: ${report.channels} channels, ${report.patterns} patterns, ${report.clips} playlist clips, ${flp.bpm} BPM.`);
+      if (report.substituted.length) notes.push(`\nStand-ins for FL Studio plugins and missing samples:\n• ${report.substituted.slice(0, 14).join('\n• ')}${report.substituted.length > 14 ? `\n… and ${report.substituted.length - 14} more` : ''}`);
+      if (report.skipped.length) notes.push(`\nEffects with no equivalent (left out): ${report.skipped.slice(0, 10).join(', ')}${report.skipped.length > 10 ? '…' : ''}`);
+      if (report.missingSamples.length) notes.push(`\n${report.missingSamples.length} sample file(s) were not found next to the project. Use FL Studio's "Export project data files" (or zip the project with its samples) to bring them along.`);
+      notes.push('\nPlugin settings, automation clips and mixer effect settings are not imported. Save to keep it as an OpenStudio project.');
+      if (!window.studioAPI.testRun) messageDialog('Imported FL Studio project', notes.join('\n'));
+      return report;
     },
 
     async saveProject(forceDialog) {
@@ -241,12 +282,18 @@ export function createActions(app) {
     },
 
     showShortcuts() {
-      const groups = [...SHORTCUTS];
+      // the app-wide commands as currently bound (Settings → Keys), then the editors' own keys
+      const byGroup = new Map();
+      for (const [id, label, group] of COMMANDS) {
+        const keys = keymap.binds(id).map(comboLabel).filter((k, i, all) => all.indexOf(k) === i);
+        if (keys.length) (byGroup.get(group) ?? byGroup.set(group, []).get(group)).push([keys.join(' / '), label]);
+      }
+      const groups = [...byGroup.entries(), ...SHORTCUTS];
       const t = app.tiler;
       if (t) {
         const rows = ACTIONS.filter(([id]) => t.cfg.binds[id]?.length)
           .map(([id, label]) => [t.cfg.binds[id].map((b) => resolveCombo(b, t.cfg.mod)).join(' / '), label]);
-        groups.splice(2, 0, [`Tiling windows${t.active ? '' : ' (off — first one turns it on)'}`, rows]);
+        groups.splice(byGroup.size, 0, [`Tiling windows${t.active ? '' : ' (off — first one turns it on)'}`, rows]);
       }
       shortcutsDialog('Keyboard shortcuts', groups);
     },
@@ -257,12 +304,134 @@ export function createActions(app) {
 
     showAgents() { app.prefs?.open('agents'); },
 
+    /**
+     * Change the project's time signature ([beats, unit]). Notes stay where they are in time; patterns keep (at least)
+     * their length, rounded up to whole bars of the new signature.
+     */
+    setTimeSignature(ts) {
+      if (!validTimeSig(ts)) { messageDialog('Time signature', 'Use 1–32 beats per bar and a beat unit of 2, 4, 8 or 16.'); return false; }
+      const p = store.project;
+      if (p.timeSig[0] === ts[0] && p.timeSig[1] === ts[1]) return true;
+      store.checkpoint();
+      const lens = new Map(p.patterns.map((pat) => [pat, store.patternSteps(pat)]));
+      p.timeSig = [ts[0], ts[1]];
+      for (const [pat, len] of lens) pat.bars = Math.max(1, Math.ceil(len / store.barSteps - 1e-6));
+      store.emit('settings');
+      store.emit('patterns');
+      store.emit('notes');
+      store.emit('playlist');
+      return true;
+    },
+
+    /**
+     * Put a recorded take (AudioBuffer) into the playlist at `step` on the first free track. Stored as a 32-bit float
+     * WAV, so nothing is lost. One undo step.
+     */
+    addAudioTake(buffer, step) { return a.addAudioTakes([{ buffer, step }])[0]; },
+
+    /**
+     * Recorded takes -> samples and audio clips, one undo step. Several takes are the passes of a loop: each goes on
+     * the next free track and all but the last are muted, so the newest pass plays and the others are there to comp.
+     */
+    addAudioTakes(takes) {
+      if (!takes.length) return [];
+      store.checkpoint();
+      const tempo = transport.tempo;
+      const clips = takes.map(({ buffer, step }, i) => {
+        const taken = [...store.samples.values()].filter((s) => /^Take \d+/.test(s.name)).length;
+        const id = store.addSample(`Take ${taken + 1}.wav`, encodeWav(buffer, { float: true }));
+        store.samples.get(id).buffer = buffer;
+        const start = Math.round(step * 1000) / 1000;
+        const len = Math.max(0.25, Math.round((tempo.stepAt(tempo.timeAt(start) + buffer.duration) - start) * 1000) / 1000);
+        const track = firstFreeTrack(start, len);
+        const t = store.project.playlist.tracks[track];
+        if (/^Track \d+$/.test(t.name)) t.name = 'Audio';
+        const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+        if (i < takes.length - 1) clip.mute = true;
+        store.emit('sampleReady', id);
+        return clip;
+      });
+      store.emit('playlist');
+      return clips;
+    },
+
+    /**
+     * Write a sliced sampler's slices into the current pattern as notes that play the loop back in time (FL's Slicex
+     * "dump score"). The loop's length in bars is guessed from the sample's duration at the project tempo.
+     */
+    slicesToPattern(chId) {
+      const ch = store.channel(chId);
+      const s = ch && store.samples.get(ch.sampleId);
+      if (!ch?.slices?.length || !s?.buffer) return null;
+      const beatsPerBar = store.barSteps / 4;
+      const bars = guessBars(s.buffer.duration, store.project.bpm, beatsPerBar);
+      const pat = store.currentPattern;
+      store.checkpoint();
+      pat.notes[ch.id] = slicesToNotes(ch.slices, bars * store.barSteps, ch.rootPitch ?? 60);
+      pat.bars = Math.max(pat.bars, bars);
+      store.normalizePattern(pat);
+      store.selectChannel(ch.id);
+      store.emit('notes');
+      store.emit('patterns');
+      return pat;
+    },
+
+    /**
+     * Render playlist clips (pattern or audio) to one new audio clip, like FL Studio's "consolidate": it plays exactly
+     * as before (through the mixer and master), the originals are muted, and it is one undo step.
+     */
+    async renderClipsToAudio(ids) {
+      const proj = store.project;
+      const sel = proj.playlist.clips.filter((c) => ids.includes(c.id) && c.type !== 'auto');
+      if (!sel.length) return null;
+      const start = Math.min(...sel.map((c) => c.start));
+      const end = Math.max(...sel.map((c) => c.start + c.len));
+      const tail = 2;
+      const mode = proj.mode;
+      transport.stop();
+      app.toolbar?.setBusy?.('Rendering to audio…');
+      let buf;
+      try {
+        proj.mode = 'song';
+        // pre-master: the new clip goes through the master's effects, fader and limiter when it plays
+        const preMaster = (e) => {
+          const m = e.tracks[0];
+          m.input.disconnect();
+          m.input.connect(m.pan);
+          m.pan.pan.cancelScheduledValues(0);
+          m.pan.pan.value = 0;
+          m.fader.gain.cancelScheduledValues(0);
+          m.fader.gain.value = 1;
+          e.bypassLimiter(true);
+        };
+        buf = await renderSteps(store, end, { from: start, tail, only: new Set(sel.map((c) => c.id)), configure: preMaster });
+      } finally {
+        proj.mode = mode;
+        app.toolbar?.setBusy?.(null);
+      }
+      const pat = sel.length === 1 && sel[0].type === 'pattern' ? store.pattern(sel[0].pat) : null;
+      const name = `${pat ? pat.name : 'Clips'} (audio).wav`;
+      store.checkpoint();
+      const id = store.addSample(name, encodeWav(buf, { float: true }));
+      store.samples.get(id).buffer = buf;
+      for (const c of sel) c.mute = true;
+      const tempo = transport.tempo;
+      const len = Math.round((tempo.stepAt(tempo.timeAt(start) + buf.duration) - start) * 1000) / 1000;
+      const track = firstFreeTrack(start, len);
+      const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+      if (/^Track \d+$/.test(proj.playlist.tracks[track].name)) proj.playlist.tracks[track].name = 'Rendered';
+      store.emit('playlist');
+      store.emit('sampleReady', id);
+      return clip;
+    },
+
     /** Create an automation clip for a knob/fader and open its editor. */
     createAutomation(target) {
       const norm = valueToNorm(store, target, readTarget(store, target));
       store.checkpoint();
-      const auto = store.addAutomation({ name: describeTarget(store, target), target, value: norm, len: STEPS_PER_BAR });
-      const start = Math.floor(transport.startStep / STEPS_PER_BAR) * STEPS_PER_BAR;
+      const bar = store.barSteps;
+      const auto = store.addAutomation({ name: describeTarget(store, target), target, value: norm, len: bar });
+      const start = Math.floor(transport.startStep / bar) * bar;
       store.addClip({ type: 'auto', autoId: auto.id, track: firstFreeTrack(start, auto.len), start, len: auto.len });
       store.emit('playlist');
       app.wm.get('playlist').show();
@@ -311,7 +480,77 @@ export function createActions(app) {
 
     loadDemo() { loadDemo(store, transport); },
 
-    async exportWav() {
+    /** Mixer tracks worth a stem: anything a channel, a playlist track or a send feeds, or that has effects. */
+    stemTracks() {
+      const p = store.project;
+      const used = new Set();
+      for (const c of p.channels) if (c.mixer > 0) used.add(c.mixer);
+      for (const t of p.playlist.tracks) if (t.mixer > 0) used.add(t.mixer);
+      p.mixer.forEach((m, i) => {
+        if (i === 0) return;
+        for (const d of Object.keys(m.sends || {})) used.add(Number(d));
+        if (m.fx.some(Boolean)) used.add(i);
+      });
+      return [...used].filter((i) => i > 0 && i < p.mixer.length).sort((x, y) => x - y);
+    },
+
+    /** Export one WAV per used mixer track plus the master into a folder (FL Studio's "split mixer tracks"). */
+    async exportStems() {
+      const proj = store.project;
+      const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
+      if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return null; }
+      const tracks = a.stemTracks();
+      if (!tracks.length) { messageDialog('Export stems', 'Nothing is routed to a mixer insert, so there are no stems to export.\n\nRoute channels to their own mixer tracks first (channel rack → the track number box).'); return null; }
+      const dir = await window.studioAPI.pickFolder({ title: 'Export stems into…' });
+      if (!dir) return null;
+      transport.stop();
+      app.toolbar?.setBusy?.('Rendering stems…');
+      const dlg = progressDialog('Exporting stems', 'Preparing…');
+      const abort = new AbortController();
+      dlg.done.then(() => abort.abort());
+      let res;
+      try {
+        res = await renderStems(store, steps, tracks, { signal: abort.signal, onProgress: (f) => dlg.set(f, `Rendering ${tracks.length} stems… ${Math.round(f * 100)}%`) });
+      } catch (err) {
+        if (err.name !== 'AbortError') messageDialog('Export failed', err.message);
+        return null;
+      } finally {
+        dlg.close();
+        app.toolbar?.setBusy?.(null);
+      }
+      const safe = (s) => s.replace(/[\\/:*?"<>|]/g, '_');
+      const files = [await window.studioAPI.writeInFolder({ dir, name: `${safe(proj.name)} - Master.wav`, data: encodeWav(res.master) })];
+      for (const [i, buf] of res.stems) {
+        files.push(await window.studioAPI.writeInFolder({ dir, name: `${safe(proj.name)} - ${String(i).padStart(2, '0')} ${safe(proj.mixer[i].name)}.wav`, data: encodeWav(buf) }));
+      }
+      return files;
+    },
+
+    /** Files dropped anywhere a window did not take them: projects open, MIDI imports, audio becomes samplers. */
+    async dropFiles(files) {
+      for (const file of files) {
+        if (/\.(osp|flp|json)$/i.test(file.name)) {
+          const path = window.studioAPI.pathForFile?.(file);
+          if (path) await a.openProject(null, path);
+          else if (/\.flp$/i.test(file.name)) await a.importFlpData(await file.arrayBuffer(), file.name);
+          return;
+        }
+      }
+      for (const file of files) {
+        if (/\.(mid|midi|rmi)$/i.test(file.name)) await a.importMidiFile(file);
+        else if (/^audio\//.test(file.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(file.name)) {
+          const id = store.addSample(file.name, await file.arrayBuffer());
+          store.addChannel({ name: file.name.replace(/\.[^.]+$/, ''), type: 'sampler', sampleId: id });
+        }
+      }
+    },
+
+    async exportWav() { return a.exportAudio('wav'); },
+    async exportFlac() { return a.exportAudio('flac'); },
+    async exportMp3(bitrate = 320) { return a.exportAudio('mp3', { bitrate }); },
+
+    /** Render the song (or pattern) and save it as WAV, FLAC or MP3 (`opts.bitrate` in kbps). */
+    async exportAudio(format = 'wav', opts = {}) {
       const proj = store.project;
       const steps = proj.mode === 'song' ? store.playlistEndStep() : store.patternSteps(store.currentPattern);
       if (steps <= 0) { messageDialog('Nothing to export', 'The playlist is empty — switch to pattern mode or add clips first.'); return; }
@@ -333,7 +572,20 @@ export function createActions(app) {
         dlg.close();
         app.toolbar?.setBusy?.(null);
       }
-      await window.studioAPI.writeFile({ suggestedName: `${proj.name}.wav`, data: encodeWav(rendered), filters: [{ name: 'WAV audio', extensions: ['wav'] }] });
+      let data;
+      if (format === 'flac' || format === 'mp3') {
+        const label = format === 'flac' ? 'FLAC' : `MP3 (${opts.bitrate ?? 320} kbps)`;
+        const enc = progressDialog('Exporting audio', `Encoding ${label}…`);
+        const onProgress = (f) => enc.set(f, `Encoding ${label}… ${Math.round(f * 100)}%`);
+        try {
+          data = format === 'flac' ? await encodeFlac(rendered, { onProgress }) : await encodeMp3(rendered, { bitrate: opts.bitrate ?? 320, onProgress });
+        } finally { enc.close(); }
+      } else data = encodeWav(rendered);
+      const filters = {
+        flac: [{ name: 'FLAC audio (lossless)', extensions: ['flac'] }],
+        mp3: [{ name: 'MP3 audio', extensions: ['mp3'] }],
+      }[format] ?? [{ name: 'WAV audio', extensions: ['wav'] }];
+      await window.studioAPI.writeFile({ suggestedName: `${proj.name}.${format}`, data, filters });
     },
 
   };

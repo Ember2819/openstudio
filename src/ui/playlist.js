@@ -1,7 +1,9 @@
 import { h, clamp, shade, rgba, COLORS } from '../util.js';
 import { icon } from './icons.js';
 import { showMenu } from './menu.js';
-import { promptDialog } from './dialog.js';
+import { promptDialog, formDialog } from './dialog.js';
+import { markers, addMarker, removeMarker, splitByChannel } from '../playlistops.js';
+import { guessLoopBpm } from '../audio/stretch.js';
 import { createSnapSelect } from './snapselect.js';
 import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
@@ -9,7 +11,7 @@ import { overlayScrollbars, scrollingToolbar } from './scrollbars.js';
 import { T, appearance } from '../theme.js';
 import { drawWaveform } from './peaks.js';
 import { curveAt, describeTarget } from '../automation.js';
-import { STEPS_PER_BAR, STEPS_PER_BEAT, PLAYLIST_TRACKS } from '../state.js';
+import { PLAYLIST_TRACKS, barSteps, beatSteps } from '../state.js';
 
 const TRACK_H = 58;
 const HEAD_W = 118;
@@ -29,8 +31,12 @@ const TOOLS = [
 const mod = (a, n) => ((a % n) + n) % n;
 const typeOf = (c) => c.type || 'pattern';
 
+const ZOOM_STEPS = 16;
+
 export function createPlaylist(app) {
   const { store, wm, transport, engine } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
 
   const win = wm.create({
     id: 'playlist', title: 'Playlist — Arrangement', icon: 'playlist', minW: 560, minH: 260,
@@ -39,7 +45,7 @@ export function createPlaylist(app) {
   });
 
   const S = { tool: 'draw', pxBar: 130, selection: new Set(), clipboard: [], band: null };
-  const pxStep = () => S.pxBar / STEPS_PER_BAR;
+  const pxStep = () => S.pxBar / ZOOM_STEPS; // zoom is kept per 16 steps whatever the time signature
 
   // ---------------------------------------------------------------- layout
   const toolBtns = TOOLS.map(([id, ico, tip]) => {
@@ -69,7 +75,7 @@ export function createPlaylist(app) {
   const cRuler = h('canvas', { class: 'pl-ruler' });
   const cGrid = h('canvas', { class: 'pl-grid' });
   const spacer = h('div', { class: 'pr-spacer' });
-  const scroller = h('div', { class: 'pr-scroller' }, spacer);
+  const scroller = h('div', { class: 'pr-scroller', role: 'application', 'aria-label': 'Playlist arrangement' }, spacer);
   const gridWrap = h('div', { class: 'pr-gridwrap' }, cGrid, scroller);
   overlayScrollbars(scroller, { host: gridWrap });
   scrollingToolbar(toolbar);
@@ -98,12 +104,12 @@ export function createPlaylist(app) {
 
   const clips = () => store.project.playlist.clips;
   const tracks = () => store.project.playlist.tracks;
-  const snap = () => snapSize(app.ui.snap, pxStep());
+  const snap = () => snapSize(app.ui.snap, pxStep(), BEAT(), BAR());
   const stepSeconds = () => 60 / store.project.bpm / 4;
 
   function totalSteps() {
-    const end = Math.ceil(store.playlistEndStep() / STEPS_PER_BAR) + 24;
-    return Math.max(96, end) * STEPS_PER_BAR;
+    const end = Math.ceil(store.playlistEndStep() / BAR()) + 24;
+    return Math.max(96, end) * BAR();
   }
   function updateSpacer() {
     spacer.style.width = `${totalSteps() * pxStep()}px`;
@@ -199,11 +205,12 @@ export function createPlaylist(app) {
     const px = pxStep();
     ctx.clearRect(0, 0, gw, gh);
 
-    const b0 = Math.floor(sx / px / STEPS_PER_BAR);
-    const b1 = Math.ceil((sx + gw) / px / STEPS_PER_BAR);
+    const barPx = BAR() * px;
+    const b0 = Math.floor(sx / barPx);
+    const b1 = Math.ceil((sx + gw) / barPx);
     for (let b = b0; b <= b1; b++) {
       ctx.fillStyle = b % 2 === 0 ? T.gridA : T.gridB;
-      ctx.fillRect(b * S.pxBar - sx, 0, S.pxBar, gh);
+      ctx.fillRect(b * barPx - sx, 0, barPx, gh);
     }
     ctx.strokeStyle = T.gridLineEdge;
     ctx.lineWidth = 1;
@@ -217,8 +224,8 @@ export function createPlaylist(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       let color = null;
-      if (s % STEPS_PER_BAR === 0) color = T.gridLineBar;
-      else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 22) color = T.gridLineBeat;
+      if (s % BAR() === 0) color = T.gridLineBar;
+      else if (s % BEAT() === 0 && px * 4 >= 22) color = T.gridLineBeat;
       else if (px >= 14) color = T.gridLineStep;
       if (!color) continue;
       ctx.strokeStyle = color;
@@ -235,6 +242,15 @@ export function createPlaylist(app) {
     if (loop) {
       ctx.fillStyle = transport.loopEnabled ? T.loopFill : T.hover;
       ctx.fillRect(loop.start * px - sx, 0, (loop.end - loop.start) * px, gh);
+    }
+
+    for (const m of markers(store)) {
+      const mx = Math.round(m.step * px - sx) + 0.5;
+      if (mx < 0 || mx > gw) continue;
+      ctx.strokeStyle = rgba(T.text, 0.25);
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(mx, 0); ctx.lineTo(mx, gh); ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     const patInfo = new Map();
@@ -299,8 +315,21 @@ export function createPlaylist(app) {
     else if (type === 'audio') {
       if (look.sample?.buffer) {
         const sd = stepSeconds();
-        drawWaveform(ctx, look.sample.buffer, x, bodyY, w, bodyH, c.offset * sd, (c.offset + c.len) * sd, 0, gw);
+        if (c.reverse) {
+          // mirror the waveform drawing: reversed audio reads right to left
+          ctx.save();
+          ctx.translate(2 * x + w, 0);
+          ctx.scale(-1, 1);
+        }
+        // a tempo-following clip covers more (or less) of the sample than its length at the project tempo
+        const k = c.stretch?.bpm > 0 ? store.project.bpm / c.stretch.bpm : 1;
+        drawWaveform(ctx, look.sample.buffer, x, bodyY, w, bodyH, c.offset * sd * k, (c.offset + c.len) * sd * k, 0, gw);
+        if (c.reverse) ctx.restore();
       }
+      // fades: shade the faded corners
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      if (c.fadeIn > 0) { const fw = Math.min(w, c.fadeIn * px); ctx.beginPath(); ctx.moveTo(x, bodyY); ctx.lineTo(x + fw, bodyY); ctx.lineTo(x, bodyY + bodyH); ctx.closePath(); ctx.fill(); }
+      if (c.fadeOut > 0) { const fw = Math.min(w, c.fadeOut * px); ctx.beginPath(); ctx.moveTo(x + w, bodyY); ctx.lineTo(x + w - fw, bodyY); ctx.lineTo(x + w, bodyY + bodyH); ctx.closePath(); ctx.fill(); }
     } else drawAutomationCurve(ctx, c, look.auto, x, bodyY, w, bodyH, px, gw, ink);
     ctx.restore();
 
@@ -400,19 +429,86 @@ export function createPlaylist(app) {
     const s1 = Math.ceil((sx + gw) / px);
     for (let s = s0; s <= s1; s++) {
       const x = Math.round(s * px - sx) + 0.5;
-      if (s % STEPS_PER_BAR === 0) {
-        const bar = s / STEPS_PER_BAR;
+      if (s % BAR() === 0) {
+        const bar = s / BAR();
         const major = bar % everyBars === 0;
         ctx.strokeStyle = major ? T.rulerMajor : T.rulerMinor;
         ctx.beginPath(); ctx.moveTo(x, major ? 4 : 14); ctx.lineTo(x, RULER_H); ctx.stroke();
         if (major) { ctx.fillStyle = T.rulerText; ctx.fillText(String(bar + 1), x + 4, 10); }
-      } else if (s % STEPS_PER_BEAT === 0 && px * 4 >= 26) {
+      } else if (s % BEAT() === 0 && px * 4 >= 26) {
         ctx.strokeStyle = T.rulerTick;
         ctx.beginPath(); ctx.moveTo(x, 17); ctx.lineTo(x, RULER_H); ctx.stroke();
       }
     }
+    // time markers: a flag with the name, over the bar numbers
+    ctx.font = '600 10px "Noto Sans", sans-serif';
+    for (const m of markers(store)) {
+      const mx = Math.round(m.step * px - sx) + 0.5;
+      const tw = ctx.measureText(m.name).width + 10;
+      if (mx + tw < 0 || mx > gw) continue;
+      ctx.fillStyle = T.text;
+      ctx.fillRect(mx - 0.5, 0, 1, RULER_H);
+      ctx.fillStyle = T.surface || T.rulerA;
+      ctx.fillRect(mx + 1, 1, tw, 13);
+      ctx.strokeStyle = T.text;
+      ctx.strokeRect(mx + 1, 1.5, tw, 12);
+      ctx.fillStyle = T.textBright || T.text;
+      ctx.fillText(m.name, mx + 6, 8);
+    }
     ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(0, RULER_H - 0.5); ctx.lineTo(gw, RULER_H - 0.5); ctx.stroke();
+  }
+
+  /** The marker whose flag is under ruler x (in view pixels), or null. */
+  function markerAtRuler(vx, vy) {
+    if (vy > 15) return null;
+    const px = pxStep();
+    const sx = scroller.scrollLeft;
+    const ctx = g.ruler;
+    ctx.font = '600 10px "Noto Sans", sans-serif';
+    for (const m of [...markers(store)].reverse()) {
+      const mx = m.step * px - sx;
+      if (vx >= mx - 3 && vx <= mx + ctx.measureText(m.name).width + 12) return m;
+    }
+    return null;
+  }
+
+  async function renameMarker(m) {
+    const name = await promptDialog('Rename marker', m.name);
+    if (name == null || !name.trim()) return;
+    store.checkpoint();
+    m.name = name.trim();
+    store.emit('playlist');
+  }
+
+  function rulerMenu(e, step) {
+    const at = snapRound(step, snap() || BEAT());
+    const marker = markerAtRuler(e.offsetX, e.offsetY);
+    const list = markers(store);
+    showMenu([
+      ...(marker ? [
+        { label: `Rename “${marker.name}”…`, action: () => renameMarker(marker) },
+        { label: `Delete “${marker.name}”`, action: () => { store.checkpoint(); removeMarker(store, marker.id); store.emit('playlist'); } },
+        { separator: true },
+      ] : []),
+      { label: 'Add marker here', action: async () => {
+        const name = await promptDialog('Add marker', `Marker ${list.length + 1}`);
+        if (name == null) return;
+        store.checkpoint();
+        addMarker(store, at, name.trim());
+        store.emit('playlist');
+      } },
+      { label: 'Jump to marker', disabled: !list.length, submenu: list.map((m) => ({ label: m.name, action: () => transport.seek(m.step) })) },
+      { separator: true },
+      { label: 'Loop between markers', disabled: list.length < 1, submenu: list.map((m, k) => ({ label: `${m.name} → ${list[k + 1]?.name ?? 'end'}`, action: () => {
+        const end = list[k + 1]?.step ?? Math.max(m.step + BAR(), Math.ceil(store.playlistEndStep() / BAR()) * BAR());
+        store.checkpoint();
+        store.project.loop = { start: m.step, end };
+        store.emit('loop');
+        transport.setLoop(true);
+      } })) },
+      { label: 'Clear loop', disabled: !store.project.loop, action: () => { store.checkpoint(); store.project.loop = null; store.emit('loop'); invalidate(); } },
+    ], e.clientX, e.clientY);
   }
 
   // ----------------------------------------------------------- interaction
@@ -633,19 +729,78 @@ export function createPlaylist(app) {
         { label: 'Open in piano roll', action: () => { store.selectPattern(pat.id); wm.get('piano').show(); } },
         { label: 'Rename pattern…', action: () => app.actions.renamePattern(pat.id) },
         { label: 'Make unique', action: () => makeUnique(c) },
+        { label: 'Split by channel', disabled: store.project.channels.filter((ch) => pat.notes[ch.id]?.length).length < 2, action: () => {
+          store.checkpoint();
+          const made = splitByChannel(store, c);
+          S.selection = new Set(made.map((x) => x.id));
+          store.emit('patterns');
+          store.emit('playlist');
+        } },
         { label: 'Fit clip to pattern length', action: () => { store.checkpoint(); c.len = patLen(c.pat); c.offset = 0; store.emit('playlist'); } },
         { label: 'Color', submenu: COLORS.map((col) => ({ label: ' ', swatch: col, action: () => { store.checkpoint(); pat.color = col; store.emit('patterns'); } })) },
         { separator: true },
       );
     } else if (type === 'auto') {
       items.push({ label: 'Edit automation…', action: () => app.actions.openAutomation(c.autoId) }, { separator: true });
+    } else if (type === 'audio') {
+      const fades = (key) => [0, 0.5, 1, 2, 4, 8, 16].map((st) => ({
+        label: st ? `${st >= 4 ? `${st / 4} beat${st > 4 ? 's' : ''}` : `${st} step${st > 1 ? 's' : ''}`}` : 'None',
+        checked: (c[key] || 0) === st,
+        action: () => { store.checkpoint(); if (st) c[key] = Math.min(st, c.len); else delete c[key]; store.emit('playlist'); },
+      }));
+      items.push(
+        { label: 'Gain…', action: async () => {
+          const db = Math.round(20 * Math.log10(c.gain ?? 1) * 10) / 10;
+          const v = await formDialog('Clip gain', [{ key: 'db', label: 'Gain (dB)', value: db, min: -48, max: 12, step: 0.5 }], 'Set');
+          if (!v) return;
+          store.checkpoint();
+          c.gain = Math.round(10 ** (v.db / 20) * 10000) / 10000;
+          store.emit('playlist');
+        } },
+        { label: 'Fade in', submenu: fades('fadeIn') },
+        { label: 'Fade out', submenu: fades('fadeOut') },
+        { label: 'Reverse', checked: !!c.reverse, action: () => { store.checkpoint(); if (c.reverse) delete c.reverse; else c.reverse = true; store.emit('playlist'); } },
+        { label: c.pitch ? `Pitch (${c.pitch > 0 ? '+' : ''}${c.pitch} st)…` : 'Pitch…', action: async () => {
+          const v = await formDialog('Clip pitch', [{ key: 'st', label: 'Semitones (length stays the same)', value: c.pitch ?? 0, min: -24, max: 24, step: 0.1 }], 'Set');
+          if (!v) return;
+          store.checkpoint();
+          const st = Math.round(v.st * 10) / 10;
+          if (st) c.pitch = st; else delete c.pitch;
+          store.emit('playlist');
+        } },
+        { label: 'Follow the project tempo', submenu: [
+          { label: 'Off (play as recorded)', checked: !c.stretch, action: () => { store.checkpoint(); delete c.stretch; store.emit('playlist'); } },
+          { label: 'Stretch (keep the pitch)…', checked: c.stretch?.mode === 'stretch', action: () => tempoFollow(c, 'stretch') },
+          { label: 'Resample (pitch follows)…', checked: c.stretch?.mode === 'resample', action: () => tempoFollow(c, 'resample') },
+        ] },
+        { separator: true },
+      );
     }
     items.push(
       { label: 'Duplicate', shortcut: 'Ctrl+B', action: () => duplicateSelection() },
+      ...(type !== 'auto' ? [{ label: S.selection.size > 1 ? 'Render selection to an audio clip' : 'Render to an audio clip', action: () => app.actions.renderClipsToAudio([...S.selection]) }] : []),
       { label: c.mute ? 'Unmute' : 'Mute', action: () => { store.checkpoint(); c.mute = !c.mute; store.emit('playlist'); } },
       { label: 'Delete', shortcut: 'Del', action: () => { store.checkpoint(); store.project.playlist.clips = clips().filter((x) => x !== c); S.selection.delete(c.id); store.emit('playlist'); } },
     );
     showMenu(items, x, y);
+  }
+
+  /** Make an audio clip follow the project tempo: ask the loop's own tempo (guessed from its length) and fit the clip. */
+  async function tempoFollow(c, mode) {
+    const buf = store.samples.get(c.sampleId)?.buffer;
+    if (!buf) return;
+    const guess = c.stretch?.bpm ?? guessLoopBpm(buf.duration, BAR() / 4, store.project.bpm);
+    const v = await formDialog(mode === 'stretch' ? 'Stretch to the project tempo' : 'Resample to the project tempo', [
+      { key: 'bpm', label: 'The loop\'s own tempo (BPM)', value: guess, min: 20, max: 400, step: 0.01 },
+    ], 'Apply', `At ${store.project.bpm} BPM the clip will play ${mode === 'stretch' ? 'at its own pitch' : 'faster or slower, and higher or lower'}. The tempo is guessed from the length of the sample; correct it if the loop drifts.`);
+    if (!v) return;
+    store.checkpoint();
+    c.stretch = { mode, bpm: v.bpm };
+    // the clip covers the whole loop at the new speed (whole steps where it is close)
+    const steps = (buf.duration * v.bpm * 4) / 60;
+    c.len = Math.abs(steps - Math.round(steps)) < 0.05 ? Math.round(steps) : Math.round(steps * 4) / 4;
+    c.offset = 0;
+    store.emit('playlist');
   }
 
   /** Clone the clip's pattern and point the clip at the clone so it can be edited independently. */
@@ -696,11 +851,14 @@ export function createPlaylist(app) {
   // drag & drop: patterns, library samples, and audio files from the desktop
   const accepts = (e) => {
     const t = e.dataTransfer.types;
-    return t.includes('text/openstudio-pattern') || t.includes('text/openstudio-sample') || t.includes('Files');
+    return t.includes('text/openstudio-pattern') || t.includes('text/openstudio-sample') || t.includes('text/openstudio-file') || t.includes('Files');
   };
   scroller.addEventListener('dragover', (e) => { if (accepts(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
   scroller.addEventListener('drop', async (e) => {
     if (!accepts(e)) return;
+    // desktop files the playlist can't place (a project, say) are left to the window
+    const files = [...e.dataTransfer.files];
+    if (files.length && !files.some((f) => /\.(mid|midi|rmi|wav|mp3|ogg|flac|aiff?|aac|m4a)$/i.test(f.name) || /^audio\//.test(f.type))) return;
     e.preventDefault();
     const w = world(e);
     const sz = snap();
@@ -708,7 +866,15 @@ export function createPlaylist(app) {
     let track = trackAt(w.y);
     const patId = Number(e.dataTransfer.getData('text/openstudio-pattern'));
     const sampleId = Number(e.dataTransfer.getData('text/openstudio-sample'));
-    if (store.pattern(patId)) {
+    const libFile = e.dataTransfer.getData('text/openstudio-file');
+    if (libFile) {
+      // a file from the browser's sample folders
+      try {
+        const data = await app.browser.readFile(libFile);
+        const id = store.addSample(libFile.split(/[\\/]/).pop(), data.slice(0));
+        await placeAudio(id, track, start);
+      } catch (err) { console.warn('Could not place the sample', err); }
+    } else if (store.pattern(patId)) {
       store.checkpoint();
       placeClip(patId, track, start, patLen(patId));
       store.emit('playlist');
@@ -731,11 +897,14 @@ export function createPlaylist(app) {
   cRuler.addEventListener('pointerdown', (e) => {
     cRuler.setPointerCapture(e.pointerId);
     const step = rulerStep(e);
-    if (e.button === 2 || e.shiftKey) {
-      const a = snapRound(step, STEPS_PER_BEAT);
+    const marker = e.button === 0 && !e.shiftKey ? markerAtRuler(e.offsetX, e.offsetY) : null;
+    if (marker) { transport.seek(marker.step); scrub = { type: 'marker', marker }; return; }
+    if (e.button === 2) { scrub = { type: 'pending', x: e.clientX, step, e }; return; }
+    if (e.shiftKey) {
+      const a = snapRound(step, BEAT());
       scrub = { type: 'loop', a };
       store.checkpoint();
-      store.project.loop = { start: a, end: a + STEPS_PER_BEAT };
+      store.project.loop = { start: a, end: a + BEAT() };
     } else {
       scrub = { type: 'seek' };
       transport.seek(snapRound(step, Math.min(snap() || 1, 4)));
@@ -744,18 +913,29 @@ export function createPlaylist(app) {
   cRuler.addEventListener('pointermove', (e) => {
     if (!scrub) return;
     const step = rulerStep(e);
+    if (scrub.type === 'marker') return;
+    if (scrub.type === 'pending') {
+      // a right-drag selects a loop region; a right-click without a drag opens the ruler menu
+      if (Math.abs(e.clientX - scrub.x) < 4) return;
+      const a = snapRound(scrub.step, BEAT());
+      scrub = { type: 'loop', a };
+      store.checkpoint();
+    }
     if (scrub.type === 'seek') transport.seek(snapRound(step, Math.min(snap() || 1, 4)));
     else {
-      const b = snapRound(step, STEPS_PER_BEAT);
-      store.project.loop = { start: Math.min(scrub.a, b), end: Math.max(scrub.a, b) + (b === scrub.a ? STEPS_PER_BEAT : 0) };
+      const b = snapRound(step, BEAT());
+      store.project.loop = { start: Math.min(scrub.a, b), end: Math.max(scrub.a, b) + (b === scrub.a ? BEAT() : 0) };
       invalidate();
     }
   });
-  cRuler.addEventListener('pointerup', () => {
+  cRuler.addEventListener('pointerup', (e) => {
+    if (scrub?.type === 'pending') { const st = scrub.step; scrub = null; rulerMenu(e, st); return; }
     if (scrub?.type === 'loop') { store.dirty = true; store.emit('loop'); if (!transport.loopEnabled) transport.setLoop(true); }
     scrub = null;
   });
   cRuler.addEventListener('dblclick', (e) => {
+    const marker = markerAtRuler(e.offsetX, e.offsetY);
+    if (marker) { renameMarker(marker); return; }
     if (store.project.loop && !e.shiftKey) { store.checkpoint(); store.project.loop = null; store.emit('loop'); invalidate(); }
   });
 
@@ -785,7 +965,7 @@ export function createPlaylist(app) {
       if (!S.clipboard.length) return;
       handled();
       store.checkpoint();
-      const at = snapFloor(transport.playing || transport.mode === 'song' ? transport.position() : scroller.scrollLeft / pxStep(), STEPS_PER_BAR);
+      const at = snapFloor(transport.playing || transport.mode === 'song' ? transport.position() : scroller.scrollLeft / pxStep(), BAR());
       const baseTrack = Math.floor(scroller.scrollTop / TRACK_H);
       S.selection.clear();
       for (const c of S.clipboard) {

@@ -1,41 +1,66 @@
+import { keymap } from '../keymap.js';
 import { h } from '../util.js';
 import { icon } from './icons.js';
-import { createKnob, hint } from './knob.js';
-import { showMenuBelow, closeMenus } from './menu.js';
+import { createKnob, hint, showAutomationMenu } from './knob.js';
+import { showMenu, showMenuBelow, closeMenus } from './menu.js';
 import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
 import { createScrub } from './scrub.js';
+import { controllerLinks, describeLink, unlink } from '../controllers.js';
+import { STYLES } from '../agent/music/styles.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
+  /** What Record captures (FL asks the same when you arm it). */
+  // recent projects, kept fresh for the (synchronously built) File menu
+  let recentFiles = [];
+  const refreshRecent = () => window.studioAPI?.recent?.list().then((l) => { recentFiles = l; }).catch(() => {});
+  refreshRecent();
+  store.on('project', refreshRecent);
+  store.on('project-saved', refreshRecent);
+  const recordMenu = () => [
+    { label: 'Record on / off', checked: app.transport.recording, action: () => app.transport.setRecording(!app.transport.recording) },
+    { separator: true },
+    { label: 'Notes into the piano roll', checked: app.transport.recordNotes, action: () => app.transport.setRecordNotes(!app.transport.recordNotes) },
+    { label: 'Audio into the playlist', checked: app.transport.recordAudio, action: () => app.transport.setRecordAudio(!app.transport.recordAudio) },
+  ];
   const root = document.getElementById('toolbar');
 
   // ------------------------------------------------------------------ menus
   const menus = {
     FILE: () => [
-      { label: 'New project', shortcut: 'Ctrl+N', action: actions.newProject },
-      { label: 'Open…', shortcut: 'Ctrl+O', action: actions.openProject },
+      { label: 'New project', shortcut: keymap.label('new'), action: actions.newProject },
+      { label: 'New from template', submenu: () => Object.entries(STYLES).map(([id, st]) => ({ label: st.name, hint: st.blurb, action: () => actions.newFromTemplate(id) })) },
+      { label: 'Open…', shortcut: keymap.label('open'), action: () => actions.openProject() },
+      { label: 'Open recent', submenu: () => (recentFiles.length ? [
+        ...recentFiles.map((f) => ({ label: f.split(/[\\/]/).pop(), hint: f, action: () => actions.openProject(f) })),
+        { separator: true },
+        { label: 'Clear the list', action: async () => { recentFiles = await window.studioAPI.recent.clear(); } },
+      ] : [{ label: 'No recent projects', disabled: true }]) },
       { separator: true },
-      { label: 'Save', shortcut: 'Ctrl+S', action: () => actions.saveProject(false) },
-      { label: 'Save as…', shortcut: 'Ctrl+Shift+S', action: () => actions.saveProject(true) },
+      { label: 'Save', shortcut: keymap.label('save'), action: () => actions.saveProject(false) },
+      { label: 'Save as…', shortcut: keymap.label('save-as'), action: () => actions.saveProject(true) },
       { separator: true },
       { label: 'Open demo project', action: actions.loadDemo },
       { label: 'Import sample…', action: actions.addSamplerFromFile },
       { label: 'Import MIDI file…', action: () => actions.importMidiFile() },
       { separator: true },
-      { label: 'Export audio (WAV)…', shortcut: 'Ctrl+R', action: actions.exportWav },
+      { label: 'Export audio (WAV)…', shortcut: keymap.label('export-wav'), action: actions.exportWav },
+      { label: 'Export audio (FLAC, lossless)…', action: actions.exportFlac },
+      { label: 'Export audio (MP3)', submenu: [320, 256, 192].map((kbps) => ({ label: `${kbps} kbps…`, shortcut: kbps === 320 ? keymap.label('export-mp3') : '', action: () => actions.exportMp3(kbps) })) },
+      { label: 'Export stems (one WAV per mixer track)…', shortcut: keymap.label('export-stems'), action: actions.exportStems },
       { label: 'Export MIDI…', action: actions.exportMidi },
     ],
     EDIT: () => [
-      { label: 'Undo', shortcut: 'Ctrl+Z', disabled: !store.undoStack.length, action: actions.undo },
-      { label: 'Redo', shortcut: 'Ctrl+Y', disabled: !store.redoStack.length, action: actions.redo },
+      { label: 'Undo', shortcut: keymap.label('undo'), disabled: !store.undoStack.length, action: actions.undo },
+      { label: 'Redo', shortcut: keymap.label('redo'), disabled: !store.redoStack.length, action: actions.redo },
       { separator: true },
       { label: 'Clear current pattern', action: actions.clearPattern },
     ],
     ADD: () => [
       { label: 'One more channel', submenu: () => actions.channelMenuItems() },
-      { label: 'New pattern', shortcut: 'Ctrl+Shift+P', action: () => store.addPattern() },
+      { label: 'New pattern', shortcut: keymap.label('new-pattern'), action: () => store.addPattern() },
     ],
     PATTERNS: () => [
       { label: 'New pattern', action: () => store.addPattern() },
@@ -43,23 +68,46 @@ export function createToolbar(app) {
       { label: 'Rename pattern…', action: actions.renamePattern },
       { label: 'Delete pattern', disabled: store.project.patterns.length < 2, action: () => store.removePattern(store.project.selected.pattern) },
       { separator: true },
-      { label: 'Next pattern', shortcut: '+', action: () => store.stepPattern(1) },
-      { label: 'Previous pattern', shortcut: '-', action: () => store.stepPattern(-1) },
+      { label: 'Next pattern', shortcut: keymap.label('next-pattern'), action: () => store.stepPattern(1) },
+      { label: 'Previous pattern', shortcut: keymap.label('prev-pattern'), action: () => store.stepPattern(-1) },
       { separator: true },
       ...store.project.patterns.map((p) => ({ label: p.name, swatch: p.color, checked: p.id === store.project.selected.pattern, action: () => store.selectPattern(p.id) })),
     ],
     VIEW: () => [
-      { label: 'Browser', shortcut: 'Alt+F8', checked: app.browserVisible(), action: actions.toggleBrowser },
-      { label: 'Channel rack', shortcut: 'F6', checked: wm.get('rack').visible, action: () => wm.get('rack').toggle() },
-      { label: 'Piano roll', shortcut: 'F7', checked: wm.get('piano').visible, action: () => wm.get('piano').toggle() },
-      { label: 'Playlist', shortcut: 'F5', checked: wm.get('playlist').visible, action: () => wm.get('playlist').toggle() },
-      { label: 'Mixer', shortcut: 'F9', checked: wm.get('mixer').visible, action: () => wm.get('mixer').toggle() },
+      { label: 'Browser', shortcut: keymap.label('browser'), checked: app.browserVisible(), action: actions.toggleBrowser },
+      { label: 'Channel rack', shortcut: keymap.label('rack'), checked: wm.get('rack').visible, action: () => wm.get('rack').toggle() },
+      { label: 'Piano roll', shortcut: keymap.label('piano'), checked: wm.get('piano').visible, action: () => wm.get('piano').toggle() },
+      { label: 'Playlist', shortcut: keymap.label('playlist'), checked: wm.get('playlist').visible, action: () => wm.get('playlist').toggle() },
+      { label: 'Mixer', shortcut: keymap.label('mixer'), checked: wm.get('mixer').visible, action: () => wm.get('mixer').toggle() },
       { separator: true },
       { label: 'Reset window layout', action: () => wm.resetLayout() },
     ],
     OPTIONS: () => [
-      { label: 'Metronome', shortcut: 'Ctrl+M', checked: transport.metronome, action: () => transport.setMetronome(!transport.metronome) },
-      { label: 'Record to piano roll', checked: transport.recording, action: () => transport.setRecording(!transport.recording) },
+      { label: 'Metronome', shortcut: keymap.label('metronome'), checked: transport.metronome, action: () => transport.setMetronome(!transport.metronome) },
+      { label: 'Record', submenu: recordMenu },
+      { label: 'Audio input', submenu: () => {
+        const rec = app.recorder;
+        const devs = rec?.known ?? [];
+        rec?.refreshDevices();
+        const sel = store.project.selected.mixer;
+        return [
+          { label: rec?.monitorTrack != null ? `Stop monitoring (through ${store.project.mixer[rec.monitorTrack].name})` : `Monitor through mixer track “${store.project.mixer[sel].name}”`,
+            checked: rec?.monitorTrack != null,
+            action: () => rec.setMonitor(rec.monitorTrack != null ? null : sel) },
+          { separator: true },
+          { label: 'Default input', checked: !rec?.deviceId, action: () => rec.setDevice('') },
+          ...devs.filter((d) => d.id && d.id !== 'default').map((d) => ({ label: d.name, checked: rec.deviceId === d.id, action: () => rec.setDevice(d.id) })),
+        ];
+      } },
+      { label: 'MIDI controller links', submenu: () => {
+        const links = controllerLinks(store);
+        if (!links.length) return [{ label: 'None — right-click a knob → Link to controller…', disabled: true }];
+        return [
+          ...links.map((l) => ({ label: describeLink(store, l), submenu: [{ label: 'Remove link', action: () => { store.checkpoint(); unlink(store, l.target); store.emit('controllers'); } }] })),
+          { separator: true },
+          { label: 'Remove all links', action: () => { store.checkpoint(); store.project.controllerLinks = []; store.emit('controllers'); } },
+        ];
+      } },
       { label: 'MIDI input', submenu: () => {
         const devs = app.midi?.devices?.() ?? [];
         return devs.length ? devs.map((d) => ({ label: d.name, checked: d.on, action: () => app.midi.toggle(d.id) })) : [{ label: app.midi?.error || 'No MIDI devices found', disabled: true }];
@@ -69,14 +117,14 @@ export function createToolbar(app) {
       { label: 'Pattern mode', checked: transport.mode === 'pattern', action: () => transport.setMode('pattern') },
     ],
     TOOLS: () => [
-      { label: 'Settings…', shortcut: 'Ctrl+,', action: () => actions.togglePreferences() },
+      { label: 'Settings…', shortcut: keymap.label('preferences'), action: () => actions.togglePreferences() },
       { separator: true },
-      { label: 'Channel settings…', shortcut: 'F10', action: () => actions.openChannelSettings(store.selectedChannel?.id) },
+      { label: 'Channel settings…', shortcut: keymap.label('channel-settings'), action: () => actions.openChannelSettings(store.selectedChannel?.id) },
       { label: 'Clear current pattern', action: actions.clearPattern },
       { label: 'Reset mixer', action: actions.resetMixer },
     ],
     HELP: () => [
-      { label: 'Keyboard shortcuts', shortcut: 'F1', action: actions.showShortcuts },
+      { label: 'Keyboard shortcuts', shortcut: keymap.label('help'), action: actions.showShortcuts },
       { label: 'Agents (MCP server)…', action: actions.showAgents },
       { separator: true },
       { label: 'Check for updates…', action: () => actions.checkForUpdates() },
@@ -120,14 +168,16 @@ export function createToolbar(app) {
   const restartBtn = h('button', { class: 'tbtn big restart', 'data-hint': 'Back to the start (Home)', onClick: () => transport.restart() }, icon('restart'));
   const playBtn = h('button', { class: 'tbtn big play', 'data-hint': 'Play / Pause (Space)', onClick: () => transport.togglePlay() }, icon('play'));
   const stopBtn = h('button', { class: 'tbtn big stop', 'data-hint': 'Stop — back to where playback started', onClick: () => transport.stop() }, icon('stop'));
-  const recBtn = h('button', { class: 'tbtn big rec', 'data-hint': 'Record notes from the keyboard into the piano roll', onClick: () => transport.setRecording(!transport.recording) }, icon('record'));
+  const recBtn = h('button', { class: 'tbtn big rec', 'data-hint': 'Record — notes into the piano roll and / or audio input into the playlist (right-click to choose)', onClick: () => transport.setRecording(!transport.recording) }, icon('record'));
+  recBtn.addEventListener('contextmenu', (e) => { e.preventDefault(); const r = recBtn.getBoundingClientRect(); showMenu(recordMenu(), r.left, r.bottom); });
   const metroBtn = h('button', { class: 'tbtn', 'data-hint': 'Metronome (Ctrl+M)', onClick: () => transport.setMetronome(!transport.metronome) }, icon('metronome'));
 
   const loopBtn = h('button', { class: 'tbtn', 'data-hint': 'Loop the playlist region (Shift+drag on the playlist ruler to set it)', onClick: () => transport.setLoop(!transport.loopEnabled) }, icon('loop'));
 
   // tempo
   const tempoVal = h('span', { class: 'tempo-val' }, '130.000');
-  const tempoBox = h('div', { class: 'tempo-box', 'data-hint': 'Tempo — drag, scroll or double-click to type (BPM)' }, tempoVal);
+  const tempoBox = h('div', { class: 'tempo-box', 'data-hint': 'Tempo — drag, scroll or double-click to type (BPM); right-click to automate it' }, tempoVal);
+  tempoBox.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'tempo' }));
   let tdrag = null;
   tempoBox.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return;
@@ -215,6 +265,23 @@ export function createToolbar(app) {
 
   const snapBtn = createSnapSelect(app);
 
+  // time signature
+  const tsBtn = h('button', { class: 'ts-box', 'data-hint': 'Time signature — beats per bar / beat unit' }, '4/4');
+  tsBtn.addEventListener('click', () => {
+    const [n, d] = store.project.timeSig;
+    const pick = (ts) => actions.setTimeSignature(ts);
+    showMenuBelow(tsBtn, [
+      ...[[4, 4], [3, 4], [2, 4], [5, 4], [6, 4], [7, 4], [6, 8], [7, 8], [9, 8], [12, 8], [5, 8], [2, 2]]
+        .map(([a, b]) => ({ label: `${a}/${b}`, checked: a === n && b === d, action: () => pick([a, b]) })),
+      { separator: true },
+      { label: 'Custom…', action: async () => {
+        const v = await promptDialog('Time signature', `${n}/${d}`, 'Beats per bar / beat unit (2, 4, 8 or 16), e.g. 11/8');
+        const m = /^\s*(\d+)\s*\/\s*(\d+)\s*$/.exec(v || '');
+        if (m) pick([Number(m[1]), Number(m[2])]);
+      } },
+    ]);
+  });
+
   const patName = h('span', { class: 'pat-name' }, 'Pattern 1');
   const patSwatch = h('span', { class: 'pat-swatch' });
   const patBox = h('button', { class: 'pat-box', 'data-hint': 'Selected pattern — click to choose, scroll to step through patterns' }, patSwatch, patName, h('span', { class: 'caret' }, '▼'));
@@ -251,6 +318,7 @@ export function createToolbar(app) {
   const row2 = h('div', { class: 'tb-row tb-row2' },
     hintPanel,
     snapBtn,
+    tsBtn,
     h('div', { class: 'pat-group' }, patPrev, patBox, patNext, patAdd),
     h('div', { class: 'tb-flex scrub-slot' }, scrub.el),
     h('div', { class: 'tb-group toggles' }, toggles),
@@ -298,6 +366,7 @@ export function createToolbar(app) {
     patName.textContent = pat.name;
     patSwatch.style.background = pat.color;
     tempoVal.textContent = p.bpm.toFixed(3);
+    tsBtn.textContent = `${p.timeSig[0]}/${p.timeSig[1]}`;
     masterKnob.setValue(p.mixer[0].vol);
     pitchKnob.setValue(p.masterPitch);
     refreshStatic();
@@ -308,11 +377,12 @@ export function createToolbar(app) {
   transport.on('bpm', () => { tempoVal.textContent = store.project.bpm.toFixed(3); });
   wm.on('visibility', refreshStatic);
   app.on('browser', refreshStatic);
-  for (const evt of ['project', 'patterns', 'selection']) store.on(evt, refreshProject);
+  for (const evt of ['project', 'patterns', 'selection', 'settings']) store.on(evt, refreshProject);
   store.on('mixer', () => masterKnob.setValue(store.project.mixer[0].vol));
   refreshProject();
 
   let lastMem = 0;
+  let tempoAuto = false;
   const level = [0, 0];
   function drawMasterMeter() {
     const c = meterCtx;
@@ -344,6 +414,16 @@ export function createToolbar(app) {
       timeBig.textContent = `${t.bar}:${String(t.beat).padStart(2, '0')}`;
       timeSmall.textContent = `:${String(t.tick).padStart(2, '0')}`;
     }
+    // with tempo automation the display follows the song's tempo while it plays
+    if (transport.playing && transport.tempo.varies) {
+      const bpm = transport.currentBpm().toFixed(3);
+      if (tempoVal.textContent !== bpm) tempoVal.textContent = bpm;
+      tempoAuto = true;
+    } else if (tempoAuto) {
+      tempoAuto = false;
+      tempoVal.textContent = store.project.bpm.toFixed(3);
+    }
+    tempoBox.classList.toggle('automated', tempoAuto);
     const voices = app.engine.voiceCount;
     polyEl.textContent = `${voices} voice${voices === 1 ? '' : 's'}`;
     drawMasterMeter();

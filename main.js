@@ -33,6 +33,13 @@ function createWindow() {
   });
   mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile('index.html');
+  // the window only ever shows the app: a dropped file or a stray link must not navigate it away (and lose the
+  // session); links open in the browser instead
+  mainWindow.webContents.on('will-navigate', (e) => e.preventDefault());
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//.test(url)) shell.openExternal(url);
+    return { action: 'deny' };
+  });
 
   const shot = argOf('screenshot');
   if (shot) {
@@ -83,17 +90,113 @@ ipcMain.handle('project:save', async (_e, { suggestedName, text, forceDialog, kn
     target = res.filePath;
   }
   await fs.promises.writeFile(target, text, 'utf8');
+  await rememberRecent(target);
   return target;
 });
+
+// ------------------------------------------------------------------ recent projects (File → Open recent)
+const recentFile = () => path.join(app.getPath('userData'), 'recent.json');
+let recent = null;
+async function recentList() {
+  if (!recent) {
+    try { recent = JSON.parse(await fs.promises.readFile(recentFile(), 'utf8')).filter((f) => typeof f === 'string'); } catch { recent = []; }
+  }
+  return recent;
+}
+async function rememberRecent(file) {
+  const list = (await recentList()).filter((f) => f !== file);
+  list.unshift(file);
+  recent = list.slice(0, 12);
+  await fs.promises.writeFile(recentFile(), JSON.stringify(recent)).catch(() => {});
+  try { app.addRecentDocument(file); } catch { /* not on every platform */ }
+}
+/** Read a project file for the renderer (.flp as bytes, anything else as text). */
+async function readProject(file) {
+  await rememberRecent(file);
+  if (/\.flp$/i.test(file)) {
+    const buf = await fs.promises.readFile(file);
+    lastFlp = file;
+    return { path: file, kind: 'flp', data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
+  }
+  return { path: file, text: await fs.promises.readFile(file, 'utf8') };
+}
+ipcMain.handle('recent:list', async () => {
+  const out = [];
+  for (const f of await recentList()) if (await fs.promises.stat(f).then((st) => st.isFile(), () => false)) out.push(f);
+  return out;
+});
+// a project file dropped on the window (the renderer only gets here through a real drop)
+ipcMain.handle('project:openPath', async (_e, file) => (typeof file === 'string' && /\.(osp|flp|json)$/i.test(file) ? readProject(file) : null));
+// only paths that are already on the list can be opened this way
+ipcMain.handle('recent:open', async (_e, file) => ((await recentList()).includes(file) ? readProject(file) : null));
+ipcMain.handle('recent:clear', async () => { recent = []; await fs.promises.writeFile(recentFile(), '[]').catch(() => {}); return []; });
+
+// The FL Studio project the user last opened: only its sample references may be read (see flp:samples).
+let lastFlp = null;
 
 ipcMain.handle('project:open', async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     properties: ['openFile'],
-    filters: [{ name: 'OpenStudio project', extensions: ['osp', 'json'] }],
+    filters: [
+      { name: 'Projects', extensions: ['osp', 'flp', 'json'] },
+      { name: 'OpenStudio project', extensions: ['osp', 'json'] },
+      { name: 'FL Studio project', extensions: ['flp'] },
+    ],
   });
   if (res.canceled || !res.filePaths[0]) return null;
-  const file = res.filePaths[0];
-  return { path: file, text: await fs.promises.readFile(file, 'utf8') };
+  return readProject(res.filePaths[0]);
+});
+
+const AUDIO_EXT = /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i;
+
+/** FL Studio installs on this computer, for samples referenced as %FLStudioFactoryData% / %FLStudioUserData%. */
+let flRootsCache = null;
+async function flRoots() {
+  if (flRootsCache) return flRootsCache;
+  const user = path.join(app.getPath('documents'), 'Image-Line', 'FL Studio');
+  const dirs = process.platform === 'win32'
+    ? [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean).map((p) => path.join(p, 'Image-Line'))
+    : process.platform === 'darwin' ? ['/Applications'] : [];
+  const roots = [];
+  for (const d of dirs) {
+    const names = await fs.promises.readdir(d).catch(() => []);
+    for (const n of names) if (/^FL Studio/i.test(n)) roots.push({ factory: path.join(d, n, process.platform === 'darwin' ? 'Contents/Resources/FL' : ''), user });
+  }
+  flRootsCache = roots;
+  return roots;
+}
+
+/** Where a sample an .flp refers to might be on this computer: the path itself, or beside / below the project. */
+async function findSample(raw, projectDir) {
+  const base = raw.split(/[\\/]/).pop();
+  if (!AUDIO_EXT.test(base)) return null;
+  const candidates = [];
+  if (!raw.includes('%')) candidates.push(raw);
+  else for (const root of await flRoots()) candidates.push(raw.replace(/^%FLStudio(Factory|User)Data%/i, (_m, which) => (which.toLowerCase() === 'user' ? root.user : root.factory)).replace(/\\/g, path.sep));
+  // FL's "export project data files" keeps samples beside the project, often in a sub-folder
+  candidates.push(path.join(projectDir, base));
+  for (const sub of ['Samples', 'samples', 'Audio', 'audio', 'Data', 'Recorded', 'Rendered', 'Sliced audio']) candidates.push(path.join(projectDir, sub, base));
+  for (const c of candidates) {
+    try {
+      const st = await fs.promises.stat(c);
+      if (st.isFile() && st.size < 512 * 1024 * 1024) return c;
+    } catch { /* not there */ }
+  }
+  return null;
+}
+
+ipcMain.handle('flp:samples', async (_e, paths) => {
+  if (!lastFlp || !Array.isArray(paths)) return [];
+  const dir = path.dirname(lastFlp);
+  const out = [];
+  for (const raw of paths.slice(0, 500)) {
+    if (typeof raw !== 'string') continue;
+    const file = await findSample(raw, dir);
+    if (!file) continue;
+    const buf = await fs.promises.readFile(file);
+    out.push({ ref: raw, name: path.basename(file), data: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) });
+  }
+  return out;
 });
 
 ipcMain.handle('sample:open', async () => {
@@ -115,6 +218,84 @@ ipcMain.handle('file:write', async (_e, { suggestedName, data, filters }) => {
   if (res.canceled || !res.filePath) return null;
   await fs.promises.writeFile(res.filePath, Buffer.from(data));
   return res.filePath;
+});
+
+// Exports that produce several files (stems): the renderer may only write plain file names into the folder the user
+// picked last, never anywhere else.
+let exportDir = null;
+ipcMain.handle('dir:pick', async (_e, { title } = {}) => {
+  const res = await dialog.showOpenDialog(mainWindow, { title: title || 'Choose a folder', properties: ['openDirectory', 'createDirectory'] });
+  if (res.canceled || !res.filePaths[0]) return null;
+  exportDir = res.filePaths[0];
+  return exportDir;
+});
+ipcMain.handle('dir:write', async (_e, { dir, name, data }) => {
+  if (!exportDir || dir !== exportDir) throw new Error('Pick the export folder first');
+  // eslint-disable-next-line no-control-regex -- control characters are exactly what must not reach a file name
+  const base = String(name).replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').slice(0, 120);
+  if (!/\.(wav|mid)$/i.test(base) || base.startsWith('.')) throw new Error('Invalid file name');
+  const file = path.join(exportDir, base);
+  await fs.promises.writeFile(file, Buffer.from(data));
+  return file;
+});
+
+// ------------------------------------------------------------------ sample library (browser → Sample folders)
+// The folders are picked by the user in a dialog and kept here, in the main process: the renderer can list and read
+// audio files inside them, and nothing else.
+const libFile = () => path.join(app.getPath('userData'), 'library.json');
+let libFolders = null;
+async function libraryFolders() {
+  if (!libFolders) {
+    try { libFolders = JSON.parse(await fs.promises.readFile(libFile(), 'utf8')).folders.filter((f) => typeof f === 'string'); } catch { libFolders = []; }
+  }
+  return libFolders;
+}
+const saveLibrary = () => fs.promises.writeFile(libFile(), JSON.stringify({ folders: libFolders }, null, 2)).catch(() => {});
+/** The real path of `p` if it is inside one of the library folders, else null. */
+async function inLibrary(p) {
+  if (typeof p !== 'string' || !p) return null;
+  let real;
+  try { real = await fs.promises.realpath(p); } catch { return null; }
+  for (const root of await libraryFolders()) {
+    let r;
+    try { r = await fs.promises.realpath(root); } catch { continue; }
+    if (real === r || real.startsWith(r + path.sep)) return real;
+  }
+  return null;
+}
+ipcMain.handle('lib:folders', () => libraryFolders());
+ipcMain.handle('lib:add', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, { title: 'Add a sample folder to the browser', properties: ['openDirectory'] });
+  if (res.canceled || !res.filePaths[0]) return libraryFolders();
+  const list = await libraryFolders();
+  if (!list.includes(res.filePaths[0])) { list.push(res.filePaths[0]); await saveLibrary(); }
+  return list;
+});
+ipcMain.handle('lib:remove', async (_e, p) => {
+  libFolders = (await libraryFolders()).filter((f) => f !== p);
+  await saveLibrary();
+  return libFolders;
+});
+ipcMain.handle('lib:list', async (_e, dir) => {
+  const real = await inLibrary(dir);
+  if (!real) throw new Error('Not in a sample folder');
+  const entries = await fs.promises.readdir(real, { withFileTypes: true });
+  const out = [];
+  for (const d of entries) {
+    if (d.name.startsWith('.')) continue;
+    if (d.isDirectory()) out.push({ name: d.name, path: path.join(dir, d.name), dir: true });
+    else if (AUDIO_EXT.test(d.name)) out.push({ name: d.name, path: path.join(dir, d.name), dir: false });
+    if (out.length >= 3000) break;
+  }
+  return out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, undefined, { numeric: true }) : a.dir ? -1 : 1));
+});
+ipcMain.handle('lib:read', async (_e, file) => {
+  const real = await inLibrary(file);
+  if (!real || !AUDIO_EXT.test(real)) throw new Error('Not an audio file in a sample folder');
+  const st = await fs.promises.stat(real);
+  if (st.size > 512 * 1024 * 1024) throw new Error('That file is too large');
+  const buf = await fs.promises.readFile(real);
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
 });
 
 ipcMain.handle('asset:read', async (_e, rel) => {
@@ -271,8 +452,9 @@ async function startAgents() {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null);
-  const allowed = (perm) => perm === 'midi' || perm === 'midiSysex';
-  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(allowed(perm)));
+  // MIDI devices, and audio input for recording (Options → Record → Audio)
+  const allowed = (perm) => perm === 'midi' || perm === 'midiSysex' || perm === 'media' || perm === 'audioCapture';
+  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) => cb(allowed(perm) && !details?.mediaTypes?.includes('video')));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => allowed(perm));
   await startAgents();
   createWindow();

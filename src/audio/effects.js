@@ -19,6 +19,7 @@ export const EFFECT_DEFS = {
       { key: 'feedback', label: 'Feedback', min: 0, max: 0.95, def: 0.4, fmt: pct },
       { key: 'tone', label: 'Tone', min: 400, max: 14000, def: 5000, log: true, fmt: (v) => `${Math.round(v)} Hz` },
       { key: 'mix', label: 'Mix', min: 0, max: 1, def: 0.3, fmt: pct },
+      { key: 'mode', label: 'Mode', type: 'select', options: ['mono', 'ping-pong'], def: 'mono' },
     ],
     create: (ctx, p) => createDelay(ctx, p),
   },
@@ -125,7 +126,182 @@ export const EFFECT_DEFS = {
   },
 };
 
+// ---------------------------------------------------------------- 7-band parametric EQ (FL's Parametric EQ 2 layout)
+export const PEQ_BANDS = [
+  { type: 'highpass', f: 20, q: 0.71, label: 'Low cut' },
+  { type: 'lowshelf', f: 90, q: 0.71, label: 'Low shelf' },
+  { type: 'peaking', f: 250, q: 1, label: 'Low mid' },
+  { type: 'peaking', f: 1000, q: 1, label: 'Mid' },
+  { type: 'peaking', f: 3500, q: 1, label: 'High mid' },
+  { type: 'highshelf', f: 8000, q: 0.71, label: 'High shelf' },
+  { type: 'lowpass', f: 20000, q: 0.71, label: 'High cut' },
+];
+const hzFmt = (v) => (v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 1 : 2)} kHz` : `${Math.round(v)} Hz`);
+const dbFmt = (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} dB`;
+EFFECT_DEFS.peq = {
+  name: 'Parametric EQ',
+  view: 'eq',
+  params: [
+    ...PEQ_BANDS.flatMap((b, i) => [
+      { key: `f${i + 1}`, label: `${b.label} freq`, min: 20, max: 20000, def: b.f, log: true, fmt: hzFmt, band: i },
+      ...(b.type === 'highpass' || b.type === 'lowpass' ? [] : [{ key: `g${i + 1}`, label: `${b.label} gain`, min: -18, max: 18, def: 0, fmt: dbFmt, band: i }]),
+      { key: `q${i + 1}`, label: `${b.label} ${b.type.endsWith('shelf') ? 'slope' : 'Q'}`, min: 0.1, max: 18, def: b.q, log: true, fmt: (v) => v.toFixed(2), band: i },
+    ]),
+    { key: 'out', label: 'Output', min: -18, max: 18, def: 0, fmt: dbFmt },
+  ],
+  create: (ctx, p) => createPeq(ctx, p),
+};
+EFFECT_DEFS.analyzer = {
+  name: 'Spectrum analyser',
+  view: 'spectrum',
+  params: [{ key: 'slope', label: 'Tilt', min: 0, max: 6, def: 3, step: 1.5, fmt: (v) => `${v.toFixed(1)} dB/oct` }],
+  create: (ctx, p) => createAnalyzer(ctx, p),
+};
+EFFECT_DEFS.gate = {
+  name: 'Gate',
+  params: [
+    { key: 'threshold', label: 'Threshold', min: -80, max: 0, def: -40, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'range', label: 'Range', min: 0, max: 80, def: 60, fmt: (v) => `−${v.toFixed(0)} dB` },
+    { key: 'release', label: 'Release', min: 0.005, max: 1, def: 0.08, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+  ],
+  create: (ctx, p) => createGate(ctx, p),
+};
+EFFECT_DEFS.multiband = {
+  name: 'Multiband compressor',
+  params: [
+    { key: 'lowX', label: 'Low / mid', min: 60, max: 1000, def: 200, log: true, fmt: hzFmt },
+    { key: 'highX', label: 'Mid / high', min: 1000, max: 12000, def: 3000, log: true, fmt: hzFmt },
+    { key: 'threshold', label: 'Threshold', min: -60, max: 0, def: -24, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'ratio', label: 'Ratio', min: 1, max: 20, def: 4, fmt: (v) => `${v.toFixed(1)}:1` },
+    { key: 'attack', label: 'Attack', min: 0.001, max: 0.2, def: 0.005, log: true, fmt: (v) => `${(v * 1000).toFixed(1)} ms` },
+    { key: 'release', label: 'Release', min: 0.02, max: 1, def: 0.12, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'low', label: 'Low gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'mid', label: 'Mid gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'high', label: 'High gain', min: -12, max: 12, def: 0, fmt: dbFmt },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createMultiband(ctx, p),
+};
+
+EFFECT_DEFS.sidechain = {
+  name: 'Sidechain compressor',
+  params: [
+    { key: 'source', label: 'Key input', type: 'track', min: 1, max: 125, def: 1, step: 1, fmt: (v) => `Insert ${v}` },
+    { key: 'threshold', label: 'Threshold', min: -60, max: 0, def: -30, fmt: (v) => `${v.toFixed(0)} dB` },
+    { key: 'ratio', label: 'Ratio', min: 1, max: 20, def: 6, fmt: (v) => `${v.toFixed(1)}:1` },
+    { key: 'depth', label: 'Max reduction', min: 0, max: 48, def: 18, fmt: (v) => `−${v.toFixed(0)} dB` },
+    { key: 'release', label: 'Release', min: 0.01, max: 1, def: 0.12, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+  ],
+  create: (ctx, p) => createSidechain(ctx, p),
+};
+
+// Volume shaper shapes: cycle length in steps and the level (0..1) across one cycle (phase 0..1)
+export const SHAPES = {
+  'Pump 1/4': { steps: 4, level: (x) => Math.min(1, Math.pow(Math.min(1, x * 1.5), 0.6)) },
+  'Pump 1/2': { steps: 8, level: (x) => Math.min(1, Math.pow(Math.min(1, x * 1.5), 0.6)) },
+  'Gate 1/8': { steps: 2, level: (x) => (x < 0.5 ? 1 : 0) },
+  'Gate 1/16': { steps: 1, level: (x) => (x < 0.6 ? 1 : 0) },
+  'Offbeat': { steps: 4, level: (x) => (x >= 0.5 ? 1 : 0) },
+  'Trance 3+3+2': { steps: 8, level: (x) => ([0, 3, 6].some((s) => x * 8 >= s && x * 8 < s + 1.6) ? 1 : 0) },
+  'Stutter 1/32': { steps: 0.5, level: (x) => (x < 0.5 ? 1 : 0) },
+};
+EFFECT_DEFS.shaper = {
+  name: 'Volume shaper',
+  params: [
+    { key: 'shape', label: 'Shape', type: 'select', options: Object.keys(SHAPES), def: 'Pump 1/4' },
+    { key: 'depth', label: 'Depth', min: 0, max: 1, def: 0.8, fmt: pct },
+    { key: 'smooth', label: 'Smoothing', min: 0.001, max: 0.05, def: 0.006, log: true, fmt: (v) => `${(v * 1000).toFixed(1)} ms` },
+  ],
+  create: (ctx, p) => createShaper(ctx, p),
+};
+
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const CORRECTION_SCALES = {
+  Chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], Major: [0, 2, 4, 5, 7, 9, 11], 'Natural minor': [0, 2, 3, 5, 7, 8, 10],
+  'Harmonic minor': [0, 2, 3, 5, 7, 8, 11], 'Major pentatonic': [0, 2, 4, 7, 9], 'Minor pentatonic': [0, 3, 5, 7, 10], Blues: [0, 3, 5, 6, 7, 10],
+};
+/** 12-bit mask of the pitch classes in a key (bit 0 = C). */
+export const scaleMask = (key, scale) => {
+  const root = Math.max(0, KEYS.indexOf(key));
+  return (CORRECTION_SCALES[scale] ?? CORRECTION_SCALES.Chromatic).reduce((m, i) => m | (1 << ((root + i) % 12)), 0);
+};
+
+EFFECT_DEFS.pitchshift = {
+  name: 'Pitch shifter',
+  params: [
+    { key: 'semis', label: 'Pitch', min: -24, max: 24, def: 0, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(0)} st` },
+    { key: 'fine', label: 'Fine', min: -100, max: 100, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(0)} ct` },
+    { key: 'window', label: 'Grain', min: 0.02, max: 0.12, def: 0.05, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createPitch(ctx, p, false),
+};
+EFFECT_DEFS.pitchcorrect = {
+  name: 'Pitch correction',
+  params: [
+    { key: 'key', label: 'Key', type: 'select', options: KEYS, def: 'C' },
+    { key: 'scale', label: 'Scale', type: 'select', options: Object.keys(CORRECTION_SCALES), def: 'Chromatic' },
+    { key: 'speed', label: 'Speed', min: 0, max: 0.4, def: 0.04, fmt: (v) => (v < 0.005 ? 'Robot' : `${(v * 1000).toFixed(0)} ms`) },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createPitch(ctx, p, true),
+};
+EFFECT_DEFS.vocoder = {
+  name: 'Vocoder',
+  params: [
+    { key: 'source', label: 'Modulator (voice)', type: 'track', min: 1, max: 125, def: 1, step: 1, fmt: (v) => `Insert ${v}` },
+    { key: 'formant', label: 'Formant', min: -12, max: 12, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} st` },
+    { key: 'release', label: 'Release', min: 0.005, max: 0.3, def: 0.04, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'sibilance', label: 'Sibilance', min: 0, max: 1, def: 0.3, fmt: pct },
+    { key: 'gain', label: 'Output', min: -12, max: 24, def: 6, fmt: dbFmt },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createVocoder(ctx, p),
+};
+
+/** Effect families, for menus (every effect is in exactly one). */
+export const EFFECT_GROUPS = {
+  'EQ & filter': ['peq', 'eq', 'filter', 'analyzer'],
+  Dynamics: ['compressor', 'multiband', 'sidechain', 'limiter', 'gate', 'shaper'],
+  'Delay & reverb': ['reverb', 'delay'],
+  Modulation: ['chorus', 'phaser', 'flanger', 'tremolo'],
+  Distortion: ['distortion', 'bitcrusher'],
+  'Pitch & voice': ['pitchshift', 'pitchcorrect', 'vocoder'],
+  Utility: ['stereo'],
+};
+
+/** Menu items for choosing an effect, in submenus by family. `item(type, def)` makes the entry. */
+export const effectMenu = (item) => Object.entries(EFFECT_GROUPS).map(([label, types]) => ({ label, submenu: types.map((t) => item(t, EFFECT_DEFS[t])) }));
+
 export const defaultEffectParams = (type) => Object.fromEntries(EFFECT_DEFS[type].params.map((m) => [m.key, m.def]));
+
+/**
+ * The makeup gain (dB) that a Web Audio DynamicsCompressorNode adds on its own: the spec makes up 0.6 × the gain it
+ * takes off a full-scale signal. Effects divide it back out so their own "makeup" / "ceiling" mean what they say.
+ * Mirrors the spec's static curve, including the soft-knee solve.
+ */
+export function compressorMakeupDb(threshold, knee, ratio) {
+  const lin = (d) => Math.pow(10, d / 20);
+  const db = (x) => 20 * Math.log10(Math.max(1e-9, x));
+  const thr = lin(threshold);
+  const slope = 1 / ratio;
+  const kneeCurve = (x, k) => (x < thr ? x : thr + (1 - Math.exp(-k * (x - thr))) / k);
+  const slopeAt = (x, k) => {
+    if (x < thr) return 1;
+    const x2 = x * 1.001;
+    return (db(kneeCurve(x2, k)) - db(kneeCurve(x, k))) / (db(x2) - db(x));
+  };
+  const kneeThr = lin(threshold + knee);
+  let minK = 0.1;
+  let maxK = 10000;
+  let k = 5;
+  for (let i = 0; i < 15; i++) {
+    if (slopeAt(kneeThr, k) < slope) maxK = k; else minK = k;
+    k = Math.sqrt(minK * maxK);
+  }
+  const full = 1 >= kneeThr ? db(kneeCurve(kneeThr, k)) + slope * (0 - (threshold + knee)) : db(kneeCurve(1, k));
+  return -0.6 * full;
+}
 
 function mixer(ctx) {
   const input = ctx.createGain();
@@ -184,17 +360,40 @@ function createReverb(ctx, p) {
 
 function createDelay(ctx, p) {
   const m = mixer(ctx);
+  // stereo echo: delay → tone → wet, with the toned echo fed back
+  const toStereo = ctx.createGain();
   const delay = ctx.createDelay(2);
   const fb = ctx.createGain();
   const tone = ctx.createBiquadFilter();
   tone.type = 'lowpass';
-  m.input.connect(delay);
-  delay.connect(tone).connect(m.wet).connect(m.output);
+  m.input.connect(toStereo).connect(delay);
+  delay.connect(tone).connect(m.wet);
   tone.connect(fb).connect(delay);
+  // ping-pong: the (mono) input echoes on the left, then the right, then the left …
+  const toPing = ctx.createGain();
+  toPing.channelCount = 1;
+  toPing.channelCountMode = 'explicit';
+  const dl = ctx.createDelay(2);
+  const dr = ctx.createDelay(2);
+  const toneP = ctx.createBiquadFilter();
+  toneP.type = 'lowpass';
+  const fbP = ctx.createGain();
+  const merge = ctx.createChannelMerger(2);
+  m.input.connect(toPing).connect(dl);
+  dl.connect(dr);
+  dr.connect(toneP).connect(fbP).connect(dl);
+  dl.connect(merge, 0, 0);
+  dr.connect(merge, 0, 1);
+  merge.connect(m.wet);
+  m.wet.connect(m.output);
   const apply = () => {
-    delay.delayTime.value = p.time / 1000;
-    fb.gain.value = p.feedback;
-    tone.frequency.value = p.tone;
+    const t = p.time / 1000;
+    const ping = p.mode === 'ping-pong';
+    delay.delayTime.value = dl.delayTime.value = dr.delayTime.value = t;
+    fb.gain.value = fbP.gain.value = p.feedback;
+    tone.frequency.value = toneP.frequency.value = p.tone;
+    toStereo.gain.value = ping ? 0 : 1;
+    toPing.gain.value = ping ? 1 : 0;
     m.setMix(p.mix);
   };
   apply();
@@ -253,7 +452,7 @@ function createCompressor(ctx, p) {
     c.ratio.value = p.ratio;
     c.attack.value = p.attack;
     c.release.value = p.release;
-    makeup.gain.value = Math.pow(10, p.gain / 20);
+    makeup.gain.value = Math.pow(10, (p.gain - compressorMakeupDb(p.threshold, 6, p.ratio)) / 20);
   };
   apply();
   return { input: c, output: makeup, set(k, v) { p[k] = v; apply(); }, dispose() {} };
@@ -426,15 +625,275 @@ function createLimiter(ctx, p) {
   c.ratio.value = 20;
   c.attack.value = 0.002;
   const post = ctx.createGain();
-  pre.connect(c).connect(post);
+  // a ratio-20 compressor still lets 1/20 of the overshoot through: a soft clip at the ceiling catches the rest
+  const clip = ctx.createWaveShaper();
+  clip.oversample = '4x';
+  pre.connect(c).connect(post).connect(clip);
+  let curveFor = null;
   const apply = () => {
     pre.gain.value = Math.pow(10, p.gain / 20);
     c.threshold.value = p.ceiling;
     c.release.value = p.release;
-    post.gain.value = 1;
+    post.gain.value = Math.pow(10, -compressorMakeupDb(p.ceiling, 0, 20) / 20);
+    if (curveFor !== p.ceiling) {
+      curveFor = p.ceiling;
+      const ceil = Math.pow(10, p.ceiling / 20);
+      const knee = ceil * 0.9;
+      const N = 4096;
+      const curve = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const x = (i / (N - 1)) * 2 - 1;
+        const a = Math.abs(x);
+        const y = a <= knee ? a : knee + (ceil - knee) * Math.tanh((a - knee) / (ceil - knee));
+        curve[i] = Math.sign(x) * y;
+      }
+      clip.curve = curve;
+    }
   };
   apply();
-  return { input: pre, output: post, set(k, v) { p[k] = v; apply(); }, dispose() {} };
+  return { input: pre, output: clip, set(k, v) { p[k] = v; apply(); }, dispose() {} };
+}
+
+function createPeq(ctx, p) {
+  const input = ctx.createGain();
+  const out = ctx.createGain();
+  const filters = PEQ_BANDS.map((b) => { const f = ctx.createBiquadFilter(); f.type = b.type; return f; });
+  let node = input;
+  for (const f of filters) { node.connect(f); node = f; }
+  node.connect(out);
+  // what the EQ window draws: a spectrum of the output
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.8;
+  out.connect(analyser);
+  const apply = () => {
+    filters.forEach((f, i) => {
+      const n = i + 1;
+      f.frequency.value = p[`f${n}`];
+      f.Q.value = p[`q${n}`];
+      if (p[`g${n}`] !== undefined) f.gain.value = p[`g${n}`];
+    });
+    out.gain.value = Math.pow(10, p.out / 20);
+  };
+  apply();
+  return {
+    input, output: out, analyser,
+    /** Summed response (dB) of every band at `freqs` (Float32Array, Hz). */
+    response(freqs, bands = filters.map((_, i) => i)) {
+      const mag = new Float32Array(freqs.length);
+      const phase = new Float32Array(freqs.length);
+      const total = new Float32Array(freqs.length).fill(p.out);
+      for (const i of bands) {
+        filters[i].getFrequencyResponse(freqs, mag, phase);
+        for (let k = 0; k < freqs.length; k++) total[k] += 20 * Math.log10(Math.max(1e-6, mag[k]));
+      }
+      return total;
+    },
+    set(k, v) { p[k] = v; apply(); },
+    dispose() {},
+  };
+}
+
+function createAnalyzer(ctx, p) {
+  const node = ctx.createGain();
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.75;
+  node.connect(analyser);
+  return { input: node, output: node, analyser, params: p, set(k, v) { p[k] = v; }, dispose() {} };
+}
+
+// ---------------------------------------------------------------- envelope-follower effects (AudioWorklet)
+const worklets = new WeakMap(); // context -> Promise (module loaded)
+
+/** Load the dynamics worklet into a context (once). Engines call it at start; offline renders await it. */
+export function loadEffectWorklets(ctx) {
+  if (!worklets.has(ctx)) {
+    const p = ctx.audioWorklet ? ctx.audioWorklet.addModule(new URL('./dynamics-worklet.js', import.meta.url)).then(() => true, (err) => { console.error('Effect worklet failed to load', err); return false; }) : Promise.resolve(false);
+    worklets.set(ctx, p);
+  }
+  return worklets.get(ctx);
+}
+
+/**
+ * A gain stage driven by a follower of `key`: input → vca (gain from the follower). The follower is built as soon as
+ * the worklet is loaded; until then the signal passes unchanged.
+ */
+function follower(ctx, key, vca, params) {
+  const state = { node: null, set: () => {} };
+  vca.gain.value = 1;
+  loadEffectWorklets(ctx).then((ok) => {
+    if (!ok || state.disposed) return;
+    const node = new AudioWorkletNode(ctx, 'openstudio-dynamics', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    key.connect(node);
+    vca.gain.value = 0;
+    node.connect(vca.gain);
+    state.node = node;
+    state.set = (values) => { for (const [k, v] of Object.entries(values)) node.parameters.get(k).setValueAtTime(v, ctx.currentTime); };
+    state.set(params());
+  });
+  state.update = () => state.set(params());
+  state.dispose = () => { state.disposed = true; if (state.node) { state.node.port.postMessage('close'); state.node.disconnect(); } };
+  return state;
+}
+
+/** Noise gate: opens when the signal passes the threshold, closes with the release after a short hold. */
+function createGate(ctx, p) {
+  const input = ctx.createGain();
+  const vca = ctx.createGain();
+  input.connect(vca);
+  const f = follower(ctx, input, vca, () => ({
+    mode: 1, threshold: Math.pow(10, p.threshold / 20), floor: Math.pow(10, -p.range / 20), attack: 0.0005, release: p.release, hold: 0.015,
+  }));
+  return { input, output: vca, set(k, v) { p[k] = v; f.update(); }, dispose() { f.dispose(); } };
+}
+
+/**
+ * Compressor keyed by another signal (`key`, wired by the engine from another mixer track): the key's envelope
+ * (fast attack, set release) drives the gain of the input through the static compression curve — the classic
+ * kick-ducks-the-bass pump.
+ */
+function createSidechain(ctx, p) {
+  const input = ctx.createGain();
+  const vca = ctx.createGain();
+  const key = ctx.createGain();
+  input.connect(vca);
+  const f = follower(ctx, key, vca, () => ({
+    mode: 0, threshold: Math.pow(10, p.threshold / 20), ratio: p.ratio, floor: Math.pow(10, -p.depth / 20), attack: 0.001, release: p.release,
+  }));
+  return { input, output: vca, key, set(k, v) { p[k] = v; if (k !== 'source') f.update(); }, dispose() { f.dispose(); } };
+}
+
+/** Pitch shifter (or, with `correct`, pitch correction) on the pitch worklet; dry until the worklet is loaded. */
+function createPitch(ctx, p, correct) {
+  const m = mixer(ctx);
+  const through = ctx.createGain();
+  m.input.connect(through).connect(m.wet);
+  m.wet.connect(m.output);
+  let node = null;
+  let disposed = false;
+  const apply = () => {
+    m.setMix(p.mix);
+    if (!node) return;
+    const set = (k, v) => node.parameters.get(k).setValueAtTime(v, ctx.currentTime);
+    set('mode', correct ? 1 : 0);
+    if (correct) { set('mask', scaleMask(p.key, p.scale)); set('speed', p.speed); set('window', 0.03); } else { set('semis', p.semis + p.fine / 100); set('window', p.window); }
+  };
+  loadEffectWorklets(ctx).then((ok) => {
+    if (!ok || disposed) return;
+    node = new AudioWorkletNode(ctx, 'openstudio-pitch', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+    m.input.connect(node).connect(m.wet);
+    through.disconnect();
+    apply();
+  });
+  apply();
+  return {
+    input: m.input, output: m.output,
+    set(k, v) { p[k] = v; apply(); },
+    dispose() { disposed = true; if (node) { node.port.postMessage('close'); node.disconnect(); } },
+  };
+}
+
+/**
+ * Channel vocoder: the modulator (a voice, wired from another mixer track like a sidechain key) is split into 16
+ * bands; each band's envelope sets the level of the same band of the carrier (this track — a synth). Formant moves
+ * the carrier bands against the modulator's; sibilance lets the modulator's own top end through for consonants.
+ */
+const VOCODER_BANDS = 16;
+function createVocoder(ctx, p) {
+  const m = mixer(ctx);
+  const key = ctx.createGain();
+  const out = ctx.createGain();
+  const freqs = Array.from({ length: VOCODER_BANDS }, (_, i) => 120 * Math.pow(7500 / 120, i / (VOCODER_BANDS - 1)));
+  const q = 1 / (Math.pow(Math.pow(7500 / 120, 1 / (VOCODER_BANDS - 1)), 0.5) - Math.pow(Math.pow(7500 / 120, 1 / (VOCODER_BANDS - 1)), -0.5));
+  const bp = (f) => { const a = ctx.createBiquadFilter(); const b = ctx.createBiquadFilter(); a.type = b.type = 'bandpass'; a.frequency.value = b.frequency.value = f; a.Q.value = b.Q.value = q; a.connect(b); return [a, b]; };
+  const carrierFilters = [];
+  const followers = freqs.map((f) => {
+    const [ma, mb] = bp(f);
+    key.connect(ma);
+    const [ca, cb] = bp(f);
+    carrierFilters.push(ca, cb);
+    m.input.connect(ca);
+    const vca = ctx.createGain();
+    cb.connect(vca).connect(out);
+    // the band's envelope (times a gain that makes up for the narrow bands) drives the carrier band
+    return follower(ctx, mb, vca, () => ({ mode: 2, ratio: 6, attack: 0.002, release: p.release }));
+  });
+  const sib = ctx.createBiquadFilter();
+  sib.type = 'highpass';
+  sib.frequency.value = 6000;
+  const sibGain = ctx.createGain();
+  key.connect(sib).connect(sibGain).connect(out);
+  const makeup = ctx.createGain();
+  out.connect(makeup).connect(m.wet);
+  m.wet.connect(m.output);
+  const apply = () => {
+    const shift = Math.pow(2, p.formant / 12);
+    carrierFilters.forEach((f, i) => { f.frequency.value = Math.min(20000, freqs[i >> 1] * shift); });
+    sibGain.gain.value = p.sibilance * 0.6;
+    makeup.gain.value = Math.pow(10, p.gain / 20);
+    m.setMix(p.mix);
+    for (const f of followers) f.update();
+  };
+  apply();
+  return { input: m.input, output: m.output, key, set(k, v) { p[k] = v; if (k !== 'source') apply(); }, dispose() { for (const f of followers) f.dispose(); } };
+}
+
+/**
+ * Tempo-synced volume envelope (FL's Kickstart / Gross Beat-style pumps and gates). It has no clock of its own: the
+ * scheduler calls onStep() for every step it schedules, so the shape stays locked to the song; reset() when stopped.
+ */
+function createShaper(ctx, p) {
+  const vca = ctx.createGain();
+  const level = (pos) => {
+    const shape = SHAPES[p.shape] ?? SHAPES['Pump 1/4'];
+    const phase = ((pos % shape.steps) + shape.steps) % shape.steps / shape.steps;
+    return 1 - p.depth * (1 - shape.level(phase));
+  };
+  return {
+    input: vca, output: vca,
+    onStep(step, t, sd) {
+      const g = vca.gain;
+      // eight points per step, each reached through a short glide (the smoothing) so gates don't click
+      for (let k = 0; k < 8; k++) g.setTargetAtTime(level(step + k / 8), t + (k * sd) / 8, p.smooth / 3);
+    },
+    reset() { vca.gain.cancelScheduledValues(0); vca.gain.setValueAtTime(1, ctx.currentTime); },
+    set(k, v) { p[k] = v; },
+    dispose() {},
+  };
+}
+
+/** Three bands split by Linkwitz-Riley crossovers, each through its own compressor, then summed. */
+function createMultiband(ctx, p) {
+  const m = mixer(ctx);
+  const lr = (type) => { const a = ctx.createBiquadFilter(); const b = ctx.createBiquadFilter(); a.type = b.type = type; a.Q.value = b.Q.value = Math.SQRT1_2; a.connect(b); return [a, b]; };
+  const [lowA, lowB] = lr('lowpass');
+  const [midHpA, midHpB] = lr('highpass');
+  const [midLpA, midLpB] = lr('lowpass');
+  const [highA, highB] = lr('highpass');
+  const comps = [0, 1, 2].map(() => { const c = ctx.createDynamicsCompressor(); c.knee.value = 6; return c; });
+  const gains = [0, 1, 2].map(() => ctx.createGain());
+  m.input.connect(lowA); lowB.connect(comps[0]);
+  m.input.connect(midHpA); midHpB.connect(midLpA); midLpB.connect(comps[1]);
+  m.input.connect(highA); highB.connect(comps[2]);
+  comps.forEach((c, i) => c.connect(gains[i]).connect(m.wet));
+  m.wet.connect(m.output);
+  const apply = () => {
+    lowA.frequency.value = lowB.frequency.value = midHpA.frequency.value = midHpB.frequency.value = p.lowX;
+    midLpA.frequency.value = midLpB.frequency.value = highA.frequency.value = highB.frequency.value = Math.max(p.highX, p.lowX * 1.5);
+    for (const c of comps) {
+      c.threshold.value = p.threshold;
+      c.ratio.value = p.ratio;
+      c.attack.value = p.attack;
+      c.release.value = p.release;
+    }
+    // no automatic makeup: below the threshold the bands sum back to the input; the band gains are the makeup
+    const auto = compressorMakeupDb(p.threshold, 6, p.ratio);
+    [p.low, p.mid, p.high].forEach((db, i) => { gains[i].gain.value = Math.pow(10, (db - auto) / 20); });
+    m.setMix(p.mix);
+  };
+  apply();
+  return { input: m.input, output: m.output, set(k, v) { p[k] = v; apply(); }, dispose() {} };
 }
 
 export function createEffect(ctx, type, params) {

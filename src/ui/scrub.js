@@ -63,7 +63,7 @@ export function createScrub(app) {
     const pos = transport.position();
     const move = { ArrowLeft: -1, ArrowRight: 1 }[e.key];
     let to;
-    if (move) to = pos + move * (e.shiftKey ? 16 : 4);
+    if (move) to = pos + move * (e.shiftKey ? store.barSteps : store.beatSteps);
     else if (e.key === 'Home') to = 0;
     else if (e.key === 'End') to = len - 1;
     else return;
@@ -78,7 +78,7 @@ export function createScrub(app) {
     const raw = transport.position();
     const pos = transport.mode === 'pattern' && transport.playing && len > 0 ? raw % len : raw; // the pattern loops; one length lookup per frame
     const frac = drag ? drag.frac : len > 0 ? clamp(pos / len, 0, 1) : 0;
-    const sec = (frac * len) * transport.stepDur;
+    const sec = transport.secondsAt(frac * len);
 
     if (frac !== shown.frac) {
       shown.frac = frac;
@@ -92,13 +92,13 @@ export function createScrub(app) {
       elapsed.textContent = clock(sec);
       root.setAttribute('aria-valuenow', Math.round(pos));
       root.setAttribute('aria-valuemax', len);
-      root.setAttribute('aria-valuetext', `${clock(sec)} of ${clock(len * transport.stepDur)}`);
+      root.setAttribute('aria-valuetext', `${clock(sec)} of ${clock(transport.secondsAt(len))}`);
     }
-    const bars = len / 16;
+    const bars = len / store.barSteps;
     if (len !== shown.len || bars !== shown.bars) {
       shown.len = len;
       shown.bars = bars;
-      total.textContent = clock(len * transport.stepDur);
+      total.textContent = clock(transport.secondsAt(len));
       // bar lines are a repeating gradient; with hundreds of bars they'd be noise
       const lines = bars > 0 && bars <= 96;
       track.style.setProperty('--bars', lines ? bars : 1);

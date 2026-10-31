@@ -2,13 +2,15 @@ import { h, COLORS, clamp } from '../util.js';
 import { icon } from './icons.js';
 import { createKnob } from './knob.js';
 import { showMenu, showMenuBelow } from './menu.js';
-import { STEPS_PER_BAR } from '../state.js';
+import { barSteps, beatSteps } from '../state.js';
 import { overlayScrollbars } from './scrollbars.js';
 
 const TYPE_ICON = { drum: 'drum', synth: 'synth', fm: 'synth', organ: 'keys', pluck: 'wave', sfx: 'wave', sampler: 'sampler', sf: 'piano' };
 
 export function createChannelRack(app) {
   const { store, wm, transport, engine, actions } = app;
+  const BAR = () => barSteps(store.project); // steps per bar / beat in the project's time signature
+  const BEAT = () => beatSteps(store.project);
 
   const win = wm.create({
     id: 'rack', title: 'Channel rack', icon: 'channelrack', minW: 420, minH: 140,
@@ -22,9 +24,9 @@ export function createChannelRack(app) {
   stepsBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
   stepsBtn.addEventListener('click', () => {
     const pat = store.currentPattern;
-    const min = Math.ceil(store.patternSteps({ ...pat, bars: 1 }) / STEPS_PER_BAR);
+    const min = Math.ceil(store.patternSteps({ ...pat, bars: 1 }) / BAR());
     showMenuBelow(stepsBtn, [1, 2, 3, 4, 6, 8].map((bars) => ({
-      label: `${bars * STEPS_PER_BAR} steps (${bars} bar${bars > 1 ? 's' : ''})`,
+      label: `${bars * BAR()} steps (${bars} bar${bars > 1 ? 's' : ''})`,
       checked: pat.bars === bars,
       disabled: bars < min,
       action: () => { store.checkpoint(); pat.bars = bars; store.emit('notes'); store.emit('patterns'); },
@@ -143,6 +145,40 @@ export function createChannelRack(app) {
   });
   rowsEl.addEventListener('pointerdown', () => scroll.focus({ preventScroll: true }), true);
 
+  // drop samples (browser sample folders, the project's samples, or files from the desktop): onto a sampler row it
+  // replaces that channel's sample, anywhere else it makes a new sampler channel
+  const dropTypes = ['text/openstudio-file', 'text/openstudio-sample', 'Files'];
+  scroll.addEventListener('dragover', (e) => { if (dropTypes.some((t) => e.dataTransfer.types.includes(t))) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } });
+  scroll.addEventListener('drop', async (e) => {
+    if (!dropTypes.some((t) => e.dataTransfer.types.includes(t))) return;
+    const files = [...e.dataTransfer.files];
+    if (files.length && !files.some((f) => /^audio\//.test(f.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(f.name))) return; // left to the window
+    e.preventDefault();
+    const target = store.channel(Number(e.target.closest?.('.cr-row')?.dataset.ch));
+    const samples = [];
+    const libFile = e.dataTransfer.getData('text/openstudio-file');
+    const libSample = Number(e.dataTransfer.getData('text/openstudio-sample'));
+    if (libFile) samples.push({ name: libFile.split(/[\\/]/).pop(), data: (await app.browser.readFile(libFile)).slice(0) });
+    else if (store.samples.has(libSample)) samples.push({ id: libSample, name: store.samples.get(libSample).name });
+    else for (const f of e.dataTransfer.files) if (/^audio\//.test(f.type) || /\.(wav|mp3|ogg|flac|aiff?|m4a|aac)$/i.test(f.name)) samples.push({ name: f.name, data: await f.arrayBuffer() });
+    if (!samples.length) return;
+    store.checkpoint();
+    samples.forEach((smp, k) => {
+      const id = smp.id ?? store.addSample(smp.name, smp.data);
+      const name = smp.name.replace(/\.[^.]+$/, '');
+      if (k === 0 && target?.type === 'sampler') {
+        target.sampleId = id;
+        target.name = name;
+        delete target.slices;
+      } else {
+        const ch = store._addChannel({ name, type: 'sampler', sampleId: id });
+        store.project.selected.channel = ch.id;
+      }
+    });
+    store.emit('channels');
+    store.emit('selection');
+  });
+
   function buildRow(ch) {
     const led = h('button', { class: `led cr-led${ch.mute ? '' : ' on'}`, 'data-hint': 'Channel enabled — click to mute, right-click to solo' });
     led.addEventListener('click', () => { store.checkpoint(); ch.mute = !ch.mute; store.emit('channels'); });
@@ -178,7 +214,7 @@ export function createChannelRack(app) {
     const pads = h('div', { class: 'cr-pads' });
     const row = h('div', { class: 'cr-row', dataset: { ch: ch.id } }, left, pads);
     row.style.setProperty('--ch-color', ch.color);
-    return { row, pads, name, led };
+    return { row, pads, name, led, pan, vol };
   }
 
   function rebuild() {
@@ -186,7 +222,7 @@ export function createChannelRack(app) {
     rowMap.clear();
     for (const ch of store.project.channels) {
       const r = buildRow(ch);
-      r.padCount = 0;
+      r.padKey = null;
       rowMap.set(ch.id, r);
       rowsEl.append(r.row);
     }
@@ -195,21 +231,31 @@ export function createChannelRack(app) {
   }
 
   // ------------------------------------------------------------------ pads
+  /** Pads are shaded in groups: a beat in x/4, a dotted beat (3 eighths) in 6/8, 9/8, 12/8, two eighths otherwise. */
+  function padGroup() {
+    const beat = BEAT();
+    if (beat >= 4) return beat;
+    return store.project.timeSig[0] % 3 === 0 ? beat * 3 : beat * 2;
+  }
+
   function ensurePadCount(n) {
+    const g = padGroup();
+    const key = `${n}:${g}`;
     for (const r of rowMap.values()) {
-      if (r.padCount === n) continue;
+      if (r.padKey === key) continue;
       r.pads.replaceChildren();
       const frag = document.createDocumentFragment();
       for (let i = 0; i < n; i++) {
-        frag.append(h('div', { class: `cr-pad g${Math.floor(i / 4) % 2}${i % 4 === 0 && i ? ' gap' : ''}`, dataset: { step: i } }));
+        frag.append(h('div', { class: `cr-pad g${Math.floor(i / g) % 2}${i % g === 0 && i ? ' gap' : ''}`, dataset: { step: i } }));
       }
       r.pads.append(frag);
-      r.padCount = n;
+      r.padKey = key;
     }
-    if (n !== header.querySelector('.cr-leds').childElementCount) {
-      const leds = header.querySelector('.cr-leds');
+    const leds = header.querySelector('.cr-leds');
+    if (leds.dataset.key !== key) {
+      leds.dataset.key = key;
       leds.replaceChildren();
-      for (let i = 0; i < n; i++) leds.append(h('div', { class: `cr-pled${i % 4 === 0 && i ? ' gap' : ''}` }));
+      for (let i = 0; i < n; i++) leds.append(h('div', { class: `cr-pled${i % g === 0 && i ? ' gap' : ''}` }));
     }
   }
 
@@ -260,6 +306,13 @@ export function createChannelRack(app) {
 
   // ------------------------------------------------------------- bindings
   store.on('project', rebuild);
+  // volume / pan changed elsewhere (a MIDI controller, an agent, automation editing)
+  store.on('channelMix', () => {
+    for (const ch of store.project.channels) {
+      const r = rowMap.get(ch.id);
+      if (r) { r.vol.setValue(ch.vol); r.pan.setValue(ch.pan); }
+    }
+  });
   store.on('channels', () => {
     // rebuild preserving scroll
     const top = scroll.scrollTop;
