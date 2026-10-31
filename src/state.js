@@ -40,6 +40,7 @@ export function blankProject() {
     mixer: makeMixer(),
     playlist: { tracks: makeTracks(), clips: [] },
     automations: [],
+    markers: [], // time markers in the playlist: { id, step, name }
     loop: null, // { start, end } in steps
     swing: 0,
     selected: { channel: null, pattern: null, mixer: 0 },
@@ -142,6 +143,8 @@ export class Store extends Emitter {
     const p = this.project;
     p.selected = { ...base.selected, ...(p.selected || {}) };
     p.automations = Array.isArray(p.automations) ? p.automations : [];
+    p.markers = (Array.isArray(p.markers) ? p.markers : []).filter((m) => m && Number.isFinite(m.step) && m.step >= 0)
+      .map((m) => ({ id: m.id, step: m.step, name: String(m.name ?? 'Marker') }));
     const pl = p.playlist && typeof p.playlist === 'object' ? p.playlist : {};
     const tracks = Array.isArray(pl.tracks) ? pl.tracks : [];
     p.playlist = {
@@ -178,8 +181,10 @@ export class Store extends Emitter {
     p.patterns.forEach((x) => seen(x.id));
     p.playlist.clips.forEach((c) => seen(c.id));
     p.automations.forEach((a) => seen(a.id));
+    p.markers.forEach((m) => seen(m.id));
     sampleIds.forEach(seen);
     p.nextId = Math.max(p.nextId || 1, maxId + 1);
+    for (const m of p.markers) if (!Number.isFinite(m.id)) m.id = p.nextId++;
     if (!Number.isFinite(p.bpm) || p.bpm <= 0) p.bpm = base.bpm;
     if (!validTimeSig(p.timeSig)) p.timeSig = [4, 4];
   }

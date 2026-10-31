@@ -1,4 +1,4 @@
-import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample } from './instruments.js';
+import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, reversed } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { playSoundfont } from './soundfont.js';
 import { createEffect } from './effects.js';
@@ -315,18 +315,34 @@ export class Engine {
     return s.decoding;
   }
 
-  /** Play an audio-clip segment into a mixer track. */
-  playAudio(buffer, mixer, when, offset, dur, gain = 1) {
+  /**
+   * Play an audio-clip segment into a mixer track. opts: { reverse, fadeIn, fadeOut, into } — fades in seconds of the
+   * whole clip, `into` = how far into the clip this segment starts (so a clip started half-way picks up its fade).
+   */
+  playAudio(buffer, mixer, when, offset, dur, gain = 1, opts = {}) {
     if (offset >= buffer.duration) return null;
     const ctx = this.ctx;
     const t = Math.max(when, ctx.currentTime);
     const length = Math.min(dur, buffer.duration - offset);
     const src = ctx.createBufferSource();
-    src.buffer = buffer;
+    src.buffer = opts.reverse ? reversed(ctx, buffer) : buffer;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(gain, t);
-    g.gain.setValueAtTime(gain, t + Math.max(0, length - 0.006));
-    g.gain.linearRampToValueAtTime(0, t + length);
+    const into = opts.into || 0;
+    const fi = opts.fadeIn || 0;
+    const fo = opts.fadeOut || 0;
+    const total = into + length; // where this segment ends inside the clip
+    // gain at a time inside the clip: fade-in ramp × fade-out ramp
+    const at = (x) => gain * (fi > 0 ? Math.min(1, x / fi) : 1) * (fo > 0 ? Math.min(1, Math.max(0, (total - x) / fo)) : 1);
+    g.gain.setValueAtTime(fi > 0 && into < fi ? at(into) : gain, t);
+    if (fi > 0 && into < fi) g.gain.linearRampToValueAtTime(gain * (fo > 0 ? Math.min(1, (total - fi) / fo) : 1), t + (fi - into));
+    const foStart = Math.max(into, total - fo);
+    if (fo > 0 && foStart < total) {
+      g.gain.setValueAtTime(at(foStart), t + (foStart - into));
+      g.gain.linearRampToValueAtTime(0, t + length);
+    } else {
+      g.gain.setValueAtTime(gain, t + Math.max(0, length - 0.006));
+      g.gain.linearRampToValueAtTime(0, t + length);
+    }
     src.connect(g).connect(this.track(mixer in this.store.project.mixer ? mixer : 0).input);
     src.start(t, offset, length);
     const v = { nodes: [src], out: g, end: t + length + 0.02, release() {} };

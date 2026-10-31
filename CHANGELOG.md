@@ -39,6 +39,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **Playlist**: named **time markers** (right-click the ruler: add, jump to, loop between markers; click a marker to
+  jump, double-click to rename), **Split by channel** for pattern clips, and audio-clip **gain, fade in / out and
+  reverse** (right-click an audio clip). Agents: `markers`, `edit_clips` split_by_channel, `update_clips` fades.
 - **Export stems** (File menu, Ctrl+Shift+R): one WAV per used mixer track (post-fader) plus the master, into a folder
   you pick — FL Studio's "split mixer tracks". Rendered in one pass for up to 15 tracks. Agents: `export_stems`.
 - **Effect windows**: clicking an effect in the mixer opens its editor in its own window (like FL Studio's plugin

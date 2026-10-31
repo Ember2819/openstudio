@@ -384,7 +384,7 @@ export function playSample(ctx, dest, buffer, pitch, t, dur, vel, semis, p, root
 }
 
 const reverseCache = new WeakMap();
-function reversed(ctx, buffer) {
+export function reversed(ctx, buffer) {
   if (reverseCache.has(buffer)) return reverseCache.get(buffer);
   const out = ctx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
   for (let c = 0; c < buffer.numberOfChannels; c++) {

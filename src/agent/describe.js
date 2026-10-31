@@ -34,7 +34,13 @@ export function patternInfo(store, pat) {
 export function clipInfo(c) {
   const out = { id: c.id, type: c.type, track: c.track, start: c.start, length: c.len, offset: c.offset || 0, mute: !!c.mute };
   if (c.type === 'pattern') out.pattern = c.pat;
-  else if (c.type === 'audio') { out.sample = c.sampleId; out.gain = c.gain ?? 1; } else out.automation = c.autoId;
+  else if (c.type === 'audio') {
+    out.sample = c.sampleId;
+    out.gain = c.gain ?? 1;
+    if (c.fadeIn) out.fadeIn = c.fadeIn;
+    if (c.fadeOut) out.fadeOut = c.fadeOut;
+    if (c.reverse) out.reverse = true;
+  } else out.automation = c.autoId;
   return out;
 }
 

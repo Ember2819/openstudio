@@ -1,7 +1,8 @@
 import { h, clamp, shade, rgba, COLORS } from '../util.js';
 import { icon } from './icons.js';
 import { showMenu } from './menu.js';
-import { promptDialog } from './dialog.js';
+import { promptDialog, formDialog } from './dialog.js';
+import { markers, addMarker, removeMarker, splitByChannel } from '../playlistops.js';
 import { createSnapSelect } from './snapselect.js';
 import { snapSize, snapRound, snapFloor } from './snap.js';
 import { sizeCanvas, roundRect } from './draw.js';
@@ -242,6 +243,15 @@ export function createPlaylist(app) {
       ctx.fillRect(loop.start * px - sx, 0, (loop.end - loop.start) * px, gh);
     }
 
+    for (const m of markers(store)) {
+      const mx = Math.round(m.step * px - sx) + 0.5;
+      if (mx < 0 || mx > gw) continue;
+      ctx.strokeStyle = rgba(T.text, 0.25);
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(mx, 0); ctx.lineTo(mx, gh); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
     const patInfo = new Map();
     for (const c of clips()) {
       const x = c.start * px - sx;
@@ -304,8 +314,19 @@ export function createPlaylist(app) {
     else if (type === 'audio') {
       if (look.sample?.buffer) {
         const sd = stepSeconds();
+        if (c.reverse) {
+          // mirror the waveform drawing: reversed audio reads right to left
+          ctx.save();
+          ctx.translate(2 * x + w, 0);
+          ctx.scale(-1, 1);
+        }
         drawWaveform(ctx, look.sample.buffer, x, bodyY, w, bodyH, c.offset * sd, (c.offset + c.len) * sd, 0, gw);
+        if (c.reverse) ctx.restore();
       }
+      // fades: shade the faded corners
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      if (c.fadeIn > 0) { const fw = Math.min(w, c.fadeIn * px); ctx.beginPath(); ctx.moveTo(x, bodyY); ctx.lineTo(x + fw, bodyY); ctx.lineTo(x, bodyY + bodyH); ctx.closePath(); ctx.fill(); }
+      if (c.fadeOut > 0) { const fw = Math.min(w, c.fadeOut * px); ctx.beginPath(); ctx.moveTo(x + w, bodyY); ctx.lineTo(x + w - fw, bodyY); ctx.lineTo(x + w, bodyY + bodyH); ctx.closePath(); ctx.fill(); }
     } else drawAutomationCurve(ctx, c, look.auto, x, bodyY, w, bodyH, px, gw, ink);
     ctx.restore();
 
@@ -416,8 +437,75 @@ export function createPlaylist(app) {
         ctx.beginPath(); ctx.moveTo(x, 17); ctx.lineTo(x, RULER_H); ctx.stroke();
       }
     }
+    // time markers: a flag with the name, over the bar numbers
+    ctx.font = '600 10px "Noto Sans", sans-serif';
+    for (const m of markers(store)) {
+      const mx = Math.round(m.step * px - sx) + 0.5;
+      const tw = ctx.measureText(m.name).width + 10;
+      if (mx + tw < 0 || mx > gw) continue;
+      ctx.fillStyle = T.text;
+      ctx.fillRect(mx - 0.5, 0, 1, RULER_H);
+      ctx.fillStyle = T.surface || T.rulerA;
+      ctx.fillRect(mx + 1, 1, tw, 13);
+      ctx.strokeStyle = T.text;
+      ctx.strokeRect(mx + 1, 1.5, tw, 12);
+      ctx.fillStyle = T.textBright || T.text;
+      ctx.fillText(m.name, mx + 6, 8);
+    }
     ctx.strokeStyle = T.gridEdge;
     ctx.beginPath(); ctx.moveTo(0, RULER_H - 0.5); ctx.lineTo(gw, RULER_H - 0.5); ctx.stroke();
+  }
+
+  /** The marker whose flag is under ruler x (in view pixels), or null. */
+  function markerAtRuler(vx, vy) {
+    if (vy > 15) return null;
+    const px = pxStep();
+    const sx = scroller.scrollLeft;
+    const ctx = g.ruler;
+    ctx.font = '600 10px "Noto Sans", sans-serif';
+    for (const m of [...markers(store)].reverse()) {
+      const mx = m.step * px - sx;
+      if (vx >= mx - 3 && vx <= mx + ctx.measureText(m.name).width + 12) return m;
+    }
+    return null;
+  }
+
+  async function renameMarker(m) {
+    const name = await promptDialog('Rename marker', m.name);
+    if (name == null || !name.trim()) return;
+    store.checkpoint();
+    m.name = name.trim();
+    store.emit('playlist');
+  }
+
+  function rulerMenu(e, step) {
+    const at = snapRound(step, snap() || BEAT());
+    const marker = markerAtRuler(e.offsetX, e.offsetY);
+    const list = markers(store);
+    showMenu([
+      ...(marker ? [
+        { label: `Rename “${marker.name}”…`, action: () => renameMarker(marker) },
+        { label: `Delete “${marker.name}”`, action: () => { store.checkpoint(); removeMarker(store, marker.id); store.emit('playlist'); } },
+        { separator: true },
+      ] : []),
+      { label: 'Add marker here', action: async () => {
+        const name = await promptDialog('Add marker', `Marker ${list.length + 1}`);
+        if (name == null) return;
+        store.checkpoint();
+        addMarker(store, at, name.trim());
+        store.emit('playlist');
+      } },
+      { label: 'Jump to marker', disabled: !list.length, submenu: list.map((m) => ({ label: m.name, action: () => transport.seek(m.step) })) },
+      { separator: true },
+      { label: 'Loop between markers', disabled: list.length < 1, submenu: list.map((m, k) => ({ label: `${m.name} → ${list[k + 1]?.name ?? 'end'}`, action: () => {
+        const end = list[k + 1]?.step ?? Math.max(m.step + BAR(), Math.ceil(store.playlistEndStep() / BAR()) * BAR());
+        store.checkpoint();
+        store.project.loop = { start: m.step, end };
+        store.emit('loop');
+        transport.setLoop(true);
+      } })) },
+      { label: 'Clear loop', disabled: !store.project.loop, action: () => { store.checkpoint(); store.project.loop = null; store.emit('loop'); invalidate(); } },
+    ], e.clientX, e.clientY);
   }
 
   // ----------------------------------------------------------- interaction
@@ -638,12 +726,39 @@ export function createPlaylist(app) {
         { label: 'Open in piano roll', action: () => { store.selectPattern(pat.id); wm.get('piano').show(); } },
         { label: 'Rename pattern…', action: () => app.actions.renamePattern(pat.id) },
         { label: 'Make unique', action: () => makeUnique(c) },
+        { label: 'Split by channel', disabled: store.project.channels.filter((ch) => pat.notes[ch.id]?.length).length < 2, action: () => {
+          store.checkpoint();
+          const made = splitByChannel(store, c);
+          S.selection = new Set(made.map((x) => x.id));
+          store.emit('patterns');
+          store.emit('playlist');
+        } },
         { label: 'Fit clip to pattern length', action: () => { store.checkpoint(); c.len = patLen(c.pat); c.offset = 0; store.emit('playlist'); } },
         { label: 'Color', submenu: COLORS.map((col) => ({ label: ' ', swatch: col, action: () => { store.checkpoint(); pat.color = col; store.emit('patterns'); } })) },
         { separator: true },
       );
     } else if (type === 'auto') {
       items.push({ label: 'Edit automation…', action: () => app.actions.openAutomation(c.autoId) }, { separator: true });
+    } else if (type === 'audio') {
+      const fades = (key) => [0, 0.5, 1, 2, 4, 8, 16].map((st) => ({
+        label: st ? `${st >= 4 ? `${st / 4} beat${st > 4 ? 's' : ''}` : `${st} step${st > 1 ? 's' : ''}`}` : 'None',
+        checked: (c[key] || 0) === st,
+        action: () => { store.checkpoint(); if (st) c[key] = Math.min(st, c.len); else delete c[key]; store.emit('playlist'); },
+      }));
+      items.push(
+        { label: 'Gain…', action: async () => {
+          const db = Math.round(20 * Math.log10(c.gain ?? 1) * 10) / 10;
+          const v = await formDialog('Clip gain', [{ key: 'db', label: 'Gain (dB)', value: db, min: -48, max: 12, step: 0.5 }], 'Set');
+          if (!v) return;
+          store.checkpoint();
+          c.gain = Math.round(10 ** (v.db / 20) * 10000) / 10000;
+          store.emit('playlist');
+        } },
+        { label: 'Fade in', submenu: fades('fadeIn') },
+        { label: 'Fade out', submenu: fades('fadeOut') },
+        { label: 'Reverse', checked: !!c.reverse, action: () => { store.checkpoint(); if (c.reverse) delete c.reverse; else c.reverse = true; store.emit('playlist'); } },
+        { separator: true },
+      );
     }
     items.push(
       { label: 'Duplicate', shortcut: 'Ctrl+B', action: () => duplicateSelection() },
@@ -736,7 +851,10 @@ export function createPlaylist(app) {
   cRuler.addEventListener('pointerdown', (e) => {
     cRuler.setPointerCapture(e.pointerId);
     const step = rulerStep(e);
-    if (e.button === 2 || e.shiftKey) {
+    const marker = e.button === 0 && !e.shiftKey ? markerAtRuler(e.offsetX, e.offsetY) : null;
+    if (marker) { transport.seek(marker.step); scrub = { type: 'marker', marker }; return; }
+    if (e.button === 2) { scrub = { type: 'pending', x: e.clientX, step, e }; return; }
+    if (e.shiftKey) {
       const a = snapRound(step, BEAT());
       scrub = { type: 'loop', a };
       store.checkpoint();
@@ -749,6 +867,14 @@ export function createPlaylist(app) {
   cRuler.addEventListener('pointermove', (e) => {
     if (!scrub) return;
     const step = rulerStep(e);
+    if (scrub.type === 'marker') return;
+    if (scrub.type === 'pending') {
+      // a right-drag selects a loop region; a right-click without a drag opens the ruler menu
+      if (Math.abs(e.clientX - scrub.x) < 4) return;
+      const a = snapRound(scrub.step, BEAT());
+      scrub = { type: 'loop', a };
+      store.checkpoint();
+    }
     if (scrub.type === 'seek') transport.seek(snapRound(step, Math.min(snap() || 1, 4)));
     else {
       const b = snapRound(step, BEAT());
@@ -756,11 +882,14 @@ export function createPlaylist(app) {
       invalidate();
     }
   });
-  cRuler.addEventListener('pointerup', () => {
+  cRuler.addEventListener('pointerup', (e) => {
+    if (scrub?.type === 'pending') { const st = scrub.step; scrub = null; rulerMenu(e, st); return; }
     if (scrub?.type === 'loop') { store.dirty = true; store.emit('loop'); if (!transport.loopEnabled) transport.setLoop(true); }
     scrub = null;
   });
   cRuler.addEventListener('dblclick', (e) => {
+    const marker = markerAtRuler(e.offsetX, e.offsetY);
+    if (marker) { renameMarker(marker); return; }
     if (store.project.loop && !e.shiftKey) { store.checkpoint(); store.project.loop = null; store.emit('loop'); invalidate(); }
   });
 

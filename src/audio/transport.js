@@ -60,7 +60,8 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       const sample = store.samples.get(clip.sampleId);
       if (!sample?.buffer) continue;
       const into = step - clip.start;
-      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1);
+      engine.playAudio(sample.buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd, (clip.len - into) * sd, clip.gain ?? 1,
+        { reverse: clip.reverse, fadeIn: (clip.fadeIn || 0) * sd, fadeOut: (clip.fadeOut || 0) * sd, into: into * sd });
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
       if (!auto || auto.target?.kind === 'tempo' || !targetValid(store, auto.target)) continue; // tempo: see tempo.js

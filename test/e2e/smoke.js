@@ -195,6 +195,29 @@
     ok('…but reaches the master through a send', l3 > l * 0.5);
   }
 
+  // audio clip fades and reverse
+  {
+    s.resetToDefault();
+    s.project.bpm = 120;
+    s.project.mode = 'song';
+    const off = new OfflineAudioContext(1, 44100, 44100);
+    const ramp = off.createBuffer(1, 44100, 44100);
+    for (let i = 0; i < 44100; i++) ramp.getChannelData(0)[i] = Math.sin(i / 5) * (i / 44100); // gets louder
+    const { encodeWav } = await import('./src/audio/wav.js');
+    const id = s.addSample('ramp.wav', encodeWav(ramp, { float: true }));
+    await a.engine.ensureSample(id);
+    const clip = s.addClip({ type: 'audio', sampleId: id, track: 0, start: 0, len: 8 }); // 1 s at 120 BPM
+    const rms = (b, from, to) => { const d = b.getChannelData(0); let x = 0; const i0 = Math.round(from * 44100), i1 = Math.round(to * 44100); for (let i = i0; i < i1; i++) x += d[i] * d[i]; return Math.sqrt(x / (i1 - i0)); };
+    const plain = await renderSteps(s, 8, { tail: 0 });
+    clip.fadeOut = 4; // the last half second
+    const faded = await renderSteps(s, 8, { tail: 0 });
+    ok('a fade-out turns the end of an audio clip down', rms(faded, 0.85, 0.98) < rms(plain, 0.85, 0.98) * 0.4 && Math.abs(rms(faded, 0.1, 0.4) - rms(plain, 0.1, 0.4)) < 0.01);
+    delete clip.fadeOut;
+    clip.reverse = true;
+    const rev = await renderSteps(s, 8, { tail: 0 });
+    ok('a reversed audio clip plays backwards', rms(rev, 0.05, 0.3) > rms(rev, 0.7, 0.95) * 2);
+  }
+
   // stems: each mixer track rendered into its own pair of channels, in one pass
   {
     a.actions.loadDemo();

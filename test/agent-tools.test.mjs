@@ -291,6 +291,44 @@ test('slice_sample slices a sampler channel and writes the slices as notes', asy
   assert.match(await callFails(app, 'slice_sample', { channel: app.store.project.channels[0].id, mode: 'equal', count: 2 }), /Only sampler/);
 });
 
+test('markers, split_by_channel and audio clip fades', async () => {
+  const app = makeApp();
+  const { store } = app;
+  await call(app, 'markers', { action: 'add', step: 32, name: 'Chorus' });
+  await call(app, 'markers', { action: 'add', step: 0, name: 'Intro' });
+  let r = await call(app, 'markers', { action: 'list' });
+  assert.deepEqual(r.markers.map((m) => [m.name, m.step]), [['Intro', 0], ['Chorus', 32]]);
+  const chorus = r.markers[1].id;
+  await call(app, 'markers', { action: 'rename', id: chorus, name: 'Hook' });
+  r = await call(app, 'markers', { action: 'loop', id: r.markers[0].id });
+  assert.deepEqual(r.loop, { start: 0, end: 32 });
+  await call(app, 'markers', { action: 'jump', id: chorus });
+  assert.equal(app.transport.position(), 32);
+  await call(app, 'markers', { action: 'remove', id: chorus });
+  assert.equal(store.project.markers.length, 1);
+  store.load(store.serialize());
+  assert.equal(store.project.markers[0].name, 'Intro', 'markers are saved');
+
+  const [kick, clap] = store.project.channels;
+  await call(app, 'set_steps', { channel: kick.id, grid: 'x...x...x...x...' });
+  await call(app, 'set_steps', { channel: clap.id, grid: '....x.......x...' });
+  const placed = await call(app, 'add_clips', { clips: [{ type: 'pattern', pattern: store.currentPattern.id, track: 2, start: 0 }] });
+  await call(app, 'add_clips', { clips: [{ type: 'pattern', pattern: store.currentPattern.id, track: 3, start: 0 }] });
+  const split = await call(app, 'edit_clips', { ids: [placed.added[0].id], action: 'split_by_channel' });
+  assert.equal(split.added.length, 2);
+  assert.deepEqual(split.added.map((c) => c.track), [2, 4], 'the occupied track 3 is skipped');
+  const names = split.added.map((c) => store.pattern(c.pattern).name);
+  assert.ok(names[0].endsWith(kick.name) && names[1].endsWith(clap.name));
+  assert.equal(store.pattern(split.added[1].pattern).notes[kick.id], undefined);
+
+  const id = store.addSample('a.wav', new ArrayBuffer(8));
+  const audio = store.addClip({ type: 'audio', sampleId: id, track: 9, start: 0, len: 16 });
+  r = await call(app, 'update_clips', { clips: [{ id: audio.id, fadeIn: 4, fadeOut: 40, reverse: true }] });
+  assert.deepEqual([r.updated[0].fadeIn, r.updated[0].fadeOut, r.updated[0].reverse], [4, 16, true]);
+  r = await call(app, 'update_clips', { clips: [{ id: audio.id, fadeIn: 0, reverse: false }] });
+  assert.deepEqual([r.updated[0].fadeIn, r.updated[0].reverse], [undefined, undefined]);
+});
+
 test('audio clips take their length from the sample', async () => {
   const app = makeApp();
   const id = app.store.addSample('loop.wav', new ArrayBuffer(8));
