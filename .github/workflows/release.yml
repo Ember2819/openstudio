@@ -2,73 +2,24 @@ name: Release builds
 description: >-
   Builds distributable OpenStudio packages for x64 and ARM64. Windows produces
   standalone portable .exe files, Linux .AppImage files, and macOS .dmg files.
-# Every push to main (including a merged version-bump PR) builds all six
-# packages and publishes them as a GitHub Release. A release is created only
-# when that package version has not already been released, and the workflow
-# rejects versions that do not increase over the latest release.
-#
-# "Run workflow" in the Actions tab does a test build of the current branch;
-# the packages are uploaded as workflow artifacts but no release is created.
+# Manual only ("Run workflow" in the Actions tab) — releases are never created
+# automatically, not on branch or tag pushes. This does a test build of the
+# current branch; the packages are uploaded as workflow artifacts and can be
+# published to the releases page by hand if wanted.
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write # required to create GitHub releases
+  contents: read
 
 concurrency:
   group: release-builds
   cancel-in-progress: false
 
 jobs:
-  release-check:
-    name: Check release version
-    runs-on: ubuntu-latest
-    outputs:
-      publish: ${{ steps.check.outputs.publish }}
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Check that the version is new
-        id: check
-        if: github.event_name == 'push'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          version="$(node -p "require('./package.json').version")"
-          tag="v$version"
-          if gh release view "$tag" >/dev/null 2>&1; then
-            echo "Release $tag already exists; skipping duplicate build."
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          latest="$(gh release list --limit 20 --json tagName --jq '[.[].tagName | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))][0]')"
-          if [ -n "$latest" ]; then
-            node - "$version" "${latest#v}" <<'NODE'
-            const [current, previous] = process.argv.slice(2).map((value) => value.split('.').map(Number));
-            if (current.some((part, index) => !Number.isInteger(part) || part < 0) ||
-                previous.some((part, index) => !Number.isInteger(part) || part < 0)) {
-              console.error('Package and release versions must be numeric major.minor.patch values.');
-              process.exit(1);
-            }
-            const newer = current.some((part, index) =>
-              part > previous[index] || (part === previous[index] && current.slice(0, index).every((n, i) => n === previous[i])));
-            if (!newer) {
-              console.error(`package.json version ${process.argv[2]} must be greater than the latest release ${process.argv[3]}.`);
-              process.exit(1);
-            }
-            NODE
-          fi
-          echo "publish=true" >> "$GITHUB_OUTPUT"
-
   build:
     name: Build (${{ matrix.os }})
-    needs: release-check
-    if: github.event_name == 'workflow_dispatch' || needs.release-check.outputs.publish == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -149,44 +100,3 @@ jobs:
             release/*.AppImage
             release/*.dmg
           if-no-files-found: error
-
-  release:
-    name: Publish release
-    needs: build
-    if: github.event_name == 'push' && needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7 # package.json needed for the version
-
-      - name: Compute version
-        id: ver
-        shell: bash
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
-
-      - name: Download all build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: openstudio-*
-          path: release
-          merge-multiple: true
-
-      - name: Create GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.ver.outputs.version }}
-          name: OpenStudio v${{ steps.ver.outputs.version }}
-          generate_release_notes: true
-          body: >-
-            Downloads:
-            OpenStudio-${{ steps.ver.outputs.version }}-windows-x64-portable.exe (Windows x64),
-            OpenStudio-${{ steps.ver.outputs.version }}-windows-arm64-portable.exe (Windows on ARM),
-            OpenStudio-${{ steps.ver.outputs.version }}-linux-x64.AppImage (Linux x64),
-            OpenStudio-${{ steps.ver.outputs.version }}-linux-arm64.AppImage (Linux ARM64),
-            OpenStudio-${{ steps.ver.outputs.version }}-macos-x64.dmg (Intel Macs) and
-            OpenStudio-${{ steps.ver.outputs.version }}-macos-arm64.dmg (Apple Silicon).
-          draft: false
-          prerelease: false
-          files: |
-            release/*.exe
-            release/*.AppImage
-            release/*.dmg

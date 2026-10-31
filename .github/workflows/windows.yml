@@ -1,6 +1,6 @@
 # Builds the Windows version (64-bit) and uploads it to a GitHub Release.
-# Manual only (Actions tab); main-branch releases are handled by release.yml, which
-# builds every platform, so this must not also fire on tags.
+# Manual only (Actions tab); release.yml builds every platform, so this must not
+# also fire on branch pushes.
 name: Windows release
 
 on:
