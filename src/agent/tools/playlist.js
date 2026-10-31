@@ -153,20 +153,26 @@ export const tools = [
   {
     name: 'edit_clips',
     title: 'Edit clips',
-    description: 'Act on clips chosen by `ids` or by `track` (every clip on that track). action: "remove", "duplicate" (copies placed right after the originals, or `steps` later), "make_unique" (pattern clips get their own copy of the pattern so edits do not affect other clips), "fit_to_pattern" (resize pattern clips to the pattern length), "split_by_channel" (a pattern clip becomes one clip per channel, each with its own pattern, on the free tracks below), "mute" / "unmute".',
+    description: 'Act on clips chosen by `ids` or by `track` (every clip on that track). action: "remove", "duplicate" (copies placed right after the originals, or `steps` later), "make_unique" (pattern clips get their own copy of the pattern so edits do not affect other clips), "fit_to_pattern" (resize pattern clips to the pattern length), "split_by_channel" (a pattern clip becomes one clip per channel, each with its own pattern, on the free tracks below), "render_to_audio" (render the clips — through the mixer — into one new audio clip and mute them, like freezing), "mute" / "unmute".',
     inputSchema: obj({
       ids: arr(int('Clip id'), 'Clip ids', { minItems: 1 }),
       track: TRACK,
-      action: choice(['remove', 'duplicate', 'make_unique', 'fit_to_pattern', 'split_by_channel', 'mute', 'unmute'], 'What to do'),
+      action: choice(['remove', 'duplicate', 'make_unique', 'fit_to_pattern', 'split_by_channel', 'render_to_audio', 'mute', 'unmute'], 'What to do'),
       steps: num('duplicate: offset in steps (default: the span of the selection)', { minimum: 0.25 }),
     }, ['action']),
     annotations: { ...WRITE, destructiveHint: true, title: 'Edit clips' },
-    run(a, app) {
+    async run(a, app) {
       const { store } = app;
       if ((a.ids === undefined) === (a.track === undefined)) fail('Pass either ids or track');
       const all = store.project.playlist.clips;
       const sel = a.ids ? a.ids.map((id) => clipOf(store, id)) : all.filter((c) => c.track === a.track);
       if (!sel.length) return { changed: 0 };
+      if (a.action === 'render_to_audio') {
+        // renders first, then makes its own single undo step
+        const clip = await app.actions.renderClipsToAudio(sel.map((c) => c.id));
+        if (!clip) fail('Nothing to render: pick pattern or audio clips');
+        return { added: [clipInfo(clip)], muted: sel.map((c) => c.id) };
+      }
       const out = edit(store, () => {
         switch (a.action) {
           case 'remove': {

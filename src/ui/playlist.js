@@ -762,6 +762,7 @@ export function createPlaylist(app) {
     }
     items.push(
       { label: 'Duplicate', shortcut: 'Ctrl+B', action: () => duplicateSelection() },
+      ...(type !== 'auto' ? [{ label: S.selection.size > 1 ? 'Render selection to an audio clip' : 'Render to an audio clip', action: () => app.actions.renderClipsToAudio([...S.selection]) }] : []),
       { label: c.mute ? 'Unmute' : 'Mute', action: () => { store.checkpoint(); c.mute = !c.mute; store.emit('playlist'); } },
       { label: 'Delete', shortcut: 'Del', action: () => { store.checkpoint(); store.project.playlist.clips = clips().filter((x) => x !== c); S.selection.delete(c.id); store.emit('playlist'); } },
     );

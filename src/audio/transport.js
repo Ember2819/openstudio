@@ -48,6 +48,8 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
 
   for (const clip of proj.playlist.clips) {
     if (clip.mute || step < clip.start || step >= clip.start + clip.len) continue;
+    // opts.only: render just these clips (automation keeps applying)
+    if (opts.only && clip.type !== 'auto' && !opts.only.has(clip.id)) continue;
     const track = proj.playlist.tracks[clip.track];
     if (track?.mute) continue;
     const type = clip.type || 'pattern';

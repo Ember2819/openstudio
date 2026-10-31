@@ -290,6 +290,25 @@
     ok('a reversed audio clip plays backwards', rms(rev, 0.05, 0.3) > rms(rev, 0.7, 0.95) * 2);
   }
 
+  // render a clip to audio: it sounds the same, the original is muted
+  {
+    a.actions.loadDemo();
+    s.project.mode = 'song';
+    const drums = s.project.playlist.clips.find((c) => s.pattern(c.pat)?.name === 'Drums');
+    const before = await renderSteps(s, 32, { tail: 0, only: new Set([drums.id]) });
+    const clip = await a.actions.renderClipsToAudio([drums.id]);
+    const after = await renderSteps(s, 32, { tail: 0 });
+    const rms = (b) => { let x = 0; const d = b.getChannelData(0); for (let i = 0; i < d.length; i++) x += d[i] * d[i]; return Math.sqrt(x / d.length); };
+    ok('render to audio: the original clip is muted and an audio clip replaces it', drums.mute && clip?.type === 'audio' && clip.start === drums.start);
+    const others = s.project.playlist.clips.filter((c) => c !== clip && !c.mute);
+    others.forEach((c) => { c.mute = true; });
+    const alone = await renderSteps(s, 32, { tail: 0 });
+    others.forEach((c) => { c.mute = false; });
+    ok(`render to audio: it sounds like the original (${rms(before).toFixed(4)} vs ${rms(alone).toFixed(4)})`, Math.abs(rms(alone) / rms(before) - 1) < 0.05 && rms(after) > 0);
+    s.undo();
+    ok('render to audio is one undo step', !drums.mute || !s.project.playlist.clips.find((c) => c.id === drums.id)?.mute);
+  }
+
   // stems: each mixer track rendered into its own pair of channels, in one pass
   {
     a.actions.loadDemo();

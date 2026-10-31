@@ -357,6 +357,55 @@ export function createActions(app) {
       return pat;
     },
 
+    /**
+     * Render playlist clips (pattern or audio) to one new audio clip, like FL Studio's "consolidate": it plays exactly
+     * as before (through the mixer and master), the originals are muted, and it is one undo step.
+     */
+    async renderClipsToAudio(ids) {
+      const proj = store.project;
+      const sel = proj.playlist.clips.filter((c) => ids.includes(c.id) && c.type !== 'auto');
+      if (!sel.length) return null;
+      const start = Math.min(...sel.map((c) => c.start));
+      const end = Math.max(...sel.map((c) => c.start + c.len));
+      const tail = 2;
+      const mode = proj.mode;
+      transport.stop();
+      app.toolbar?.setBusy?.('Rendering to audio…');
+      let buf;
+      try {
+        proj.mode = 'song';
+        // pre-master: the new clip goes through the master's effects, fader and limiter when it plays
+        const preMaster = (e) => {
+          const m = e.tracks[0];
+          m.input.disconnect();
+          m.input.connect(m.pan);
+          m.pan.pan.cancelScheduledValues(0);
+          m.pan.pan.value = 0;
+          m.fader.gain.cancelScheduledValues(0);
+          m.fader.gain.value = 1;
+          e.bypassLimiter(true);
+        };
+        buf = await renderSteps(store, end, { from: start, tail, only: new Set(sel.map((c) => c.id)), configure: preMaster });
+      } finally {
+        proj.mode = mode;
+        app.toolbar?.setBusy?.(null);
+      }
+      const pat = sel.length === 1 && sel[0].type === 'pattern' ? store.pattern(sel[0].pat) : null;
+      const name = `${pat ? pat.name : 'Clips'} (audio).wav`;
+      store.checkpoint();
+      const id = store.addSample(name, encodeWav(buf, { float: true }));
+      store.samples.get(id).buffer = buf;
+      for (const c of sel) c.mute = true;
+      const tempo = transport.tempo;
+      const len = Math.round((tempo.stepAt(tempo.timeAt(start) + buf.duration) - start) * 1000) / 1000;
+      const track = firstFreeTrack(start, len);
+      const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+      if (/^Track \d+$/.test(proj.playlist.tracks[track].name)) proj.playlist.tracks[track].name = 'Rendered';
+      store.emit('playlist');
+      store.emit('sampleReady', id);
+      return clip;
+    },
+
     /** Create an automation clip for a knob/fader and open its editor. */
     createAutomation(target) {
       const norm = valueToNorm(store, target, readTarget(store, target));

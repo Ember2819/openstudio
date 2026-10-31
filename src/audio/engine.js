@@ -1,7 +1,7 @@
 import { playDrum, playSynth, playFm, playOrgan, playPluck, playSfx, playSample, playWavetable, reversed } from './instruments.js';
 import { SoundFont } from './sf2.js';
 import { playSoundfont } from './soundfont.js';
-import { createEffect, loadEffectWorklets } from './effects.js';
+import { createEffect, loadEffectWorklets, compressorMakeupDb } from './effects.js';
 import { faderToGain, channelGain, ROOT_NOTE } from '../util.js';
 import { MIXER_TRACKS } from '../state.js';
 
@@ -95,8 +95,12 @@ export class Engine {
     limiter.ratio.value = 20;
     limiter.attack.value = 0.002;
     limiter.release.value = 0.1;
-    t.gate.connect(limiter).connect(this.ctx.destination);
+    // the compressor node adds its own makeup gain; take it back out so the master fader means what it says
+    const out = this.ctx.createGain();
+    out.gain.value = Math.pow(10, -compressorMakeupDb(-2, 0, 20) / 20);
+    t.gate.connect(limiter).connect(out).connect(this.ctx.destination);
     this.limiter = limiter;
+    this.limiterOut = out;
     this.tracks[0] = t;
   }
 

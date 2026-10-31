@@ -10,6 +10,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - Autosave stores samples as raw buffers instead of re-encoding every sample to base64 every 30 seconds.
 
 ### Fixed
+- The master's safety limiter added ~1.1 dB of hidden gain to everything; playback and exports now match the master
+  fader (about 1 dB quieter than before).
 - The Compressor added up to ~10 dB of hidden gain (Web Audio's automatic makeup) on top of its Makeup knob; it is now
   unity below the threshold and Makeup is the real makeup. Projects that relied on it will play quieter — raise
   Makeup. The Limiter now holds its ceiling exactly instead of overshooting by up to 1 dB.
@@ -57,6 +59,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
+- **Render to audio clip** (right-click pattern or audio clips): renders them, through their mixer tracks, into one
+  audio clip and mutes the originals — FL Studio's consolidate / freeze. Agents: `edit_clips` render_to_audio.
 - **Wavetable synth**: six morphing tables (basic shapes, pulse width, harmonic sweep, vowels, digital, organ drawbars)
   with a position envelope and LFO, unison and a filter, plus 8 presets (Morph Pad, Choir Vowels, Growl Bass …).
 - **Volume shaper**: tempo-synced pumps and gates (Pump 1/4 and 1/2, Gate 1/8 and 1/16, Offbeat, Trance 3+3+2,

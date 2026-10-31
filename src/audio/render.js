@@ -8,10 +8,11 @@ import { TempoMap } from '../tempo.js';
  * playback — so automation that changes effect or instrument parameters lands on the right step instead of
  * being applied all at once before rendering starts.
  * opts: { tail (seconds after the last step), sampleRate, from (first step to render, default 0), configure(engine),
- *         onProgress(fraction 0..1), signal (AbortSignal), channels (output channels, default 2) }
+ *         onProgress(fraction 0..1), signal (AbortSignal), channels (output channels, default 2),
+ *         only (Set of clip ids: play just those clips) }
  * Progress is reported each time the render pauses to schedule more steps (OfflineAudioContext has no progress events).
  */
-export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, from = 0, configure, onProgress, signal, channels = 2 } = {}) {
+export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, from = 0, configure, onProgress, signal, channels = 2, only = null } = {}) {
   const tempo = new TempoMap(store); // follows tempo automation
   const t0 = tempo.timeAt(from);
   const at = (step) => tempo.timeAt(step) - t0; // seconds into the render
@@ -30,7 +31,7 @@ export async function renderSteps(store, steps, { tail = 3, sampleRate = 44100, 
   let next = from;
   const lengths = new Map(); // the project cannot change mid-render, so pattern lengths are computed once
   const scheduleUpTo = (end) => {
-    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, at(next), tempo.stepDur(next), { first: next === from, lengths });
+    for (; next < Math.min(end, steps); next++) scheduleStep(store, engine, next, at(next), tempo.stepDur(next), { first: next === from, lengths, only });
   };
   scheduleUpTo(from + AHEAD);
   for (let s = 1; s * AHEAD < steps - from; s++) {
@@ -91,8 +92,8 @@ export async function renderStems(store, steps, tracks, opts = {}) {
           split.connect(merge, 0, k);
           split.connect(merge, 1, k + 1);
         };
-        engine.limiter.disconnect();
-        pair(engine.limiter, 0);
+        engine.limiterOut.disconnect();
+        pair(engine.limiterOut, 0);
         batch.forEach((track, j) => pair(engine.track(track).gate, 2 + j * 2));
         opts.configure?.(engine);
       },
