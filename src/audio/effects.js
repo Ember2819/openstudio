@@ -215,6 +215,64 @@ EFFECT_DEFS.shaper = {
   create: (ctx, p) => createShaper(ctx, p),
 };
 
+const KEYS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+export const CORRECTION_SCALES = {
+  Chromatic: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], Major: [0, 2, 4, 5, 7, 9, 11], 'Natural minor': [0, 2, 3, 5, 7, 8, 10],
+  'Harmonic minor': [0, 2, 3, 5, 7, 8, 11], 'Major pentatonic': [0, 2, 4, 7, 9], 'Minor pentatonic': [0, 3, 5, 7, 10], Blues: [0, 3, 5, 6, 7, 10],
+};
+/** 12-bit mask of the pitch classes in a key (bit 0 = C). */
+export const scaleMask = (key, scale) => {
+  const root = Math.max(0, KEYS.indexOf(key));
+  return (CORRECTION_SCALES[scale] ?? CORRECTION_SCALES.Chromatic).reduce((m, i) => m | (1 << ((root + i) % 12)), 0);
+};
+
+EFFECT_DEFS.pitchshift = {
+  name: 'Pitch shifter',
+  params: [
+    { key: 'semis', label: 'Pitch', min: -24, max: 24, def: 0, step: 1, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(0)} st` },
+    { key: 'fine', label: 'Fine', min: -100, max: 100, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(0)} ct` },
+    { key: 'window', label: 'Grain', min: 0.02, max: 0.12, def: 0.05, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createPitch(ctx, p, false),
+};
+EFFECT_DEFS.pitchcorrect = {
+  name: 'Pitch correction',
+  params: [
+    { key: 'key', label: 'Key', type: 'select', options: KEYS, def: 'C' },
+    { key: 'scale', label: 'Scale', type: 'select', options: Object.keys(CORRECTION_SCALES), def: 'Chromatic' },
+    { key: 'speed', label: 'Speed', min: 0, max: 0.4, def: 0.04, fmt: (v) => (v < 0.005 ? 'Robot' : `${(v * 1000).toFixed(0)} ms`) },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createPitch(ctx, p, true),
+};
+EFFECT_DEFS.vocoder = {
+  name: 'Vocoder',
+  params: [
+    { key: 'source', label: 'Modulator (voice)', type: 'track', min: 1, max: 125, def: 1, step: 1, fmt: (v) => `Insert ${v}` },
+    { key: 'formant', label: 'Formant', min: -12, max: 12, def: 0, fmt: (v) => `${v > 0 ? '+' : ''}${v.toFixed(1)} st` },
+    { key: 'release', label: 'Release', min: 0.005, max: 0.3, def: 0.04, log: true, fmt: (v) => `${(v * 1000).toFixed(0)} ms` },
+    { key: 'sibilance', label: 'Sibilance', min: 0, max: 1, def: 0.3, fmt: pct },
+    { key: 'gain', label: 'Output', min: -12, max: 24, def: 6, fmt: dbFmt },
+    { key: 'mix', label: 'Mix', min: 0, max: 1, def: 1, fmt: pct },
+  ],
+  create: (ctx, p) => createVocoder(ctx, p),
+};
+
+/** Effect families, for menus (every effect is in exactly one). */
+export const EFFECT_GROUPS = {
+  'EQ & filter': ['peq', 'eq', 'filter', 'analyzer'],
+  Dynamics: ['compressor', 'multiband', 'sidechain', 'limiter', 'gate', 'shaper'],
+  'Delay & reverb': ['reverb', 'delay'],
+  Modulation: ['chorus', 'phaser', 'flanger', 'tremolo'],
+  Distortion: ['distortion', 'bitcrusher'],
+  'Pitch & voice': ['pitchshift', 'pitchcorrect', 'vocoder'],
+  Utility: ['stereo'],
+};
+
+/** Menu items for choosing an effect, in submenus by family. `item(type, def)` makes the entry. */
+export const effectMenu = (item) => Object.entries(EFFECT_GROUPS).map(([label, types]) => ({ label, submenu: types.map((t) => item(t, EFFECT_DEFS[t])) }));
+
 export const defaultEffectParams = (type) => Object.fromEntries(EFFECT_DEFS[type].params.map((m) => [m.key, m.def]));
 
 /**
@@ -704,6 +762,81 @@ function createSidechain(ctx, p) {
     mode: 0, threshold: Math.pow(10, p.threshold / 20), ratio: p.ratio, floor: Math.pow(10, -p.depth / 20), attack: 0.001, release: p.release,
   }));
   return { input, output: vca, key, set(k, v) { p[k] = v; if (k !== 'source') f.update(); }, dispose() { f.dispose(); } };
+}
+
+/** Pitch shifter (or, with `correct`, pitch correction) on the pitch worklet; dry until the worklet is loaded. */
+function createPitch(ctx, p, correct) {
+  const m = mixer(ctx);
+  const through = ctx.createGain();
+  m.input.connect(through).connect(m.wet);
+  m.wet.connect(m.output);
+  let node = null;
+  let disposed = false;
+  const apply = () => {
+    m.setMix(p.mix);
+    if (!node) return;
+    const set = (k, v) => node.parameters.get(k).setValueAtTime(v, ctx.currentTime);
+    set('mode', correct ? 1 : 0);
+    if (correct) { set('mask', scaleMask(p.key, p.scale)); set('speed', p.speed); set('window', 0.03); } else { set('semis', p.semis + p.fine / 100); set('window', p.window); }
+  };
+  loadEffectWorklets(ctx).then((ok) => {
+    if (!ok || disposed) return;
+    node = new AudioWorkletNode(ctx, 'openstudio-pitch', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] });
+    m.input.connect(node).connect(m.wet);
+    through.disconnect();
+    apply();
+  });
+  apply();
+  return {
+    input: m.input, output: m.output,
+    set(k, v) { p[k] = v; apply(); },
+    dispose() { disposed = true; if (node) { node.port.postMessage('close'); node.disconnect(); } },
+  };
+}
+
+/**
+ * Channel vocoder: the modulator (a voice, wired from another mixer track like a sidechain key) is split into 16
+ * bands; each band's envelope sets the level of the same band of the carrier (this track — a synth). Formant moves
+ * the carrier bands against the modulator's; sibilance lets the modulator's own top end through for consonants.
+ */
+const VOCODER_BANDS = 16;
+function createVocoder(ctx, p) {
+  const m = mixer(ctx);
+  const key = ctx.createGain();
+  const out = ctx.createGain();
+  const freqs = Array.from({ length: VOCODER_BANDS }, (_, i) => 120 * Math.pow(7500 / 120, i / (VOCODER_BANDS - 1)));
+  const q = 1 / (Math.pow(Math.pow(7500 / 120, 1 / (VOCODER_BANDS - 1)), 0.5) - Math.pow(Math.pow(7500 / 120, 1 / (VOCODER_BANDS - 1)), -0.5));
+  const bp = (f) => { const a = ctx.createBiquadFilter(); const b = ctx.createBiquadFilter(); a.type = b.type = 'bandpass'; a.frequency.value = b.frequency.value = f; a.Q.value = b.Q.value = q; a.connect(b); return [a, b]; };
+  const carrierFilters = [];
+  const followers = freqs.map((f) => {
+    const [ma, mb] = bp(f);
+    key.connect(ma);
+    const [ca, cb] = bp(f);
+    carrierFilters.push(ca, cb);
+    m.input.connect(ca);
+    const vca = ctx.createGain();
+    cb.connect(vca).connect(out);
+    // the band's envelope (times a gain that makes up for the narrow bands) drives the carrier band
+    return follower(ctx, mb, vca, () => ({ mode: 2, ratio: 6, attack: 0.002, release: p.release }));
+  });
+  const sib = ctx.createBiquadFilter();
+  sib.type = 'highpass';
+  sib.frequency.value = 6000;
+  const sibGain = ctx.createGain();
+  key.connect(sib).connect(sibGain).connect(out);
+  const makeup = ctx.createGain();
+  out.connect(makeup).connect(m.wet);
+  m.wet.connect(m.output);
+  const apply = () => {
+    const shift = Math.pow(2, p.formant / 12);
+    carrierFilters.forEach((f, i) => { f.frequency.value = Math.min(20000, freqs[i >> 1] * shift); });
+    sibGain.gain.value = p.sibilance * 0.6;
+    makeup.gain.value = Math.pow(10, p.gain / 20);
+    m.setMix(p.mix);
+    for (const f of followers) f.update();
+  };
+  apply();
+  return { input: m.input, output: m.output, key, set(k, v) { p[k] = v; if (k !== 'source') apply(); }, dispose() { for (const f of followers) f.dispose(); } };
 }
 
 /**

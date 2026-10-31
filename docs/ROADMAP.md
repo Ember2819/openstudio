@@ -6,7 +6,7 @@ Rough priorities, not promises. Pick something and open an issue before starting
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 
 ## Mid term
-- More built-in instruments (sample-based pianos / strings); vocoder and pitch effects.
+- More built-in instruments.
 - Mixer track grouping.
 - MP3 export.
 - Theming and a keyboard-shortcut editor; accessibility pass.

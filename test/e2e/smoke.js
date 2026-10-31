@@ -90,6 +90,53 @@
     let lp = 0;
     { const d = lim.out.getChannelData(0); for (let i = 22050; i < 44100; i++) lp = Math.max(lp, Math.abs(d[i])); }
     ok(`limiter holds its ceiling (${(20 * Math.log10(lp)).toFixed(2)} dB)`, 20 * Math.log10(lp) < -5.9);
+    // pitch shifter / correction: a steady tone in, its pitch measured out
+    const hzOut = async (type, params, hz) => {
+      const c = new OfflineAudioContext(2, 44100, 44100);
+      const fx = createEffect(c, type, params);
+      const osc = c.createOscillator();
+      osc.frequency.value = hz;
+      const g = c.createGain();
+      g.gain.value = 0.4;
+      osc.connect(g).connect(fx.input);
+      fx.output.connect(c.destination);
+      osc.start();
+      await loadEffectWorklets(c);
+      const d = (await c.startRendering()).getChannelData(0);
+      // zero crossings (rising) over the second half
+      const ups = [];
+      for (let i = 22050; i < 44000; i++) if (d[i - 1] < 0 && d[i] >= 0) ups.push(i - 1 + -d[i - 1] / (d[i] - d[i - 1]));
+      return 44100 / ((ups.at(-1) - ups[0]) / (ups.length - 1));
+    };
+    const up = await hzOut('pitchshift', { semis: 12 }, 440);
+    const down = await hzOut('pitchshift', { semis: -7 }, 440);
+    ok(`pitch shifter: an octave up (${up.toFixed(1)} Hz) and a fifth down (${down.toFixed(1)} Hz)`, Math.abs(up / 880 - 1) < 0.01 && Math.abs(down / 293.66 - 1) < 0.01);
+    const tuned = await hzOut('pitchcorrect', { speed: 0.01 }, 452);
+    const inKey = await hzOut('pitchcorrect', { key: 'C', scale: 'Major', speed: 0.01 }, 457);
+    ok(`pitch correction pulls 452 Hz to A (${tuned.toFixed(1)}) and A# to a C-major note (${inKey.toFixed(1)})`, Math.abs(tuned / 440 - 1) < 0.006 && (Math.abs(inKey / 440 - 1) < 0.006 || Math.abs(inKey / 493.88 - 1) < 0.006));
+    // vocoder: the carrier only sounds while the modulator does
+    {
+      const c = new OfflineAudioContext(2, 44100, 44100);
+      const fx = createEffect(c, 'vocoder', { release: 0.02 });
+      const saw = c.createOscillator();
+      saw.type = 'sawtooth';
+      saw.frequency.value = 110;
+      const cg = c.createGain();
+      cg.gain.value = 0.3;
+      saw.connect(cg).connect(fx.input);
+      const noise = c.createBuffer(1, 44100, 44100);
+      noise.getChannelData(0).forEach((_, i, d) => { d[i] = i < 13230 ? Math.random() * 0.6 - 0.3 : 0; }); // 0.3 s of "voice"
+      const ns = c.createBufferSource();
+      ns.buffer = noise;
+      ns.connect(fx.key);
+      fx.output.connect(c.destination);
+      saw.start(); ns.start();
+      await loadEffectWorklets(c);
+      const d = (await c.startRendering()).getChannelData(0);
+      const r = (a0, a1) => { let x = 0; for (let i = a0; i < a1; i++) x += d[i] * d[i]; return Math.sqrt(x / (a1 - a0)); };
+      const on = r(4410, 13000), off = r(22050, 44100);
+      ok(`vocoder: the carrier follows the modulator (${on.toFixed(3)} on, ${off.toFixed(4)} off)`, on > 0.03 && off < on * 0.03);
+    }
     const ctx = new AudioContext();
     const peq = createEffect(ctx, 'peq', { g4: 6, f4: 1000, q4: 1 });
     const resp = peq.response(new Float32Array([100, 1000, 10000]));

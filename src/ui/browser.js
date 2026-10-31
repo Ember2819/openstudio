@@ -1,7 +1,7 @@
 import { h, clamp } from '../util.js';
 import { icon } from './icons.js';
 import { ENGINE_PRESETS, ENGINES, DRUM_KIT, defaultParams } from '../audio/instruments.js';
-import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
+import { EFFECT_DEFS, EFFECT_GROUPS, defaultEffectParams } from '../audio/effects.js';
 import { showMenu } from './menu.js';
 import { messageDialog } from './dialog.js';
 
@@ -194,10 +194,13 @@ export function createBrowser(app) {
       },
       {
         label: 'Effects', icon: 'folder',
-        children: Object.entries(EFFECT_DEFS).map(([type, def]) => ({
-          label: def.name, icon: 'fx',
-          hint: 'Double-click to add to the selected mixer track',
-          onDbl: () => addEffect(type),
+        children: Object.entries(EFFECT_GROUPS).map(([label, types]) => ({
+          label, icon: 'folder',
+          children: types.map((type) => ({
+            label: EFFECT_DEFS[type].name, icon: 'fx',
+            hint: 'Double-click to add to the selected mixer track',
+            onDbl: () => addEffect(type),
+          })),
         })),
       },
       {

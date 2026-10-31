@@ -50,6 +50,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
   Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
   becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
+- **Pitch shifter** (±24 semitones and cents, adjustable grain), **pitch correction** (snaps a voice to the nearest
+  note of a key and scale; speed from natural to the robotic hard-tune) and a 16-band **vocoder** (put it on the synth,
+  pick the voice's mixer track as the modulator; formant shift, sibilance, release).
 - **Sampler zones (multi-sample)**: Zones → "Add samples as zones…" maps several samples across the keyboard, each
   played from its own root key — the root is read from the file name ("Piano C4.wav") with its octave checked against
   the detected pitch, and key ranges meet halfway between roots. Right-click a zone on the key map to change its root,

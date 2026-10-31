@@ -4,7 +4,7 @@ import { createKnob, hint, showAutomationMenu } from './knob.js';
 import { showMenu } from './menu.js';
 import { promptDialog } from './dialog.js';
 import { MIXER_TRACKS } from '../state.js';
-import { EFFECT_DEFS, defaultEffectParams } from '../audio/effects.js';
+import { EFFECT_DEFS, defaultEffectParams, effectMenu } from '../audio/effects.js';
 import { overlayScrollbars, wheelScrollsHorizontally } from './scrollbars.js';
 import { T, appearance } from '../theme.js';
 
@@ -205,7 +205,7 @@ export function createMixer(app) {
         led, h('span', { class: 'mx-slot-name' }, slot ? EFFECT_DEFS[slot.type].name : '(none)'));
       row.addEventListener('click', () => {
         if (!slot) {
-          showMenu(Object.entries(EFFECT_DEFS).map(([type, def]) => ({
+          showMenu(effectMenu((type, def) => ({
             label: def.name,
             action: () => {
               store.checkpoint();
@@ -229,10 +229,10 @@ export function createMixer(app) {
             { label: 'Move down', disabled: k === track.fx.length - 1, action: () => moveSlot(k, 1) },
             { separator: true },
           ] : []),
-          ...Object.entries(EFFECT_DEFS).map(([type, def]) => ({
-            label: `${slot ? 'Replace with' : 'Add'} ${def.name}`,
+          { label: slot ? 'Replace with' : 'Add', submenu: effectMenu((type, def) => ({
+            label: def.name,
             action: () => { store.checkpoint(); track.fx[k] = { type, params: defaultEffectParams(type), on: true }; engine.syncFx(i); store.emit('mixer'); renderFx(); },
-          })),
+          })) },
         ], e.clientX, e.clientY);
       });
       list.append(row);
