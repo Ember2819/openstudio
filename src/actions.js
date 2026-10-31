@@ -348,21 +348,32 @@ export function createActions(app) {
      * Put a recorded take (AudioBuffer) into the playlist at `step` on the first free track. Stored as a 32-bit float
      * WAV, so nothing is lost. One undo step.
      */
-    addAudioTake(buffer, step) {
-      const taken = [...store.samples.values()].filter((s) => /^Take \d+/.test(s.name)).length;
+    addAudioTake(buffer, step) { return a.addAudioTakes([{ buffer, step }])[0]; },
+
+    /**
+     * Recorded takes -> samples and audio clips, one undo step. Several takes are the passes of a loop: each goes on
+     * the next free track and all but the last are muted, so the newest pass plays and the others are there to comp.
+     */
+    addAudioTakes(takes) {
+      if (!takes.length) return [];
       store.checkpoint();
-      const id = store.addSample(`Take ${taken + 1}.wav`, encodeWav(buffer, { float: true }));
-      store.samples.get(id).buffer = buffer;
       const tempo = transport.tempo;
-      const start = Math.round(step * 1000) / 1000;
-      const len = Math.max(0.25, Math.round((tempo.stepAt(tempo.timeAt(start) + buffer.duration) - start) * 1000) / 1000);
-      const track = firstFreeTrack(start, len);
-      const t = store.project.playlist.tracks[track];
-      if (/^Track \d+$/.test(t.name)) t.name = 'Audio';
-      const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+      const clips = takes.map(({ buffer, step }, i) => {
+        const taken = [...store.samples.values()].filter((s) => /^Take \d+/.test(s.name)).length;
+        const id = store.addSample(`Take ${taken + 1}.wav`, encodeWav(buffer, { float: true }));
+        store.samples.get(id).buffer = buffer;
+        const start = Math.round(step * 1000) / 1000;
+        const len = Math.max(0.25, Math.round((tempo.stepAt(tempo.timeAt(start) + buffer.duration) - start) * 1000) / 1000);
+        const track = firstFreeTrack(start, len);
+        const t = store.project.playlist.tracks[track];
+        if (/^Track \d+$/.test(t.name)) t.name = 'Audio';
+        const clip = store.addClip({ type: 'audio', sampleId: id, track, start, len, offset: 0 });
+        if (i < takes.length - 1) clip.mute = true;
+        store.emit('sampleReady', id);
+        return clip;
+      });
       store.emit('playlist');
-      store.emit('sampleReady', id);
-      return clip;
+      return clips;
     },
 
     /**

@@ -3,8 +3,6 @@
 Rough priorities, not promises. Pick something and open an issue before starting large work.
 
 ## Near term
-- Audio recording: loop takes (one per pass of the loop).
-- Per-note cutoff and slide (portamento) notes in the piano roll.
 - Sampler: multi-sample zones.
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 

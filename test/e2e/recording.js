@@ -39,6 +39,25 @@
     ok('undo removes the take', !s.project.playlist.clips.some((c) => c.type === 'audio'));
   }
 
+  // loop recording: every pass of the loop is its own take, stacked, the earlier ones muted
+  s.project.loop = { start: 16, end: 24 }; // half a bar: 1 s at 120 BPM
+  s.project.bpm = 120;
+  s.emit('project');
+  t.setLoop(true);
+  t.seek(16);
+  t.play();
+  await wait(2600);
+  t.stop();
+  const takes = (await until(() => s.project.playlist.clips.filter((c) => c.type === 'audio').length >= 3, 4000), s.project.playlist.clips.filter((c) => c.type === 'audio'));
+  ok('loop recording makes one take per pass', takes.length === 3);
+  ok('every pass starts at the loop start', takes.every((c) => Math.abs(c.start - 16) < 1e-6));
+  ok('passes go on their own tracks', new Set(takes.map((c) => c.track)).size === takes.length);
+  ok('only the last pass plays', takes.slice(0, -1).every((c) => c.mute) && !takes.at(-1).mute);
+  ok('a full pass is one loop long', Math.abs(s.samples.get(takes[1]?.sampleId)?.buffer.duration - 1) < 0.02);
+  s.undo();
+  ok('undo removes all the passes at once', !s.project.playlist.clips.some((c) => c.type === 'audio'));
+  t.setLoop(false);
+
   t.setRecording(false);
   ok('turning recording off closes the device', await until(() => !a.recorder.armed, 2000));
   // monitoring: the input plays through a mixer track (its meter moves) without recording

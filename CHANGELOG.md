@@ -48,7 +48,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - **Audio recording**: arm Record with Options → Record → "Audio into the playlist" (or right-click the record button),
   press Play, and the take lands in the playlist as an audio clip where you started, on a free track named "Audio".
   Takes are kept as lossless 32-bit float WAV, compensated for output latency, and undoable; pick the device under
-  Options → Audio input. Record can capture notes, audio or both.
+  Options → Audio input. Record can capture notes, audio or both. **Loop recording**: with a loop on, every pass
+  becomes its own take, stacked on new tracks with the earlier passes muted, ready to comp.
 - **Sampler**: root note, end point and a loop region (all draggable on the waveform), and **slicing** like FL Studio's
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.

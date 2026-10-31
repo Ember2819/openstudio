@@ -215,6 +215,7 @@ export class Transport extends Emitter {
       this.nextTime = this.ctx.currentTime + 0.03;
       this.queue = [];
       this.jumped = true;
+      this.emit('jump', { time: this.nextTime, step: this.nextStep });
     }
     this.emit('change');
   }
@@ -255,6 +256,8 @@ export class Transport extends Emitter {
           const end = this.lengthSteps;
           if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
         }
+        // where the song continues somewhere else (loop recording splits takes there)
+        if (this.jumped) this.emit('jump', { time: this.nextTime, step: this.nextStep });
       }
       const dur = this.tempo.stepDur(this.nextStep);
       this._scheduleStep(this.nextStep, this.nextTime, dur);
