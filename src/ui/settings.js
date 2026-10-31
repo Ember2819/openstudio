@@ -20,6 +20,7 @@ export function createSettings(app) {
   win.body.classList.add('cs-body');
 
   let chId = null;
+  let knobs = new Map(); // param key (or 'vol' / 'pan') -> knob, to follow changes made elsewhere
   const channel = () => store.channel(chId);
 
   function open(id) {
@@ -36,6 +37,7 @@ export function createSettings(app) {
 
   function render() {
     const ch = channel();
+    knobs = new Map();
     win.body.replaceChildren();
     if (!ch) { win.setTitle('Channel settings'); return; }
     win.setTitle(`Channel settings — ${ch.name}`);
@@ -45,6 +47,8 @@ export function createSettings(app) {
 
     const vol = createKnob({ value: ch.vol, min: 0, max: 1, def: 0.78, size: 38, label: 'Volume', target: { kind: 'channel', id: ch.id, param: 'vol' }, fmt: (v) => `${Math.round((v / 0.78) * 100)}%`, onStart: () => store.checkpoint(), onChange: (v) => { ch.vol = v; store.emit('channelMix'); } });
     const pan = createKnob({ value: ch.pan, min: -1, max: 1, def: 0, size: 38, bipolar: true, label: 'Panning', target: { kind: 'channel', id: ch.id, param: 'pan' }, fmt: (v) => (Math.abs(v) < 0.01 ? 'Centered' : `${Math.round(Math.abs(v) * 100)}% ${v < 0 ? 'left' : 'right'}`), onStart: () => store.checkpoint(), onChange: (v) => { ch.pan = v; store.emit('channelMix'); } });
+    knobs.set('vol', vol);
+    knobs.set('pan', pan);
     const head = h('div', { class: 'cs-head' },
       nameBtn,
       ch.type === 'sf' ? presetPicker(ch) : ENGINE_PRESETS[ch.type] ? enginePicker(ch) : h('span', { class: 'cs-type' }, ch.type === 'drum' ? `${TYPE_LABEL.drum} · ${ch.voice}` : TYPE_LABEL[ch.type]),
@@ -75,6 +79,7 @@ export function createSettings(app) {
           target: { kind: 'chparam', id: ch.id, key: meta.key },
           onChange: (v) => { ch.params[meta.key] = v; touch(); },
         });
+        knobs.set(meta.key, k);
         grid.append(h('div', { class: 'cs-param' }, k, h('span', {}, meta.label)));
       }
     }
@@ -318,6 +323,18 @@ export function createSettings(app) {
     for (const x of [sx, ex]) { ctx.beginPath(); ctx.moveTo(Math.round(Math.min(w - 1, x)) + 0.5, 0); ctx.lineTo(Math.round(Math.min(w - 1, x)) + 0.5, hh); ctx.stroke(); }
   }
 
+  // a MIDI controller, automation editing or an agent changed a value: move the knobs, don't rebuild
+  store.on('channelParams', (id) => {
+    const ch = channel();
+    if (!win.visible || id !== chId || !ch) return;
+    for (const [key, k] of knobs) if (ch.params[key] !== undefined && typeof ch.params[key] === 'number') k.setValue(ch.params[key]);
+  });
+  store.on('channelMix', () => {
+    const ch = channel();
+    if (!win.visible || !ch) return;
+    knobs.get('vol')?.setValue(ch.vol);
+    knobs.get('pan')?.setValue(ch.pan);
+  });
   store.on('selection', () => { if (win.visible && store.selectedChannel) { chId = store.selectedChannel.id; render(); } });
   store.on('channels', () => { if (win.visible) render(); });
   appearance.on('change', () => { if (win.visible) render(); });

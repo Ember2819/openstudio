@@ -43,6 +43,9 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
   Slicex — auto-slice at the hits (sensitivity presets), equal slices, or add / move / remove slice lines by hand;
   each slice plays from the root key up, and "Slices → pattern" writes the loop back as notes so it follows the tempo.
   Agents get `slice_sample`.
+- **Link to controller** (MIDI learn): right-click any knob, fader, effect parameter or the tempo → "Link to
+  controller…", then move a knob or fader on your MIDI controller. Links are saved with the project, each gesture is
+  one undo step, and Options → MIDI controller links lists and removes them.
 - Mixer meters show a **peak hold** line and a latched **clip** indicator (click a meter to reset). Right-click a
   track with another one selected to **route the selected track into it** (only, or as an extra send), as in FL Studio.
 - **Sidechain compressor**: duck a track from another mixer track's output (the kick pumping the bass and pads):

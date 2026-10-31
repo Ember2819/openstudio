@@ -184,3 +184,7 @@ body.busy, body.busy * { cursor: progress !important; }
 .welcome-item { padding: 10px 0; border-top: 1px solid var(--line-faint); }
 .welcome-item h4 { margin: 0 0 2px; font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
 .welcome-item p { margin: 0; line-height: 1.5; }
+
+/* ---------- toast ---------- */
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 100002; display: flex; align-items: center; gap: 12px; padding: 9px 12px 9px 16px; background: var(--menu-bg); border: 1px solid var(--line); border-radius: 6px; box-shadow: var(--shadow); color: var(--text-bright); font-size: 12px; }
+.toast-btn { height: 24px; font-size: 11.5px; }

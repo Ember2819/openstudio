@@ -6,6 +6,7 @@ import { createSnapSelect } from './snapselect.js';
 import { promptDialog } from './dialog.js';
 import { T } from '../theme.js';
 import { createScrub } from './scrub.js';
+import { controllerLinks, describeLink, unlink } from '../controllers.js';
 
 export function createToolbar(app) {
   const { store, transport, wm, actions } = app;
@@ -75,6 +76,15 @@ export function createToolbar(app) {
         return [
           { label: 'Default input', checked: !rec?.deviceId, action: () => rec.setDevice('') },
           ...devs.filter((d) => d.id && d.id !== 'default').map((d) => ({ label: d.name, checked: rec.deviceId === d.id, action: () => rec.setDevice(d.id) })),
+        ];
+      } },
+      { label: 'MIDI controller links', submenu: () => {
+        const links = controllerLinks(store);
+        if (!links.length) return [{ label: 'None — right-click a knob → Link to controller…', disabled: true }];
+        return [
+          ...links.map((l) => ({ label: describeLink(store, l), submenu: [{ label: 'Remove link', action: () => { store.checkpoint(); unlink(store, l.target); store.emit('controllers'); } }] })),
+          { separator: true },
+          { label: 'Remove all links', action: () => { store.checkpoint(); store.project.controllerLinks = []; store.emit('controllers'); } },
         ];
       } },
       { label: 'MIDI input', submenu: () => {

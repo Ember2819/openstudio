@@ -76,6 +76,27 @@ export function readTarget(store, t) {
   }
 }
 
+/**
+ * Set a target's value (real units) in the project, as if its control had been turned, and return the store event
+ * that tells the engine and the windows. Effect parameters also go straight to the live effect when `engine` is given.
+ */
+export function writeTarget(store, engine, t, v) {
+  switch (t.kind) {
+    case 'mixer': { const m = store.project.mixer[t.track]; if (!m) return null; m[t.param] = v; return 'mixer'; }
+    case 'channel': { const ch = store.channel(t.id); if (!ch) return null; ch[t.param] = v; return 'channelMix'; }
+    case 'fx': {
+      const slot = store.project.mixer[t.track]?.fx[t.slot];
+      if (!slot) return null;
+      slot.params[t.key] = v;
+      engine?.setEffectParam(t.track, t.slot, t.key, v);
+      return 'mixer';
+    }
+    case 'chparam': { const ch = store.channel(t.id); if (!ch) return null; ch.params[t.key] = v; return 'channelParams'; }
+    case 'tempo': store.project.bpm = Math.round(v * 1000) / 1000; return 'tempo';
+    default: return null;
+  }
+}
+
 export function describeTarget(store, t) {
   switch (t.kind) {
     case 'mixer': return `${store.project.mixer[t.track]?.name ?? 'Mixer'} — ${t.param === 'pan' ? 'Pan' : 'Volume'}`;

@@ -42,6 +42,7 @@ export function blankProject() {
     playlist: { tracks: makeTracks(), clips: [] },
     automations: [],
     markers: [], // time markers in the playlist: { id, step, name }
+    controllerLinks: [], // MIDI CC -> control (src/controllers.js)
     loop: null, // { start, end } in steps
     swing: 0,
     selected: { channel: null, pattern: null, mixer: 0 },
@@ -154,6 +155,7 @@ export class Store extends Emitter {
     const p = this.project;
     p.selected = { ...base.selected, ...(p.selected || {}) };
     p.automations = Array.isArray(p.automations) ? p.automations : [];
+    p.controllerLinks = (Array.isArray(p.controllerLinks) ? p.controllerLinks : []).filter((l) => l && Number.isInteger(l.cc) && l.target && typeof l.target.kind === 'string');
     p.markers = (Array.isArray(p.markers) ? p.markers : []).filter((m) => m && Number.isFinite(m.step) && m.step >= 0)
       .map((m) => ({ id: m.id, step: m.step, name: String(m.name ?? 'Marker') }));
     const pl = p.playlist && typeof p.playlist === 'object' ? p.playlist : {};

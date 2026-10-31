@@ -3,14 +3,19 @@ import { showMenu } from './menu.js';
 
 let automationHandler = null;
 export const setAutomationHandler = (fn) => { automationHandler = fn; };
+let controllerHandler = null; // { learn(target), linked(target) -> text | null, unlink(target) }
+export const setControllerHandler = (fn) => { controllerHandler = fn; };
 
 /** Context menu for any automatable control. `target` is an automation target descriptor (or a function returning one). */
 export function showAutomationMenu(e, target, extra = []) {
   e.preventDefault();
   const t = typeof target === 'function' ? target() : target;
+  const linked = t && controllerHandler?.linked(t);
   showMenu([
     ...extra,
     { label: 'Create automation clip', disabled: !t || !automationHandler, action: () => automationHandler(t) },
+    { label: 'Link to controller…', disabled: !t || !controllerHandler, action: () => controllerHandler.learn(t) },
+    ...(linked ? [{ label: `Unlink controller (${linked})`, action: () => controllerHandler.unlink(t) }] : []),
   ], e.clientX, e.clientY);
 }
 

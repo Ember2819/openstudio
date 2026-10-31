@@ -180,7 +180,7 @@ export function createChannelRack(app) {
     const pads = h('div', { class: 'cr-pads' });
     const row = h('div', { class: 'cr-row', dataset: { ch: ch.id } }, left, pads);
     row.style.setProperty('--ch-color', ch.color);
-    return { row, pads, name, led };
+    return { row, pads, name, led, pan, vol };
   }
 
   function rebuild() {
@@ -272,6 +272,13 @@ export function createChannelRack(app) {
 
   // ------------------------------------------------------------- bindings
   store.on('project', rebuild);
+  // volume / pan changed elsewhere (a MIDI controller, an agent, automation editing)
+  store.on('channelMix', () => {
+    for (const ch of store.project.channels) {
+      const r = rowMap.get(ch.id);
+      if (r) { r.vol.setValue(ch.vol); r.pan.setValue(ch.pan); }
+    }
+  });
   store.on('channels', () => {
     // rebuild preserving scroll
     const top = scroll.scrollTop;
