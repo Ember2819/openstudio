@@ -562,6 +562,36 @@
     a.transport.setMetronome(before);
   }
 
+  // accessibility: knobs and faders are keyboard sliders, menus work from the keyboard, icon buttons are named
+  {
+    // an open dialog keeps keys from the app behind it (an earlier step may have left one)
+    const leftover = document.querySelectorAll('.modal-shade').length;
+    for (let k = 0; k < 5 && document.querySelector('.modal-shade'); k++) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    ok(`dialogs close with Escape (${leftover} were open)`, !document.querySelector('.modal-shade'));
+    a.wm.get('mixer').show();
+    await new Promise((r) => setTimeout(r, 50));
+    const knob = document.querySelector('.mx-strip[data-track="1"] .knob');
+    const pan0 = s.project.mixer[1].pan;
+    knob.focus();
+    knob.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
+    ok(`a knob is a focusable slider the arrow keys move (${knob.getAttribute('role')}, focused ${document.activeElement === knob}, ${pan0} → ${s.project.mixer[1].pan}, now ${knob.getAttribute('aria-valuenow')}, strips ${document.querySelectorAll('.mx-strip[data-track="1"]').length})`, knob.getAttribute('role') === 'slider' && document.activeElement === knob && s.project.mixer[1].pan > pan0);
+    knob.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true, cancelable: true }));
+    ok('Delete resets a knob', s.project.mixer[1].pan === 0);
+    const fader = document.querySelector('.mx-strip[data-track="1"] .mx-fader');
+    const v0 = s.project.mixer[1].vol;
+    fader.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp', bubbles: true, cancelable: true }));
+    ok(`a fader is a keyboard slider (${fader.getAttribute('aria-valuetext')}, ${v0} → ${s.project.mixer[1].vol})`, Math.abs(s.project.mixer[1].vol - v0 - 0.05) < 1e-9 && /dB/.test(fader.getAttribute('aria-valuetext')));
+    a.wm.get('mixer').hide();
+    const { showMenu, isMenuOpen } = await import('./src/ui/menu.js');
+    let picked = null;
+    showMenu([{ label: 'One', action: () => { picked = 1; } }, { label: 'Off', disabled: true }, { label: 'More', submenu: [{ label: 'Two', action: () => { picked = 2; } }] }], 100, 100);
+    const key = (k) => window.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+    key('ArrowDown'); key('ArrowDown'); key('ArrowRight'); key('Enter');
+    ok('menus: arrows skip disabled items, Right opens a submenu, Enter picks', picked === 2 && !isMenuOpen());
+    const unnamed = [...document.querySelectorAll('button')].filter((b) => b.offsetParent && !b.textContent.trim() && !b.getAttribute('aria-label'));
+    ok(`icon buttons have names (${unnamed.length} without)`, unnamed.length <= 3);
+  }
+
   // loading a damaged project doesn't throw and repairs ids/selection
   let loaded = true;
   try { s.load(JSON.stringify({ channels: [{ id: 3, type: 'synth', name: 'x' }], patterns: [{ id: 3, name: 'p', notes: {} }] })); } catch { loaded = false; }

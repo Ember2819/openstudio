@@ -161,7 +161,7 @@ export function createPianoRoll(app) {
   const cGrid = h('canvas', { class: 'pr-grid' });
   const cVel = h('canvas', { class: 'pr-vel' });
   const spacer = h('div', { class: 'pr-spacer' });
-  const scroller = h('div', { class: 'pr-scroller' }, spacer);
+  const scroller = h('div', { class: 'pr-scroller', role: 'application', 'aria-label': 'Piano roll notes' }, spacer);
   const gridWrap = h('div', { class: 'pr-gridwrap' }, cGrid, scroller);
   overlayScrollbars(scroller, { host: gridWrap });
   scrollingToolbar(toolbar);

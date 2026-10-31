@@ -103,8 +103,12 @@ export function createMixer(app) {
     const thumb = h('div', { class: 'mx-thumb' });
     const rail = h('div', { class: 'mx-rail' });
     const scale = h('div', { class: 'mx-scale' }, SCALE_MARKS.map(([t, v]) => h('span', { style: { bottom: faderOffset(v) } }, t)));
-    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset' }, rail, thumb);
-    const setFaderUi = () => { thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`; };
+    const fader = h('div', { class: 'mx-fader', 'data-hint': 'Volume — drag, scroll or double-click to reset', role: 'slider', tabindex: 0, 'aria-label': i === 0 ? 'Master volume' : `Insert ${i} volume`, 'aria-valuemin': 0, 'aria-valuemax': 100 }, rail, thumb);
+    const setFaderUi = () => {
+      thumb.style.bottom = `calc(${m().vol} * (100% - ${THUMB_H}px))`;
+      fader.setAttribute('aria-valuenow', String(Math.round(m().vol * 100)));
+      fader.setAttribute('aria-valuetext', `${fmtDb(faderToGain(m().vol))} dB`);
+    };
     // grouped tracks follow (Alt moves this one alone)
     const setVol = (v, alone = false) => {
       setGroupVolume(mixer(), i, clamp(v, 0, 1), { alone });
@@ -130,6 +134,18 @@ export function createMixer(app) {
     fader.addEventListener('pointercancel', () => { dragStart = null; });
     fader.addEventListener('dblclick', () => { store.checkpoint(); setVol(0.8, true); }); // a reset is for this track only
     fader.addEventListener('contextmenu', (e) => showAutomationMenu(e, { kind: 'mixer', track: i, param: 'vol' }));
+    // keyboard: arrows (Shift finer), Page Up / Down, Home / End, Delete back to 0 dB; Alt for this track alone
+    let keyUndo = -Infinity;
+    fader.addEventListener('keydown', (e) => {
+      const d = e.shiftKey ? 0.002 : 0.01;
+      const to = { ArrowUp: m().vol + d, ArrowRight: m().vol + d, ArrowDown: m().vol - d, ArrowLeft: m().vol - d, PageUp: m().vol + 0.05, PageDown: m().vol - 0.05, Home: 0, End: 1, Delete: 0.8, Backspace: 0.8 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (performance.now() - keyUndo > 600) store.checkpoint(); // one undo step per burst of key presses
+      keyUndo = performance.now();
+      setVol(to, e.altKey || to === 0.8);
+    });
 
     const meter = h('canvas', { class: 'mx-meter' });
     const db = h('div', { class: 'mx-db' }, '0.0');

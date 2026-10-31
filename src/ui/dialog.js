@@ -1,5 +1,6 @@
 import { h } from '../util.js';
 
+let modalCount = 0;
 function modal(title, body, buttons, cls = '') {
   return new Promise((resolve) => {
     const shade = h('div', { class: 'modal-shade' });
@@ -13,8 +14,9 @@ function modal(title, body, buttons, cls = '') {
     };
     const btnEls = buttons.map((b) =>
       h('button', { class: `btn${b.primary ? ' primary' : ''}`, onClick: () => close(b.value()) }, b.label));
-    const box = h('div', { class: `modal${cls ? ` ${cls}` : ''}` },
-      h('div', { class: 'modal-title' }, title),
+    const titleId = `modal-title-${++modalCount}`;
+    const box = h('div', { class: `modal${cls ? ` ${cls}` : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': titleId },
+      h('div', { class: 'modal-title', id: titleId }, title),
       h('div', { class: 'modal-body' }, body),
       h('div', { class: 'modal-buttons' }, btnEls));
     shade.append(box);
@@ -23,6 +25,8 @@ function modal(title, body, buttons, cls = '') {
     window.addEventListener('keydown', onKey, true);
     box.querySelector('input')?.focus();
     box.querySelector('input')?.select();
+    // keyboard users land on the dialog: its field, else its main button
+    if (!box.contains(document.activeElement)) (box.querySelector('select, .btn.primary, .btn'))?.focus();
     modal.last = { box, close };
   });
 }

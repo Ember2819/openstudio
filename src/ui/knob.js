@@ -102,11 +102,13 @@ export function createKnob(opts) {
   const ptr = svg('line', { class: 'k-ptr', 'stroke-width': 1.6, x1: c, y1: c - (c - 4.5) * 0.25, x2: c, y2: c - (c - 4.5) * 0.9 });
   root.append(track, val, body, ptr);
 
-  const el = h('div', { class: `knob${green ? ' green' : ''}` });
+  const el = h('div', { class: `knob${green ? ' green' : ''}`, role: 'slider', tabindex: 0, 'aria-label': label || 'Knob' });
   el.style.width = el.style.height = `${size}px`;
   el.append(root);
 
   const render = () => {
+    el.setAttribute('aria-valuenow', String(Math.round(clamp(toNorm(value), 0, 1) * 100)));
+    el.setAttribute('aria-valuetext', fmt(value));
     const t = clamp(toNorm(value), 0, 1);
     const deg = A0 + t * (A1 - A0);
     ptr.setAttribute('transform', `rotate(${deg} ${c} ${c})`);
@@ -161,6 +163,26 @@ export function createKnob(opts) {
     set(fromNorm(t), true);
   }, { passive: false });
   if (opts.target) el.addEventListener('contextmenu', (e) => showAutomationMenu(e, opts.target, [{ label: 'Reset to default', action: () => { start(false); set(def, true); } }]));
+  el.setAttribute('aria-valuemin', '0');
+  el.setAttribute('aria-valuemax', '100');
+  // keyboard: arrows nudge (Shift: finer), Page Up / Down jump, Home / End to the ends, Delete resets
+  el.addEventListener('keydown', (e) => {
+    const t = toNorm(value);
+    const nudge = step ? Math.max(e.shiftKey ? 0.002 : 0.01, (toNorm(Math.min(max, min + step)) - toNorm(min)) || 0.01) : (e.shiftKey ? 0.002 : 0.01);
+    const to = { ArrowUp: t + nudge, ArrowRight: t + nudge, ArrowDown: t - nudge, ArrowLeft: t - nudge, PageUp: t + 0.1, PageDown: t - 0.1, Home: 0, End: 1 }[e.key];
+    if (to === undefined && e.key !== 'Delete' && e.key !== 'Backspace') return;
+    e.preventDefault();
+    e.stopPropagation();
+    start(true);
+    if (to === undefined) set(def, true);
+    else {
+      // a step knob must move at least one step
+      let v = fromNorm(clamp(to, 0, 1));
+      if (step && v === value) v = clamp(value + Math.sign(to - t) * step, min, max);
+      set(v, true);
+    }
+    hint.clear();
+  });
   el.addEventListener('pointerenter', () => hint.set(text()));
   el.addEventListener('pointerleave', () => { if (!drag) hint.clear(); });
 

@@ -75,7 +75,7 @@ export function createPlaylist(app) {
   const cRuler = h('canvas', { class: 'pl-ruler' });
   const cGrid = h('canvas', { class: 'pl-grid' });
   const spacer = h('div', { class: 'pr-spacer' });
-  const scroller = h('div', { class: 'pr-scroller' }, spacer);
+  const scroller = h('div', { class: 'pr-scroller', role: 'application', 'aria-label': 'Playlist arrangement' }, spacer);
   const gridWrap = h('div', { class: 'pr-gridwrap' }, cGrid, scroller);
   overlayScrollbars(scroller, { host: gridWrap });
   scrollingToolbar(toolbar);

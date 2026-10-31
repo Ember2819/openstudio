@@ -70,7 +70,7 @@ class AppWindow extends Emitter {
         btn('maximize', 'Maximize', () => this.toggleMaximize()),
         btn('close', 'Close', () => this.hide())));
     this.body = h('div', { class: 'win-body' });
-    this.el = h('div', { class: 'win hidden', 'data-win': opts.id }, this.titleEl, this.body);
+    this.el = h('div', { class: 'win hidden', 'data-win': opts.id, role: 'region', 'aria-label': opts.title }, this.titleEl, this.body);
     for (const dir of ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']) {
       const handle = h('div', { class: `win-resize ${dir}` });
       handle.addEventListener('pointerdown', (e) => this._startResize(e, dir));
@@ -146,7 +146,7 @@ class AppWindow extends Emitter {
     this._apply();
   }
 
-  setTitle(t) { this.title = t; this.titleText.textContent = t; }
+  setTitle(t) { this.title = t; this.titleText.textContent = t; this.el?.setAttribute('aria-label', t); }
 
   show() {
     if (this.visible) { this.focus(); return; }

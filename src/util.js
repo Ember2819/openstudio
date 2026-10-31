@@ -17,6 +17,10 @@ export function h(tag, props, ...children) {
     if (c == null || c === false) continue;
     el.append(c.nodeType ? c : document.createTextNode(String(c)));
   }
+  // accessibility: buttons that show only an icon (or a letter like "M") are named by their hint
+  if (tag === 'button' && el.dataset.hint && !el.hasAttribute('aria-label') && el.textContent.trim().length <= 2) {
+    el.setAttribute('aria-label', el.dataset.hint.split(/ — | · /)[0]);
+  }
   return el;
 }
 
