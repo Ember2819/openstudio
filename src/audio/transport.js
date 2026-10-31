@@ -64,12 +64,14 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       if (!sample?.buffer) continue;
       const into = step - clip.start;
       // tempo-following clips: `stretch` keeps the pitch, `resample` speeds up / slows down like a record
+      // `pitch` (semitones) shifts without changing the length: time-stretch by 1/r, then play r times faster
       const st = clip.stretch;
       const speed = st?.bpm > 0 ? 60 / (sd * 4) / st.bpm : 1;
+      const r = clip.pitch ? 2 ** (clip.pitch / 12) : 1;
+      const timeSpeed = (st?.mode === 'stretch' ? speed : 1) / r;
       let buffer = sample.buffer;
-      let rate = 1;
-      if (st?.mode === 'stretch' && engine.stretchedBuffer) buffer = engine.stretchedBuffer(sample, speed);
-      else if (st?.mode === 'resample') rate = speed;
+      const rate = (st?.mode === 'resample' ? speed : 1) * r;
+      if (Math.abs(timeSpeed - 1) > 1e-4 && engine.stretchedBuffer) buffer = engine.stretchedBuffer(sample, timeSpeed);
       engine.playAudio(buffer, track?.mixer ?? 0, time, (clip.offset + into) * sd * rate, (clip.len - into) * sd, clip.gain ?? 1,
         { reverse: clip.reverse, fadeIn: (clip.fadeIn || 0) * sd, fadeOut: (clip.fadeOut || 0) * sd, into: into * sd, rate });
     } else if (type === 'auto') {

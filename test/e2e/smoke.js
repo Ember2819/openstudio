@@ -328,6 +328,12 @@
     ok(`stretch: a bar at 120 fits a bar at 150 and keeps its pitch (${hz(st, 0.1, 0.9).toFixed(0)} Hz, last pulse ${lastPulse(st).toFixed(2)} s)`, Math.abs(hz(st, 0.1, 0.9) - 220) < 6 && Math.abs(lastPulse(st) - 1.2 - 0.07) < 0.08);
     clip.stretch = { mode: 'resample', bpm: 120 };
     const rs = await renderSteps(s, 16, { tail: 0 });
+    delete clip.stretch;
+    s.project.bpm = 120;
+    clip.pitch = 12;
+    const up = await renderSteps(s, 16, { tail: 0 });
+    ok(`pitch shift: an octave up at the same length (${hz(up, 0.1, 0.9).toFixed(0)} Hz, last pulse ${lastPulse(up).toFixed(2)} s)`, Math.abs(hz(up, 0.1, 0.9) - 440) < 8 && Math.abs(lastPulse(up) - 1.5 - 0.09) < 0.1);
+    delete clip.pitch;
     ok(`resample: it plays faster and higher (${hz(rs, 0.1, 0.9).toFixed(0)} Hz)`, Math.abs(hz(rs, 0.1, 0.9) - 275) < 8 && Math.abs(lastPulse(rs) - lastPulse(st)) < 0.08);
   }
 

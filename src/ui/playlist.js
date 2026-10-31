@@ -760,6 +760,14 @@ export function createPlaylist(app) {
         { label: 'Fade in', submenu: fades('fadeIn') },
         { label: 'Fade out', submenu: fades('fadeOut') },
         { label: 'Reverse', checked: !!c.reverse, action: () => { store.checkpoint(); if (c.reverse) delete c.reverse; else c.reverse = true; store.emit('playlist'); } },
+        { label: c.pitch ? `Pitch (${c.pitch > 0 ? '+' : ''}${c.pitch} st)…` : 'Pitch…', action: async () => {
+          const v = await formDialog('Clip pitch', [{ key: 'st', label: 'Semitones (length stays the same)', value: c.pitch ?? 0, min: -24, max: 24, step: 0.1 }], 'Set');
+          if (!v) return;
+          store.checkpoint();
+          const st = Math.round(v.st * 10) / 10;
+          if (st) c.pitch = st; else delete c.pitch;
+          store.emit('playlist');
+        } },
         { label: 'Follow the project tempo', submenu: [
           { label: 'Off (play as recorded)', checked: !c.stretch, action: () => { store.checkpoint(); delete c.stretch; store.emit('playlist'); } },
           { label: 'Stretch (keep the pitch)…', checked: c.stretch?.mode === 'stretch', action: () => tempoFollow(c, 'stretch') },

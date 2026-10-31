@@ -30,6 +30,7 @@ const CLIP_PATCH = obj({
   fadeIn: num('Audio clip fade-in length in steps (0 = none)', { minimum: 0 }),
   fadeOut: num('Audio clip fade-out length in steps (0 = none)', { minimum: 0 }),
   reverse: bool('Play the audio clip backwards'),
+  pitch: num('Audio clip pitch shift in semitones, keeping its length (0 = none)', { minimum: -24, maximum: 24 }),
   stretch: { type: ['object', 'null'], description: 'Make an audio clip follow the project tempo: { mode: "stretch" (keep pitch) | "resample" (pitch follows), bpm: the loop\'s own tempo }, or null for off. The clip length is not changed — set length too.', properties: { mode: { type: 'string', enum: ['stretch', 'resample'] }, bpm: { type: 'number', minimum: 20, maximum: 400 } }, required: ['mode', 'bpm'] },
 }, ['id']);
 
@@ -145,6 +146,7 @@ export const tools = [
           if (p.gain !== undefined) clip.gain = p.gain;
           for (const k of ['fadeIn', 'fadeOut']) if (p[k] !== undefined) { if (p[k] > 0) clip[k] = Math.min(p[k], clip.len); else delete clip[k]; }
           if (p.reverse !== undefined) { if (p.reverse) clip.reverse = true; else delete clip.reverse; }
+          if (p.pitch !== undefined) { if (p.pitch) clip.pitch = p.pitch; else delete clip.pitch; }
           if (p.stretch !== undefined) { if (p.stretch) clip.stretch = { mode: p.stretch.mode, bpm: p.stretch.bpm }; else delete clip.stretch; }
         }
         store.emit('playlist');

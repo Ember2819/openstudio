@@ -41,6 +41,7 @@ export function clipInfo(c) {
     if (c.fadeOut) out.fadeOut = c.fadeOut;
     if (c.reverse) out.reverse = true;
     if (c.stretch) out.stretch = c.stretch;
+    if (c.pitch) out.pitch = c.pitch;
   } else out.automation = c.autoId;
   return out;
 }

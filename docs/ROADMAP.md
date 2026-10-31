@@ -9,7 +9,6 @@ Rough priorities, not promises. Pick something and open an issue before starting
 - Packaged installers (electron-builder) for Windows, macOS and Linux.
 
 ## Mid term
-- Pitch-shift (without time change) for audio clips.
 - More built-in instruments (sample-based pianos / strings); vocoder and pitch effects.
 - Mixer track grouping.
 - MP3 export.
