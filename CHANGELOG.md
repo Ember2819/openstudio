@@ -5,6 +5,8 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [1.0.0]
+
 ### Performance
 - Undo history is capped by memory (~190 MB) as well as by steps, so big projects can't exhaust memory.
 - Autosave stores samples as raw buffers instead of re-encoding every sample to base64 every 30 seconds.
@@ -22,6 +24,7 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 - Mixer track names changed by an agent or by undo didn't show on the strip until the mixer was rebuilt.
 
 ### Added
+- Linux packages for every release: **.deb and .rpm** (x64 and arm64) join the .AppImage files.
 - **Open FL Studio projects (.flp)** from File → Open (FL Studio 11.5 – 21): channels, patterns and every note (with
   velocity, per-note pan and fine pitch), the playlist arrangement with track names, colours and muted tracks, tempo, and
   the mixer (insert names, colours, faders, pan, routing and recognisable effects). Layer channels play their children.
