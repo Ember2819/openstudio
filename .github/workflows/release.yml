@@ -85,11 +85,13 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          # electron-builder emits "x86_64" for Linux; normalize to "x64" so
-          # artifact names are consistent across all platforms
-          for f in release/*x86_64*; do
-            mv "$f" "${f/x86_64/x64}"
-          done
+          # electron-builder names deb packages "amd64" and rpm packages
+          # "x86_64"/"aarch64"; normalize to "x64"/"arm64" so artifact names
+          # are consistent across all platforms and package formats
+          shopt -s nullglob
+          for f in release/*x86_64*; do mv "$f" "${f/x86_64/x64}"; done
+          for f in release/*amd64*; do mv "$f" "${f/amd64/x64}"; done
+          for f in release/*aarch64*; do mv "$f" "${f/aarch64/arm64}"; done
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -98,5 +100,7 @@ jobs:
           path: |
             release/*.exe
             release/*.AppImage
+            release/*.deb
+            release/*.rpm
             release/*.dmg
           if-no-files-found: error
