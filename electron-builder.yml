@@ -58,4 +58,12 @@ linux:
       arch:
         - x64
         - arm64
+    - target: deb
+      arch:
+        - x64
+        - arm64
+    - target: rpm
+      arch:
+        - x64
+        - arm64
   artifactName: ${productName}-${version}-linux-${arch}.${ext}
