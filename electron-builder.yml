@@ -53,6 +53,9 @@ win:
   icon: build/openstudio.ico
 
 linux:
+  maintainer: Ember2819 <187067425+Ember2819@users.noreply.github.com> # .deb/.rpm metadata
+  vendor: OpenStudio # .rpm metadata
+  category: Audio
   target:
     - target: AppImage
       arch:
