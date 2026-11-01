@@ -8,8 +8,9 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 
 ![OpenStudio](docs/screenshot.png)
 
-> **Status: early (0.x).** It makes music today, but it is not a replacement for a mature DAW yet —
-> see [Limitations](#limitations) and the [roadmap](docs/ROADMAP.md). Contributions are very welcome.
+> **Stable and current: [v1.0.0](https://github.com/Ember2819/openstudio/releases/tag/v1.0.0)** — ready-made
+> packages for Windows, macOS and Linux (`.exe`, `.dmg`, `.AppImage`, `.deb` and `.rpm`) on the
+> [releases page](https://github.com/Ember2819/openstudio/releases). See [what's new](CHANGELOG.md).
 
 ## Features
 
@@ -37,12 +38,16 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 - **Playlist** with pattern, audio and automation clips, time markers, loop region, split by channel, audio-clip fades,
   gain, reverse and tempo-following (stretch or resample), and drag-and-drop of patterns, samples and audio files.
 - **Mixer** with 125 inserts, routing (to the master, to buses, or both — feedback-protected), sidechain, 10 effect
-  slots per track and stereo meters with peak hold.
+  slots per track, stereo meters with peak hold and **mixer groups** (group 1–8 tracks whose faders, mutes and solos
+  move together; hold Alt to adjust one track alone).
 - **Automation** of any knob, fader, effect parameter or the **tempo**; **time signatures**; **MIDI controller links**
   (right-click → Link to controller).
 - **Recording** of notes from the computer or a MIDI keyboard, and of **audio** from any input into the playlist,
   with loop takes and input monitoring.
 - **Browser** with your own sample folders (preview, drag in), every instrument, preset, drum voice and effect.
+- **Accessibility & remappable shortcuts** — knobs, faders and menus are focusable sliders that screen readers announce
+  with their value, every dialog is reachable from the keyboard, the system's "reduce motion" setting turns animations
+  off, and **Settings → Keys** lets you add, remove or reset the keys of any command (with clash detection).
 - **Export** to WAV, FLAC, MP3 (192-320 kbps, gapless), per-mixer-track stems and MIDI; `.osp` projects with autosave, recent files and undo/redo.
 - **AI agents** can do everything you can through a built-in [MCP server](docs/AGENTS.md) — and they work like a producer:
   pick a style, get a matching set of instruments, write a whole arrangement in key and in form, have the writing reviewed
@@ -160,10 +165,10 @@ For a tour of the code read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Limitations
 
-Plugin (VST/CLAP) hosting, plugin settings and automation clips in imported FL Studio projects, MP3 export, and
-many of the commercial DAWs' bundled instruments and effects are not implemented. OpenStudio is an independent
-project and is not affiliated with, endorsed by, or derived from any commercial DAW; product names mentioned in this
-repository belong to their respective owners.
+Plugin (VST/CLAP) hosting, plugin settings and automation clips in imported FL Studio projects, and many of the
+commercial DAWs' bundled instruments and effects are not implemented. OpenStudio is an independent project and is not
+affiliated with, endorsed by, or derived from any commercial DAW; product names mentioned in this repository belong to
+their respective owners.
 
 ## Contributing
 
