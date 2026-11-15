@@ -5,6 +5,30 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [1.0.1]
+
+### Added
+- **Initialization screen**: the app now shows a splash the moment it opens — a wordmark, an animated loading
+  bar and a status line that follows the real boot stages ("Building the interface…" → "Loading instruments…" →
+  "Ready") instead of sitting on a bare background while the interface builds and the instrument bank loads. It
+  follows the active theme, fades out when the app is ready, a watchdog guarantees it can never stick, and the
+  first-run dialogs (autosave recovery, the welcome tour) wait for it so they are never hidden behind it.
+- **Fluid floating-window animations**: floating windows glide between their spots when they are collapsed,
+  maximized, restored or moved by the app, glide back when leaving tiling mode, and pop in softly when opened.
+  Dragging and resizing stay glued to the pointer. `prefers-reduced-motion` disables all of it.
+- **Adjustable transition speed**: a Speed slider (Settings → Windows → Behaviour, 0–600 ms, default 220 ms)
+  controls how quick and fluid window transitions are, shared by floating and tiling mode. The Animate checkbox
+  now turns off both.
+
+### Fixed
+- **Piano-roll playhead in song mode**: the playhead only ever showed in pattern mode while playing, so there
+  was no way to see where you were in the song. It now marks the play position in pattern mode at all times
+  (including while paused), and in song mode it shows where you are inside whichever clip of the edited pattern
+  is playing (respecting the clip's start and offset — the same mapping the live note recorder uses); when the
+  pattern isn't playing it hides instead of pointing at a meaningless spot. The grid auto-scrolls to follow it
+  while playing in both modes.
+- The settings drawer no longer re-renders itself out from under a slider while you are dragging it.
+
 ## [1.0.0]
 
 ### Performance
