@@ -330,7 +330,7 @@ export function createChannelRack(app) {
     if (!win.visible) return;
     const leds = header.querySelector('.cr-leds').children;
     let cur = -1;
-    if (transport.playing && transport.mode === 'pattern') cur = Math.floor(transport.patternPosition());
+    if (transport.playing && transport.effectiveMode === 'pattern') cur = Math.floor(transport.patternPosition());
     if (cur !== lastLed) {
       if (lastLed >= 0 && leds[lastLed]) leds[lastLed].classList.remove('on');
       if (cur >= 0 && leds[cur]) leds[cur].classList.add('on');

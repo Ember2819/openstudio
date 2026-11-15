@@ -83,6 +83,8 @@
 .pr-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 .pr-playhead { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; margin-left: -1px; display: none; background: var(--playhead); }
 .pr-playhead::before { content: ""; position: absolute; top: 0; left: -5px; border: 6px solid transparent; border-top: 9px solid var(--playhead); border-bottom: 0; }
+/* dimmed marker for the song position when the edited pattern isn't actually playing there (song mode) */
+.pr-playhead.ghost { opacity: .35; }
 
 /* playlist */
 .pl-main { flex: 1; min-height: 0; position: relative; display: grid; }

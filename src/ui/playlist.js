@@ -998,7 +998,8 @@ export function createPlaylist(app) {
 
   function update() {
     if (!win.visible) return;
-    const show = transport.mode === 'song';
+    // song mode with something to play (an empty song falls back to the edited pattern, which has no place on the grid)
+    const show = transport.effectiveMode === 'song';
     playhead.style.display = show ? 'block' : 'none';
     if (!show) return;
     const pos = transport.position();

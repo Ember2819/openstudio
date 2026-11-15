@@ -5,17 +5,21 @@ import { TempoMap } from '../tempo.js';
 
 const LOOKAHEAD = 0.12; // seconds scheduled ahead
 const TICK_MS = 25;
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
 
 /**
  * Fire everything that starts on `step`: notes, audio clips, automation. Shared by live playback and
- * offline export. opts: { metronome, first, lengths } — `first` is true on the first step after a start/seek/loop
- * jump, so audio clips that are already running get started part-way in. `lengths` is an optional Map the caller
- * may keep for a short while (a scheduling tick, a render batch): pattern lengths are expensive (every note is
- * visited) and otherwise recomputed for every clip on every step.
+ * offline export. opts: { metronome, first, lengths, from } — `first` is true on the first step after a
+ * start/seek/loop jump, so audio clips that are already running get started part-way in. `from` is a
+ * fractional song position when playback resumes part-way into `step`: notes behind it are skipped and the
+ * rest keep their exact timing, so Play continues where Pause left off instead of re-playing the step.
+ * `lengths` is an optional Map the caller may keep for a short while (a scheduling tick, a render batch):
+ * pattern lengths are expensive (every note is visited) and otherwise recomputed for every clip on every step.
  */
 export function scheduleStep(store, engine, step, time, sd, opts = {}) {
   const proj = store.project;
-  if (opts.metronome && step % beatSteps(proj) === 0) engine.click(time, step % barSteps(proj) === 0);
+  const over = opts.from != null ? clamp01(opts.from - step) : 0; // how much of `step` is already behind us
+  if (opts.metronome && step % beatSteps(proj) === 0 && over < 1e-6) engine.click(time, step % barSteps(proj) === 0);
   if (engine.stepped?.size) engine.stepEffects(step, time, sd);
 
   const anySolo = proj.channels.some((c) => c.solo);
@@ -26,6 +30,7 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
     return len;
   };
   const emit = (pat, local) => {
+    const at = local + over; // where in the pattern we are right now
     const shift = Math.floor(local) % 2 === 1 ? swing * sd * 0.5 : 0;
     for (const ch of proj.channels) {
       if (ch.mute || (anySolo && !ch.solo)) continue;
@@ -34,17 +39,19 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       let slides = null;
       for (const n of notes) {
         if (n.m) continue;
-        if (n.s >= local - 1e-6 && n.s < local + 1 - 1e-6) {
+        if (n.s >= at - 1e-6 && n.s < local + 1 - 1e-6) {
           // slide notes bend what is sounding, so they go after the notes that start with them
           if (n.sl) (slides ??= []).push(n);
-          else engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n.pan || n.fine || n.mx || n.my ? n : null);
+          else engine.playNote(ch, n.p, n.v, time + shift + (n.s - at) * sd, n.l * sd, n.pan || n.fine || n.mx || n.my ? n : null);
         }
       }
-      if (slides) for (const n of slides) engine.playNote(ch, n.p, n.v, time + shift + (n.s - local) * sd, n.l * sd, n);
+      if (slides) for (const n of slides) engine.playNote(ch, n.p, n.v, time + shift + (n.s - at) * sd, n.l * sd, n);
     }
   };
 
-  if (proj.mode === 'pattern') {
+  // song mode with nothing that can sound: play the edited pattern, so Play is never silent
+  const songFallback = proj.mode === 'song' && !opts.only && !proj.playlist.clips.some((c) => !c.mute && (c.type || 'pattern') !== 'auto' && !proj.playlist.tracks[c.track]?.mute);
+  if (proj.mode === 'pattern' || songFallback) {
     const pat = store.currentPattern;
     if (pat) emit(pat, step % lengthOf(pat));
     return;
@@ -63,10 +70,11 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
       const len = lengthOf(pat);
       emit(pat, (((step - clip.start + clip.offset) % len) + len) % len);
     } else if (type === 'audio') {
-      if (step !== clip.start && !(opts.first && step > clip.start)) continue;
+      const at = opts.from ?? step; // where we are in the song on a part-way resume
+      if (step !== clip.start && !(opts.first && at > clip.start)) continue;
       const sample = store.samples.get(clip.sampleId);
       if (!sample?.buffer) continue;
-      const into = step - clip.start;
+      const into = Math.max(0, at - clip.start);
       // tempo-following clips: `stretch` keeps the pitch, `resample` speeds up / slows down like a record
       // `pitch` (semitones) shifts without changing the length: time-stretch by 1/r, then play r times faster
       const st = clip.stretch;
@@ -81,10 +89,11 @@ export function scheduleStep(store, engine, step, time, sd, opts = {}) {
     } else if (type === 'auto') {
       const auto = store.automation(clip.autoId);
       if (!auto || auto.target?.kind === 'tempo' || !targetValid(store, auto.target)) continue; // tempo: see tempo.js
-      const local = step - clip.start + (clip.offset || 0);
+      const at = opts.from ?? step;
+      const local = at - clip.start + (clip.offset || 0);
       const v0 = normToValue(store, auto.target, curveAt(auto.points, local));
       const v1 = normToValue(store, auto.target, curveAt(auto.points, local + 1));
-      applyTarget(store, engine, auto.target, v0, time, v1, time + sd);
+      applyTarget(store, engine, auto.target, v0, time, v1, time + (1 - over) * sd);
     }
   }
 }
@@ -108,6 +117,7 @@ export class Transport extends Emitter {
     this.startStep = 0; // where Stop returns to
     this.resumeStep = 0; // where Play resumes from
     this.nextStep = 0;
+    this.from = null; // fractional song position when resuming part-way into nextStep
     this.nextTime = 0;
     this.timer = null;
     this.queue = []; // {time, step} history for UI position
@@ -125,6 +135,20 @@ export class Transport extends Emitter {
   /** The tempo at the play position: follows tempo automation while the song plays. */
   currentBpm() { return this.tempo.bpm(this.position()); }
   get mode() { return this.store.project.mode; }
+
+  /**
+   * The mode playback actually runs in. Song mode with nothing that can sound (no clips, or every clip and
+   * track muted) falls back to the edited pattern, so hitting Play is never silent.
+   */
+  get effectiveMode() {
+    if (this.mode !== 'song') return this.mode;
+    const proj = this.store.project;
+    for (const c of proj.playlist.clips) {
+      if (c.mute || (c.type || 'pattern') === 'auto') continue;
+      if (!proj.playlist.tracks[c.track]?.mute) return 'song';
+    }
+    return 'pattern';
+  }
 
   setMode(mode) {
     if (this.store.project.mode === mode) return;
@@ -152,13 +176,23 @@ export class Transport extends Emitter {
     if (this.playing) return;
     this.engine.ensure();
     this.playing = true;
-    this.nextStep = Math.floor(this.resumeStep + 1e-6);
+    this._arm(this.resumeStep);
     this.nextTime = this.ctx.currentTime + 0.05;
-    this.queue = [];
-    this.jumped = true;
     this._tick();
     this.timer = setInterval(() => this._tick(), TICK_MS);
     this.emit('change');
+  }
+
+  /**
+   * Point the scheduler at `step` (fractional allowed): the step that is already part-way through starts
+   * immediately with its notes behind the resume point skipped, so playback continues from exactly `step`
+   * instead of re-playing it from the start (which made the playhead jump back on every Play / Seek).
+   */
+  _arm(step) {
+    this.nextStep = Math.floor(step + 1e-6);
+    this.from = step - this.nextStep > 1e-6 ? step : null;
+    this.queue = [];
+    this.jumped = true;
   }
 
   pause() {
@@ -181,12 +215,18 @@ export class Transport extends Emitter {
 
   /**
    * How far the song runs, in steps: the last bar that has clips in song mode (the loop end while a loop is
-   * on), the whole pattern in pattern mode. 0 when there is nothing to play.
+   * on), the whole pattern in pattern mode — and in song mode with nothing that can sound, where the edited
+   * pattern is what plays. 0 when there is nothing to play.
    */
   get lengthSteps() {
-    if (this.mode === 'pattern') return this.store.patternSteps(this.store.currentPattern);
+    if (this.effectiveMode === 'pattern') return this.store.patternSteps(this.store.currentPattern);
+    return this._songEnd;
+  }
+
+  /** Song length in steps: the loop end while the loop is on, else the last bar that has clips. 0 when empty. */
+  get _songEnd() {
     const loop = this.store.project.loop;
-    if (this.loopEnabled && loop) return loop.end;
+    if (this.mode === 'song' && this.loopEnabled && loop) return loop.end;
     const bar = this.store.barSteps;
     return Math.ceil(this.store.playlistEndStep() / bar) * bar;
   }
@@ -211,10 +251,8 @@ export class Transport extends Emitter {
     if (setStart) this.startStep = step;
     if (this.playing) {
       this.engine.killAll();
-      this.nextStep = Math.floor(step);
+      this._arm(step);
       this.nextTime = this.ctx.currentTime + 0.03;
-      this.queue = [];
-      this.jumped = true;
       this.emit('jump', { time: this.nextTime, step: this.nextStep });
     }
     this.emit('change');
@@ -226,20 +264,21 @@ export class Transport extends Emitter {
     if (!this.playing) return this.resumeStep;
     const now = this.ctx.currentTime;
     const q = this.queue;
+    // steps are scheduled a little ahead of the audio clock: until the first one starts sounding,
+    // hold at the resume point (this is what made the playhead jump back on every Play / Seek)
+    if (q.length === 0 || q[0].time > now) return this.resumeStep;
     let i = q.length - 1;
     while (i > 0 && q[i].time > now) i--;
-    if (i < 0 || q.length === 0) return this.resumeStep;
     const e = q[i];
-    if (e.time > now) return Math.max(0, e.step - (e.time - now) / e.dur);
-    return e.step + (now - e.time) / e.dur;
+    return Math.max(0, e.step + (now - e.time) / e.dur);
   }
 
   /** Position within the current pattern (pattern mode wraps). */
   patternPosition() {
     const pos = this.position();
-    if (this.mode !== 'pattern') return pos;
+    if (this.effectiveMode !== 'pattern') return pos;
     const len = this.store.patternSteps(this.store.currentPattern);
-    return pos % len;
+    return len > 0 ? pos % len : pos;
   }
 
   // ------------------------------------------------------------ scheduling
@@ -247,23 +286,30 @@ export class Transport extends Emitter {
     const horizon = this.ctx.currentTime + LOOKAHEAD;
     this._lengths = new Map(); // valid for this tick only: the user may edit patterns between ticks
     while (this.nextTime < horizon) {
+      // the song position wraps like a song even when nothing is placed (the fallback keeps playing the
+      // edited pattern through the loop region / pattern length, so loop recording still splits passes)
       if (this.mode === 'song') {
         const loop = this.store.project.loop;
         if (this.loopEnabled && loop) {
           if (this.nextStep >= loop.end) { this.nextStep = loop.start; this.jumped = true; }
         } else {
-          // like FL Studio, the song wraps to the start once it runs past the last bar that has clips
-          const end = this.lengthSteps;
+          // like FL Studio, the song wraps to the start once it runs past the last bar that has clips.
+          // Never the fallback's pattern length: a seek at or past a short pattern would snap the song
+          // back to 0 the moment Play starts.
+          const end = this._songEnd;
           if (end > 0 && this.nextStep >= end) { this.nextStep = 0; this.jumped = true; }
         }
         // where the song continues somewhere else (loop recording splits takes there)
-        if (this.jumped) this.emit('jump', { time: this.nextTime, step: this.nextStep });
+        if (this.jumped) { this.from = null; this.emit('jump', { time: this.nextTime, step: this.nextStep }); }
       }
       const dur = this.tempo.stepDur(this.nextStep);
       this._scheduleStep(this.nextStep, this.nextTime, dur);
+      // resuming part-way into a step: the queue reports the exact position and only the rest of the step remains
+      const over = this.from != null ? clamp01(this.from - this.nextStep) : 0;
+      this.queue.push({ time: this.nextTime, step: this.from ?? this.nextStep, dur });
+      this.nextTime += (1 - over) * dur;
       this.jumped = false;
-      this.queue.push({ time: this.nextTime, step: this.nextStep, dur });
-      this.nextTime += dur;
+      this.from = null;
       this.nextStep++;
     }
     const cutoff = this.ctx.currentTime - 1;
@@ -271,7 +317,7 @@ export class Transport extends Emitter {
   }
 
   _scheduleStep(step, time, dur) {
-    scheduleStep(this.store, this.engine, step, time, dur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths });
+    scheduleStep(this.store, this.engine, step, time, dur, { metronome: this.metronome, first: this.jumped, lengths: this._lengths, from: this.from });
   }
 
   // -------------------------------------------------------------- recording
@@ -283,7 +329,7 @@ export class Transport extends Emitter {
     const pat = this.store.currentPattern;
     if (!pat) return null;
     const len = this.store.patternSteps(pat);
-    if (this.mode === 'pattern') return { pat, pos: this.patternPosition(), len };
+    if (this.effectiveMode === 'pattern') return { pat, pos: this.patternPosition(), len };
     const pos = this.position();
     const clip = this.store.project.playlist.clips.find((c) => (c.type || 'pattern') === 'pattern' && c.pat === pat.id && !c.mute && pos >= c.start && pos < c.start + c.len);
     if (!clip) return null;
@@ -319,7 +365,7 @@ export class Transport extends Emitter {
 
   // ---------------------------------------------------------------- format
   /** Seconds from the song start to `step` (follows tempo automation). */
-  secondsAt(step) { return this.mode === 'song' ? this.tempo.timeAt(step) : step * this.stepDur; }
+  secondsAt(step) { return this.effectiveMode === 'song' ? this.tempo.timeAt(step) : step * this.stepDur; }
 
   formatTime(step) {
     const sec = this.secondsAt(step);
