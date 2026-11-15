@@ -11,6 +11,40 @@
   <link rel="stylesheet" href="styles/prefs.css">
 </head>
 <body>
+  <!-- the initialization screen: plain HTML + inline CSS so it paints before any module loads -->
+  <style>
+    #splash {
+      position: fixed; inset: 0; z-index: 99999;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+      background: var(--bg, #2d383e); color: var(--text, #dfe7ec); font: 13px/1.4 var(--font, system-ui, sans-serif);
+      transition: opacity .4s ease, visibility .4s ease;
+    }
+    #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+    #splash-logo {
+      width: 46px; height: 46px; border-radius: 10px; margin-bottom: 2px;
+      background: var(--accent, #7ec8a6); color: var(--accent-ink, #24313a);
+      display: grid; place-items: center; font-size: 26px;
+    }
+    #splash-mark { font-size: 25px; font-weight: 700; letter-spacing: .04em; color: var(--text-bright, #fff); }
+    #splash-bar {
+      width: 230px; height: 4px; border-radius: 2px; overflow: hidden;
+      background: var(--hover, rgba(255, 255, 255, .12));
+    }
+    #splash-bar i {
+      display: block; width: 40%; height: 100%; border-radius: 2px;
+      background: var(--accent, #7ec8a6);
+      animation: splash-slide 1.1s ease-in-out infinite;
+    }
+    @keyframes splash-slide { from { transform: translateX(-110%); } to { transform: translateX(390%); } }
+    #splash-status { font-size: 12px; opacity: .7; }
+    @media (prefers-reduced-motion: reduce) { #splash-bar i { animation: none; width: 100%; } }
+  </style>
+  <div id="splash" aria-hidden="true">
+    <div id="splash-logo">♫</div>
+    <div id="splash-mark">OpenStudio</div>
+    <div id="splash-bar"><i></i></div>
+    <div id="splash-status">Starting up…</div>
+  </div>
   <div id="app">
     <header id="toolbar"></header>
     <div id="workspace">

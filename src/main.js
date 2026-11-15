@@ -33,6 +33,28 @@ import { createWelcome } from './ui/welcome.js';
 // colours first, so nothing is ever drawn with an unthemed palette
 appearance.apply();
 
+// ---------------------------------------------------------------- splash / init screen
+// The splash lives in index.html so it is on screen the moment the window opens; the boot
+// stages below update its status line and fade it out once the app is really ready.
+const splash = document.getElementById('splash');
+const splashStatus = document.getElementById('splash-status');
+const splashSay = (text) => { if (splashStatus) splashStatus.textContent = text; };
+let splashGone = false;
+function splashDone() {
+  if (splashGone || !splash) return;
+  splashGone = true;
+  splashSay('Ready');
+  splash.classList.add('gone');
+  // first-run dialogs (autosave recovery, the welcome tour) wait for the splash to fade
+  // so they are never hidden behind it
+  setTimeout(() => {
+    splash.remove();
+    app.autosave?.offerRecovery();
+    welcome?.maybeShow();
+  }, 500);
+}
+splashSay('Building the interface…');
+
 
 const app = new Emitter();
 app.store = new Store();
@@ -93,15 +115,19 @@ app.actions.togglePreferences = prefs.toggle;
 initMidi(app);
 app.toolbar.refreshProject();
 app.autosave = installAutosave(app);
-app.autosave.offerRecovery();
-createWelcome(app).maybeShow();
+const welcome = createWelcome(app);
 
+splashSay('Loading instruments…');
+// watchdog: never leave the init screen up if something below never settles
+setTimeout(splashDone, 30000);
 loadSoundfont().then(() => {
   app.store.emit('soundfontReady');
   app.store.emit('notes');
+  splashDone();
 }).catch((err) => {
   console.error('Could not load the instrument bank', err);
   messageDialog('Instrument bank not found', 'OpenStudio could not load its sound library, so instruments will be silent.\n\nRun "npm run assets" in the project folder to download it, then restart the app.');
+  splashDone();
 });
 
 const panels = [rack, playlist, piano, mixer, settings, app.effectWindow];

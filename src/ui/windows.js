@@ -151,7 +151,10 @@ class AppWindow extends Emitter {
   show() {
     if (this.visible) { this.focus(); return; }
     this.visible = true;
-    this.el.classList.remove('hidden');
+    this.el.classList.remove('hidden', 'pop');
+    void this.el.offsetWidth; // restart the pop animation on every open
+    this.el.classList.add('pop');
+    this.el.addEventListener('animationend', () => this.el.classList.remove('pop'), { once: true });
     this.focus();
     this.mgr.emit('visibility', this);
     this.emit('show');
@@ -228,6 +231,7 @@ class AppWindow extends Emitter {
     e.stopPropagation();
     const handle = e.currentTarget;
     handle.setPointerCapture(e.pointerId);
+    this.el.classList.add('resizing');
     const sx = e.clientX, sy = e.clientY;
     const o = { x: this.x, y: this.y, w: this.w, h: this.h };
     const dw = this.mgr.desktop.clientWidth;
@@ -245,6 +249,7 @@ class AppWindow extends Emitter {
       handle.removeEventListener('pointermove', move);
       handle.removeEventListener('pointerup', up);
       handle.removeEventListener('pointercancel', up);
+      this.el.classList.remove('resizing');
       this.mgr.persist();
     };
     handle.addEventListener('pointermove', move);

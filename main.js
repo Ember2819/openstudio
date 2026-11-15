@@ -456,8 +456,9 @@ app.whenReady().then(async () => {
   const allowed = (perm) => perm === 'midi' || perm === 'midiSysex' || perm === 'media' || perm === 'audioCapture';
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb, details) => cb(allowed(perm) && !details?.mediaTypes?.includes('video')));
   session.defaultSession.setPermissionCheckHandler((_wc, perm) => allowed(perm));
-  await startAgents();
+  // the window comes up first: the MCP server (and anything else slow) must not delay the first paint
   createWindow();
+  await startAgents();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
