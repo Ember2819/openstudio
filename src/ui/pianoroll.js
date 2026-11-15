@@ -1041,22 +1041,33 @@ export function createPianoRoll(app) {
   function update() {
     if (!win.visible) return;
     const pat = store.currentPattern;
-    // pattern mode: always mark the play position. song mode: only while one of this pattern's
-    // clips covers the play position, and then show where we are inside that clip
-    let pos;
-    if (transport.mode === 'pattern') {
+    // pattern mode (or song mode with nothing placed — the pattern is what plays): always mark the play
+    // position. song mode: while one of this pattern's clips covers the play position, show where we are
+    // inside that clip; the rest of the time show a dimmed marker at where the song is, mapped through the
+    // pattern's first clip, so the playhead never disappears entirely
+    let pos, ghost = false;
+    if (transport.effectiveMode === 'pattern') {
       pos = transport.patternPosition(); // wraps, also while paused part-way through
     } else {
       const songPos = transport.position();
       const len = store.patternSteps(pat);
-      const clip = store.project.playlist.clips.find((c) => (c.type || 'pattern') === 'pattern' && c.pat === pat.id && !c.mute && songPos >= c.start && songPos < c.start + c.len);
-      if (!clip) { playhead.style.display = 'none'; return; }
-      pos = (((songPos - clip.start + clip.offset) % len) + len) % len;
+      const mine = store.project.playlist.clips.filter((c) => (c.type || 'pattern') === 'pattern' && c.pat === pat.id && !c.mute);
+      const clip = mine.find((c) => songPos >= c.start && songPos < c.start + c.len);
+      const wrapAt = (p) => (((p % len) + len) % len);
+      if (clip) {
+        pos = wrapAt(songPos - clip.start + clip.offset);
+      } else {
+        const first = mine.reduce((a, c) => (a == null || c.start < a.start ? c : a), null);
+        pos = first ? wrapAt(songPos - first.start + first.offset) : wrapAt(songPos);
+        ghost = true;
+      }
     }
+    playhead.classList.toggle('ghost', ghost);
     playhead.style.display = 'block';
     const x = pos * S.px - scroller.scrollLeft;
     const vw = scroller.clientWidth;
-    if (transport.playing && (x > vw - 30 || x < 0)) scroller.scrollLeft = Math.max(0, pos * S.px - 60);
+    // follow the real playhead; the dimmed marker never drags the grid around
+    if (!ghost && transport.playing && (x > vw - 30 || x < 0)) scroller.scrollLeft = Math.max(0, pos * S.px - 60);
     const vx = pos * S.px - scroller.scrollLeft;
     playhead.style.display = vx < 0 || vx > vw ? 'none' : 'block';
     playhead.style.transform = `translateX(${vx + KEYS_W}px)`;

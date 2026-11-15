@@ -76,7 +76,7 @@ export function createScrub(app) {
   function update() {
     const len = transport.lengthSteps;
     const raw = transport.position();
-    const pos = transport.mode === 'pattern' && transport.playing && len > 0 ? raw % len : raw; // the pattern loops; one length lookup per frame
+    const pos = transport.effectiveMode === 'pattern' && transport.playing && len > 0 ? raw % len : raw; // the pattern loops; one length lookup per frame
     const frac = drag ? drag.frac : len > 0 ? clamp(pos / len, 0, 1) : 0;
     const sec = transport.secondsAt(frac * len);
 

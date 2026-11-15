@@ -404,7 +404,7 @@ export function createToolbar(app) {
   }
   function update() {
     // pattern mode shows the position inside the looping pattern, like FL Studio
-    const pos = transport.mode === 'pattern' && transport.playing ? transport.patternPosition() : transport.position();
+    const pos = transport.effectiveMode === 'pattern' && transport.playing ? transport.patternPosition() : transport.position();
     if (timeMode === 'ms') {
       const t = transport.formatTime(pos);
       timeBig.textContent = `${t.m}:${String(t.s).padStart(2, '0')}`;
