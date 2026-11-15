@@ -319,6 +319,13 @@ export function createPreferences(app) {
       section('Behaviour',
         check('Grow the window I\'m working in', cfg.grow, (v) => t.setConfig({ grow: v })),
         check('Animate', cfg.animate, (v) => t.setConfig({ animate: v })),
+        h('p', { class: 'prefs-note' }, 'Transition speed — how fluid and quick windows move, grow and pop in, in floating and tiling mode.'),
+        (() => {
+          const out = h('span', { class: 'prefs-slider-val' }, `${cfg.animMs} ms`);
+          const input = h('input', { type: 'range', min: 0, max: 600, step: 20, value: cfg.animMs, 'data-hint': 'How quick and fluid window transitions are' });
+          input.addEventListener('input', () => { out.textContent = `${input.value} ms`; t.setConfig({ animMs: +input.value }); });
+          return h('label', { class: 'prefs-slider' }, h('span', { class: 'prefs-color-label' }, 'Speed'), input, out);
+        })(),
         h('div', { class: 'prefs-row' }, h('span', { class: 'prefs-color-label' }, 'Centre focus'),
           seg([['never', 'Never', 'Scroll just enough to show it'], ['overflow', 'Off-screen', 'Centre a column that was off-screen'], ['always', 'Always']], cfg.center, (v) => t.setConfig({ center: v }))),
         (() => {
@@ -378,7 +385,13 @@ export function createPreferences(app) {
     render();
   });
 
-  const refreshWindows = () => { if (tab === 'windows' && !el.classList.contains('hidden')) render(); };
+  const refreshWindows = () => {
+    if (tab !== 'windows' || el.classList.contains('hidden')) return;
+    // don't yank the drawer out from under a slider the user is dragging (config re-renders on every tick)
+    const a = document.activeElement;
+    if (a && el.contains(a) && a.tagName === 'INPUT' && a.type === 'range') return;
+    render();
+  };
   app.tiler.on('config', refreshWindows);
   app.tiler.on('mode', refreshWindows);
   function open(which) { if (TAB_NAMES[which]) tab = which; render(); el.classList.remove('hidden'); el.focus({ preventScroll: true }); }

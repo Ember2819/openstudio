@@ -140,6 +140,7 @@ const DEFAULTS = {
   center: 'overflow', // 'never' (minimal scroll) | 'overflow' (centre when it doesn't fit) | 'always'
   grow: true, // the focused column / window grows to its ideal size
   animate: true,
+  animMs: 220, // how quick and fluid window moves, grows and mode switches are (floating and tiling)
   binds: Object.fromEntries(ACTIONS.map(([id, , b]) => [id, b])),
   orient: {}, // id -> 'auto' | 'wide' | 'tall' | 'square'
 };
@@ -167,6 +168,7 @@ export class Tiler extends Emitter {
     this.minimap.className = 'tile-map';
     this.desk.append(this.minimap);
 
+    this._applyAnim();
     this._wire();
     if (this.cfg.mode === 'tiling') this.enter(false);
   }
@@ -179,10 +181,16 @@ export class Tiler extends Emitter {
 
   setConfig(patch) {
     Object.assign(this.cfg, patch);
+    this._applyAnim();
     this.desk.classList.toggle('tile-anim', this.active && this.cfg.animate);
     this.save();
     if (this.active) this.layout();
     this.emit('config');
+  }
+
+  /** Publish the transition speed to CSS: the tiler's tile-to-tile glide and floating-mode moves share it. */
+  _applyAnim() {
+    this.desk.style.setProperty('--win-anim', this.cfg.animate ? `${this.cfg.animMs}ms` : '0ms');
   }
 
   // ---------------------------------------------------------------- mode
