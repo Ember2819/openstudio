@@ -5,6 +5,19 @@ and the project uses [Semantic Versioning](https://semver.org/) once it reaches 
 
 ## [Unreleased]
 
+## [1.0.2]
+
+### Fixed
+- **Play no longer rewinds the playhead**: pausing mid-step and hitting Play used to jump the playhead slightly
+  back and replay the step you were already inside. Playback now resumes from the exact paused position — notes
+  behind the resume point are skipped and the rest of the step keeps its exact timing — and seeking while playing
+  continues from the exact target instead of snapping to the nearest grid line.
+- **Piano-roll playhead in song mode**: the playhead was still invisible in song mode unless a clip of the edited
+  pattern covered the play position, and a song with nothing placed (or everything muted) was completely silent.
+  Song mode now falls back to the edited pattern when nothing can sound, so Play is never silent; the piano roll
+  shows a full playhead while your pattern is playing and a dimmed ghost marker at the song position everywhere
+  else, so it never disappears entirely.
+
 ## [1.0.1]
 
 ### Added

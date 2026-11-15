@@ -8,7 +8,7 @@ piano-roll / playlist / mixer workflow built with **Electron** and the **Web Aud
 
 ![OpenStudio](docs/screenshot.png)
 
-> **Stable and current: [v1.0.1](https://github.com/Ember2819/openstudio/releases/tag/v1.0.1)** — ready-made
+> **Stable and current: [v1.0.2](https://github.com/Ember2819/openstudio/releases/tag/v1.0.2)** — ready-made
 > packages for Windows, macOS and Linux (`.exe`, `.dmg`, `.AppImage`, `.deb` and `.rpm`) on the
 > [releases page](https://github.com/Ember2819/openstudio/releases). See [what's new](CHANGELOG.md).
 
