@@ -1040,13 +1040,23 @@ export function createPianoRoll(app) {
 
   function update() {
     if (!win.visible) return;
-    const show = transport.playing && transport.mode === 'pattern';
-    playhead.style.display = show ? 'block' : 'none';
-    if (!show) return;
-    const pos = transport.patternPosition();
+    const pat = store.currentPattern;
+    // pattern mode: always mark the play position. song mode: only while one of this pattern's
+    // clips covers the play position, and then show where we are inside that clip
+    let pos;
+    if (transport.mode === 'pattern') {
+      pos = transport.patternPosition(); // wraps, also while paused part-way through
+    } else {
+      const songPos = transport.position();
+      const len = store.patternSteps(pat);
+      const clip = store.project.playlist.clips.find((c) => (c.type || 'pattern') === 'pattern' && c.pat === pat.id && !c.mute && songPos >= c.start && songPos < c.start + c.len);
+      if (!clip) { playhead.style.display = 'none'; return; }
+      pos = (((songPos - clip.start + clip.offset) % len) + len) % len;
+    }
+    playhead.style.display = 'block';
     const x = pos * S.px - scroller.scrollLeft;
     const vw = scroller.clientWidth;
-    if (x > vw - 30 || x < 0) scroller.scrollLeft = Math.max(0, pos * S.px - 60);
+    if (transport.playing && (x > vw - 30 || x < 0)) scroller.scrollLeft = Math.max(0, pos * S.px - 60);
     const vx = pos * S.px - scroller.scrollLeft;
     playhead.style.display = vx < 0 || vx > vw ? 'none' : 'block';
     playhead.style.transform = `translateX(${vx + KEYS_W}px)`;
